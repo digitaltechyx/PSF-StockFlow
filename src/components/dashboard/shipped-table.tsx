@@ -29,10 +29,6 @@ function formatDate(date: ShippedItem["date"]) {
   }
 
 export function ShippedTable({ data, inventory }: { data: ShippedItem[], inventory: InventoryItem[] }) {
-  
-  const getTotalQuantity = (shippedItem: ShippedItem) => {
-    return shippedItem.shippedQty + shippedItem.remainingQty;
-  };
 
   return (
     <Card>
@@ -48,7 +44,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
             <TableRow>
               <TableHead>Product Name</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Quantity (Shipped/Total)</TableHead>
+              <TableHead>Quantity Shipped</TableHead>
               <TableHead>Pack Of</TableHead>
               <TableHead>Remarks</TableHead>
             </TableRow>
@@ -59,7 +55,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.productName}</TableCell>
                   <TableCell>{formatDate(item.date)}</TableCell>
-                  <TableCell>{`${item.shippedQty} / ${getTotalQuantity(item)}`}</TableCell>
+                  <TableCell>{item.shippedQty}</TableCell>
                   <TableCell>{item.packOf}</TableCell>
                   <TableCell>{item.remarks || "-"}</TableCell>
                 </TableRow>
