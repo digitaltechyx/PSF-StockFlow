@@ -111,7 +111,7 @@ function UserManagementModal({
           ) : inventory.length > 0 ? (
             <div className="grid gap-2">
               {inventory.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div key={`inventory-${item.id}`} className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <span className="font-medium">{item.productName}</span>
                     <span className="text-muted-foreground ml-2">({item.quantity} units)</span>
@@ -180,8 +180,8 @@ export default function AdminDashboardPage() {
         
         {usersLoading ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <Card key={`skeleton-${i}`}>
                 <CardHeader>
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/2" />
@@ -194,19 +194,17 @@ export default function AdminDashboardPage() {
           </div>
         ) : filteredUsers.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredUsers.map((user) => {
-              return (
-                <UserCard 
-                  key={user.uid} 
-                  user={user} 
-                  onSelectUser={setSelectedUser}
-                  selectedUser={selectedUser}
-                />
-              );
-            })}
+            {filteredUsers.map((user) => (
+              <UserCard 
+                key={`user-${user.uid}`} 
+                user={user} 
+                onSelectUser={setSelectedUser}
+                selectedUser={selectedUser}
+              />
+            ))}
           </div>
         ) : (
-          <Card>
+          <Card key="no-users-card">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Users className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No users found</h3>
