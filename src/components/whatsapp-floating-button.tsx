@@ -32,7 +32,7 @@ export function WhatsAppFloatingButton() {
   if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
       {/* Close button */}
       <Button
         variant="ghost"
@@ -47,7 +47,7 @@ export function WhatsAppFloatingButton() {
       <Button
         onClick={handleWhatsAppClick}
         className={`
-          group relative h-16 w-16 rounded-full bg-whatsapp 
+          group relative h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16 rounded-full bg-whatsapp 
           hover:bg-whatsapp/90 transition-all duration-300 
           hover:scale-110 active:scale-95 shadow-2xl hover:shadow-3xl
           ${isClicking ? 'scale-95 shadow-inner' : 'shadow-lg'}
@@ -56,7 +56,7 @@ export function WhatsAppFloatingButton() {
         aria-label="Contact us on WhatsApp"
       >
         {/* WhatsApp Icon */}
-        <WhatsAppIcon className="h-9 w-9 text-white transition-transform duration-300 group-hover:scale-110" />
+        <WhatsAppIcon className="h-6 w-6 sm:h-7 sm:w-7 md:h-9 md:w-9 text-white transition-transform duration-300 group-hover:scale-110" />
         
         {/* Floating Animation Ring */}
         <div className="absolute inset-0 rounded-full bg-whatsapp opacity-20 animate-bounce-slow"></div>
@@ -66,14 +66,14 @@ export function WhatsAppFloatingButton() {
         <div className="absolute inset-0 rounded-full bg-whatsapp opacity-20 animate-ping-delayed-2"></div>
         
         {/* Tooltip */}
-        <div className="absolute right-20 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap shadow-lg animate-fade-in">
+        <div className="hidden sm:block absolute right-16 md:right-20 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white text-xs md:text-sm px-3 md:px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap shadow-lg animate-fade-in">
           <span className="font-medium">Contact us on WhatsApp</span>
           <div className="absolute left-full top-1/2 transform -translate-y-1/2 border-l-4 border-l-gray-900 border-y-4 border-y-transparent"></div>
         </div>
 
         {/* Notification Badge */}
-        <div className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center animate-bounce">
-          <span className="text-xs text-white font-bold">!</span>
+        <div className="absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1 h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5 bg-red-500 rounded-full flex items-center justify-center animate-bounce">
+          <span className="text-xs sm:text-xs text-white font-bold">!</span>
         </div>
       </Button>
     </div>

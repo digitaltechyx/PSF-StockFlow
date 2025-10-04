@@ -25,12 +25,12 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="grid gap-4 md:gap-8 lg:grid-cols-2">
-      <div className="grid auto-rows-max items-start gap-4 md:gap-8">
-        {inventoryLoading ? <Skeleton className="h-96 w-full" /> : <InventoryTable data={inventoryData} />}
+    <div className="grid gap-2 sm:gap-4 md:gap-8 lg:grid-cols-2">
+      <div className="grid auto-rows-max items-start gap-2 sm:gap-4 md:gap-8">
+        {inventoryLoading ? <Skeleton className="h-64 sm:h-96 w-full" /> : <InventoryTable data={inventoryData} />}
       </div>
-      <div className="grid auto-rows-max items-start gap-4 md:gap-8">
-        {shippedLoading ? <Skeleton className="h-96 w-full" /> : <ShippedTable data={shippedData} inventory={inventoryData} />}
+      <div className="grid auto-rows-max items-start gap-2 sm:gap-4 md:gap-8">
+        {shippedLoading ? <Skeleton className="h-64 sm:h-96 w-full" /> : <ShippedTable data={shippedData} inventory={inventoryData} />}
       </div>
     </div>
   );
