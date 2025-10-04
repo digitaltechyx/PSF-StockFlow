@@ -1,0 +1,28 @@
+{
+  "name": "PSF StockFlow",
+  "short_name": "PSF StockFlow",
+  "description": "Modern inventory management system with real-time updates",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1A237E",
+  "theme_color": "#008080",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr"
+}

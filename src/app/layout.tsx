@@ -2,10 +2,20 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/hooks/use-auth";
 import { Toaster } from "@/components/ui/toaster";
+import { WhatsAppFloatingButton } from "@/components/whatsapp-floating-button";
 
 export const metadata: Metadata = {
   title: "PSF StockFlow",
-  description: "Inventory Management System",
+  description: "Inventory Management System - Modern inventory management with real-time updates",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/app-icon.svg", type: "image/svg+xml", sizes: "512x512" },
+    ],
+    apple: "/app-icon.svg",
+    shortcut: "/favicon.svg",
+  },
+  manifest: "/site.webmanifest",
 };
 
 export default function RootLayout({
@@ -31,6 +41,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <Toaster />
+          <WhatsAppFloatingButton />
         </AuthProvider>
       </body>
     </html>

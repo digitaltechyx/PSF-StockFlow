@@ -65,6 +65,9 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+        whatsapp: {
+          DEFAULT: 'hsl(var(--whatsapp))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -92,6 +95,10 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'bounce-slow': 'bounce-slow 3s ease-in-out infinite',
+        'ping-delayed-1': 'ping-delayed-1 2s cubic-bezier(0, 0, 0.2, 1) 0.5s infinite',
+        'ping-delayed-2': 'ping-delayed-2 2s cubic-bezier(0, 0, 0.2, 1) 1s infinite',
+        'fade-in': 'fade-in 0.3s ease-in-out',
       },
     },
   },
