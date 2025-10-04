@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Users, Eye } from "lucide-react";
+import { Search, Users, Eye, UserPlus } from "lucide-react";
+import { CreateUserForm } from "@/components/admin/create-user-form";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -136,6 +137,7 @@ export default function AdminDashboardPage() {
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [showCreateUser, setShowCreateUser] = useState(false);
 
   const filteredUsers = useMemo(() => {
     return users
@@ -161,11 +163,31 @@ export default function AdminDashboardPage() {
           <p className="text-muted-foreground">Manage users and their inventory</p>
         </div>
         <div className="flex items-center gap-2">
+          <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center gap-2">
+                <UserPlus className="h-4 w-4" />
+                <span className="hidden sm:inline">Create User</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Create New User</DialogTitle>
+                <DialogDescription>
+                  Add a new user to the inventory management system.
+                </DialogDescription>
+              </DialogHeader>
+              <CreateUserForm 
+                onSuccess={() => setShowCreateUser(false)}
+                onCancel={() => setShowCreateUser(false)}
+              />
+            </DialogContent>
+          </Dialog>
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search users..."
-              className="pl-8 w-64"
+              className="pl-8 w-48 sm:w-64"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />

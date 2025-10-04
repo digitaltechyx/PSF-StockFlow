@@ -45,31 +45,38 @@ export default function AdminDashboardLayout({
   return (
     <div className="flex min-h-screen w-full flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
-        <div className="flex items-center gap-4">
+      <header className="sticky top-0 z-30 flex h-12 sm:h-14 md:h-16 items-center gap-2 sm:gap-4 border-b bg-background px-2 sm:px-4 md:px-6">
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-4 min-w-0 flex-1">
           <Logo />
-          <h1 className="text-xl font-bold font-headline">Admin Dashboard</h1>
+          <h1 className="text-sm sm:text-lg md:text-xl font-bold font-headline truncate">
+            <span className="hidden sm:inline">Admin </span>Dashboard
+          </h1>
         </div>
-        <div className="ml-auto flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-8 w-8">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4 flex-shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 md:gap-3">
+            <Avatar className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8">
               <AvatarImage src={`https://avatar.vercel.sh/${userProfile?.email}.png`} />
-              <AvatarFallback>{getInitials(userProfile?.name)}</AvatarFallback>
+              <AvatarFallback className="text-xs">{getInitials(userProfile?.name)}</AvatarFallback>
             </Avatar>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold">{userProfile?.name}</span>
+            <div className="hidden sm:flex flex-col">
+              <span className="text-xs sm:text-sm font-semibold truncate max-w-20 lg:max-w-none">
+                {userProfile?.name}
+              </span>
               <span className="text-xs text-muted-foreground">Administrator</span>
             </div>
+            <div className="sm:hidden text-xs">
+              <span className="font-semibold">{userProfile?.name?.split(' ')[0]}</span>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={handleSignOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
+          <Button variant="outline" size="sm" className="h-7 w-7 sm:h-8 sm:w-auto px-2 sm:px-3 flex-shrink-0" onClick={handleSignOut}>
+            <LogOut className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Logout</span>
           </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-6">
+      <main className="flex-1 p-2 sm:p-4 md:p-6">
         {children}
       </main>
     </div>
