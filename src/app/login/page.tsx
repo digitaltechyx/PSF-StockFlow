@@ -5,7 +5,7 @@ import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -59,9 +59,24 @@ export default function LoginPage() {
       if (userDoc.exists()) {
         const userProfile = userDoc.data() as UserProfile;
         
-        // Redirect based on role
+        // Check user status first (default to "approved" for existing users without status)
+        const userStatus = userProfile.status || "approved";
+        
+        if (userStatus === "deleted") {
+          toast({
+            variant: "destructive",
+            title: "Account Deleted",
+            description: "Your account has been deleted. Please contact an administrator.",
+          });
+          await signOut(auth);
+          return;
+        }
+        
+        // Redirect based on role and status
         if (userProfile.role === 'admin') {
           router.push("/admin/dashboard");
+        } else if (userStatus === "pending") {
+          router.push("/pending-approval");
         } else {
           router.push("/dashboard");
         }

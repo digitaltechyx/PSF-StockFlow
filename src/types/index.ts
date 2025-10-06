@@ -1,6 +1,7 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
 export type UserRole = "admin" | "user";
+export type UserStatus = "pending" | "approved" | "deleted";
 
 export interface UserProfile {
   uid: string;
@@ -8,6 +9,9 @@ export interface UserProfile {
   name: string | null;
   phone: string | null;
   role: UserRole;
+  status?: UserStatus; // Optional for backward compatibility
+  createdAt?: Date;
+  approvedAt?: Date;
 }
 
 export interface InventoryItem {
@@ -33,6 +37,19 @@ export interface ShippedItem {
   remainingQty: number; 
   packOf: number;
   remarks?: string;
+}
+
+export interface RestockHistory {
+  id: string;
+  productName: string;
+  previousQuantity: number;
+  restockedQuantity: number;
+  newQuantity: number;
+  restockedBy: string; // Admin name who restocked
+  restockedAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
 }
 
 export interface AuthContextType {

@@ -22,11 +22,11 @@ const formSchema = z.object({
   productId: z.string().min(1, "Please select a product."),
   date: z.date({ required_error: "A shipping date is required." }),
   quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
-  packOf: z.coerce.number().int().positive(),
+  packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
   remarks: z.string().optional(),
 });
 
-const packOfOptions = [1, 2, 3, 5, 10];
+// Removed packOfOptions array since we're using a number input now
 
 export function ShipInventoryForm({ userId, inventory }: { userId: string; inventory: InventoryItem[] }) {
   const { toast } = useToast();
@@ -159,18 +159,14 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Pack Of</FormLabel>
-                    <Select onValueChange={(val) => field.onChange(Number(val))} defaultValue={String(field.value)}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a pack size" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {packOfOptions.map(option => (
-                           <SelectItem key={option} value={String(option)}>{option}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        placeholder="Enter pack size" 
+                        min="1"
+                        {...field} 
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

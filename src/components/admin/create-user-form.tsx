@@ -60,6 +60,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         email: values.email,
         phone: values.phone,
         role: values.role,
+        status: "pending",
         createdAt: new Date(),
       });
 
@@ -99,17 +100,8 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <UserPlus className="h-5 w-5" />
-          Create New User
-        </CardTitle>
-        <CardDescription>
-          Create a new user account for the inventory management system.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className="w-full max-w-md border-0 shadow-none">
+      <CardContent className="p-0">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -189,7 +181,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
               </p>
             </div>
 
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={isLoading} className="flex-1">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create User

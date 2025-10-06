@@ -12,8 +12,14 @@ export default function Home() {
   useEffect(() => {
     if (!loading) {
       if (user && userProfile) {
-        if (userProfile.role === 'admin') {
+        const userStatus = userProfile.status || "approved";
+        
+        if (userStatus === "deleted") {
+          router.replace("/login");
+        } else if (userProfile.role === 'admin') {
           router.replace("/admin/dashboard");
+        } else if (userStatus === "pending") {
+          router.replace("/pending-approval");
         } else {
           router.replace("/dashboard");
         }

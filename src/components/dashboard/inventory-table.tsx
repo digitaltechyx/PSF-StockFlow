@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { InventoryItem } from "@/types";
 import {
   Card,
@@ -17,6 +18,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Search, Filter, X } from "lucide-react";
 import { format } from "date-fns";
 
 function formatDate(date: InventoryItem["dateAdded"]) {
@@ -31,15 +36,65 @@ function formatDate(date: InventoryItem["dateAdded"]) {
 
 
 export function InventoryTable({ data }: { data: InventoryItem[] }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Filtered inventory data
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      const matchesSearch = item.productName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [data, searchTerm, statusFilter]);
+
   return (
     <Card className="w-full">
       <CardHeader className="pb-2 sm:pb-6">
-        <CardTitle className="text-base sm:text-lg lg:text-xl">Your Inventory</CardTitle>
+        <CardTitle className="text-base sm:text-lg lg:text-xl">Your Inventory ({filteredData.length})</CardTitle>
         <CardDescription className="text-xs sm:text-sm">
           A list of products currently in your inventory.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0 sm:p-6">
+        {/* Search and Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 px-6">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+              {searchTerm && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                  onClick={() => setSearchTerm("")}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="sm:w-48">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="In Stock">In Stock</SelectItem>
+                <SelectItem value="Out of Stock">Out of Stock</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -51,8 +106,8 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.length > 0 ? (
-                data.map((item) => (
+              {filteredData.length > 0 ? (
+                filteredData.map((item) => (
                <TableRow key={item.id} className="text-xs sm:text-sm">
                     <TableCell className="font-medium max-w-32 sm:max-w-none truncate">
                       <div className="flex flex-col sm:block">
@@ -82,7 +137,7 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-8">
                     <div className="text-xs sm:text-sm text-gray-500">
-                      No inventory items found.
+                      {data.length === 0 ? "No inventory items found." : "No items match your search criteria."}
                     </div>
                   </TableCell>
                 </TableRow>

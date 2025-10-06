@@ -11,7 +11,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, userProfile, loading } = useAuth();
+  const { user, userProfile, loading, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -21,11 +21,18 @@ export default function DashboardLayout({
       } else if (userProfile?.role !== "user") {
         // Redirect if not a regular user, e.g., an admin trying to access user dash
         router.replace("/admin/dashboard");
+      } else if (userProfile?.status === "pending") {
+        // Redirect pending users to a waiting page
+        router.replace("/pending-approval");
+      } else if (userProfile?.status === "deleted") {
+        // Sign out deleted users
+        signOut();
+        router.replace("/login");
       }
     }
   }, [user, userProfile, loading, router]);
 
-  if (loading || !user || userProfile?.role !== "user") {
+  if (loading || !user || userProfile?.role !== "user" || userProfile?.status === "pending" || userProfile?.status === "deleted") {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Search, Users, Eye, UserPlus } from "lucide-react";
+import { MemberManagement } from "@/components/admin/member-management";
+import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
 import { CreateUserForm } from "@/components/admin/create-user-form";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
@@ -73,19 +75,29 @@ function UserManagementModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Manage {user.name}'s Inventory</DialogTitle>
           <DialogDescription>
-            Add inventory items and track shipments for {user.email}
+            Add inventory items, track shipments, and manage products for {user.email}
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="add" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue="manage" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="manage">Manage Products</TabsTrigger>
             <TabsTrigger value="add">Add Inventory</TabsTrigger>
             <TabsTrigger value="ship">Ship Inventory</TabsTrigger>
           </TabsList>
+          
+          <TabsContent value="manage" className="space-y-4">
+            <AdminInventoryManagement 
+              selectedUser={user}
+              inventory={inventory}
+              shipped={shipped}
+              loading={inventoryLoading}
+            />
+          </TabsContent>
           
           <TabsContent value="add" className="space-y-4">
             <AddInventoryForm userId={user.uid} />
@@ -103,30 +115,6 @@ function UserManagementModal({
             )}
           </TabsContent>
         </Tabs>
-
-        {/* Current Inventory Summary */}
-        <div className="mt-6 space-y-4">
-          <h4 className="text-lg font-semibold">Current Inventory</h4>
-          {inventoryLoading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : inventory.length > 0 ? (
-            <div className="grid gap-2">
-              {inventory.map((item) => (
-                <div key={`inventory-${item.id}`} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <span className="font-medium">{item.productName}</span>
-                    <span className="text-muted-foreground ml-2">({item.quantity} units)</span>
-                  </div>
-                  <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
-                    {item.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-4">No inventory items found</p>
-          )}
-        </div>
       </DialogContent>
     </Dialog>
   );
@@ -142,6 +130,11 @@ export default function AdminDashboardPage() {
   const filteredUsers = useMemo(() => {
     return users
       .filter((user) => user.uid !== adminUser?.uid) // Exclude admin from the list
+      .filter((user) => user.status !== "deleted") // Exclude deleted users
+      .filter((user) => {
+        // Show approved users OR users without status (existing users)
+        return user.status === "approved" || !user.status;
+      })
       .filter((user) => {
         if (searchTerm === "") return true;
         const name = user.name?.toLowerCase() || "";
@@ -153,14 +146,19 @@ export default function AdminDashboardPage() {
   }, [users, adminUser, searchTerm]);
 
   const totalUsers = filteredUsers.length;
+  
+  // Calculate pending users count for badge
+  const pendingUsersCount = users.filter((user) => 
+    user.uid !== adminUser?.uid && user.status === "pending"
+  ).length;
 
   return (
     <div className="space-y-6">
       {/* Header Section */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-3xl font-bold font-headline">User Management</h2>
-          <p className="text-muted-foreground">Manage users and their inventory</p>
+          <h2 className="text-3xl font-bold font-headline">Admin Dashboard</h2>
+          <p className="text-muted-foreground">Manage users, members, and inventory</p>
         </div>
         <div className="flex items-center gap-2">
           <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
@@ -170,7 +168,7 @@ export default function AdminDashboardPage() {
                 <span className="hidden sm:inline">Create User</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Create New User</DialogTitle>
                 <DialogDescription>
@@ -195,48 +193,72 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Main Tabs */}
+        <Tabs defaultValue="users" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="users">Inventory Management</TabsTrigger>
+            <TabsTrigger value="members" className="relative">
+              User Management
+              {pendingUsersCount > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
+                >
+                  {pendingUsersCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-      {/* Users Grid */}
-      <div className="space-y-4">
-        <h3 className="text-xl font-semibold">Users ({totalUsers})</h3>
-        
-        {usersLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }, (_, i) => (
-              <Card key={`skeleton-${i}`}>
-                <CardHeader>
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-20 w-full" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : filteredUsers.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredUsers.map((user) => (
-              <UserCard 
-                key={`user-${user.uid}`} 
-                user={user} 
-                onSelectUser={setSelectedUser}
-                selectedUser={selectedUser}
-              />
-            ))}
-          </div>
-        ) : (
-          <Card key="no-users-card">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Users className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No users found</h3>
-              <p className="text-muted-foreground text-center">
-                {searchTerm ? "Try adjusting your search terms" : "No users have registered yet"}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          <TabsContent value="users" className="space-y-4 mt-6">
+            {/* Users Grid */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold">Users ({totalUsers})</h3>
+              
+              {usersLoading ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }, (_, i) => (
+                    <Card key={`skeleton-${i}`}>
+                      <CardHeader>
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </CardHeader>
+                      <CardContent>
+                        <Skeleton className="h-20 w-full" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : filteredUsers.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {filteredUsers.map((user) => (
+                    <UserCard 
+                      key={`user-${user.uid}`} 
+                      user={user} 
+                      onSelectUser={setSelectedUser}
+                      selectedUser={selectedUser}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Card key="no-users-card">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No users found</h3>
+                    <p className="text-muted-foreground text-center">
+                      {searchTerm ? "Try adjusting your search terms" : "No users have registered yet"}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="members" className="space-y-4 mt-6">
+            <MemberManagement adminUser={adminUser} />
+          </TabsContent>
+
+      </Tabs>
 
       {/* User Management Modal */}
       {selectedUser && (

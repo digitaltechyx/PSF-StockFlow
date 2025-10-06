@@ -5,8 +5,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read all users
-      allow read: if request.auth != null && 
+      // Allow admins to read and update all users (for approval/deletion)
+      allow read, update: if request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
@@ -24,6 +24,15 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
       // Allow admins to manage any user's shipped items
+      allow read, write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow admins to read and write any user's restock history
       allow read, write: if request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
