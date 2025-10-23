@@ -52,6 +52,58 @@ export interface RestockHistory {
   } | string;
 }
 
+export interface RecycledShippedItem {
+  id: string;
+  productName: string;
+  date: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  shippedQty: number;
+  remainingQty: number;
+  packOf: number;
+  remarks?: string;
+  recycledAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  recycledBy: string; // Admin name who recycled
+}
+
+export interface RecycledRestockHistory {
+  id: string;
+  productName: string;
+  previousQuantity: number;
+  restockedQuantity: number;
+  newQuantity: number;
+  restockedBy: string;
+  restockedAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  recycledAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  recycledBy: string; // Admin name who recycled
+}
+
+export interface RecycledInventoryItem {
+  id: string;
+  productName: string;
+  quantity: number;
+  dateAdded: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  status: 'In Stock' | 'Out of Stock';
+  recycledAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  recycledBy: string; // Admin name who recycled
+}
+
 export interface AuthContextType {
   user: FirebaseUser | null;
   userProfile: UserProfile | null;

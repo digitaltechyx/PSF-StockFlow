@@ -15,9 +15,9 @@ import * as z from "zod";
 import { doc, updateDoc, deleteDoc, addDoc, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History } from "lucide-react";
+import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
-import type { InventoryItem, ShippedItem, UserProfile, RestockHistory } from "@/types";
+import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem } from "@/types";
 import { arrayToCSV, downloadCSV, formatDateForCSV, type InventoryCSVRow, type ShippedCSVRow } from "@/lib/csv-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -50,10 +50,24 @@ export function AdminInventoryManagement({
   const [restockingProduct, setRestockingProduct] = useState<InventoryItem | null>(null);
   const [showShipped, setShowShipped] = useState(false);
   const [showRestockHistory, setShowRestockHistory] = useState(false);
+  const [showRecycleSection, setShowRecycleSection] = useState(false);
 
   // Fetch restock history
   const { data: restockHistory, loading: restockHistoryLoading } = useCollection<RestockHistory>(
     selectedUser ? `users/${selectedUser.uid}/restockHistory` : ""
+  );
+
+  // Fetch recycled items
+  const { data: recycledShipped, loading: recycledShippedLoading } = useCollection<RecycledShippedItem>(
+    selectedUser ? `users/${selectedUser.uid}/recycledShipped` : ""
+  );
+
+  const { data: recycledRestockHistory, loading: recycledRestockHistoryLoading } = useCollection<RecycledRestockHistory>(
+    selectedUser ? `users/${selectedUser.uid}/recycledRestockHistory` : ""
+  );
+
+  const { data: recycledInventory, loading: recycledInventoryLoading } = useCollection<RecycledInventoryItem>(
+    selectedUser ? `users/${selectedUser.uid}/recycledInventory` : ""
   );
   
   // Search and filter states
@@ -171,6 +185,227 @@ export function AdminInventoryManagement({
         variant: "destructive",
         title: "Error",
         description: error.message || "Failed to delete product.",
+      });
+    }
+  };
+
+  const handleDeleteRestockHistory = async (restockItem: RestockHistory) => {
+    if (!selectedUser) return;
+
+    try {
+      const restockRef = doc(db, `users/${selectedUser.uid}/restockHistory`, restockItem.id);
+      await deleteDoc(restockRef);
+
+      toast({
+        title: "Success",
+        description: `Restock history for "${restockItem.productName}" deleted successfully!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to delete restock history.",
+      });
+    }
+  };
+
+  const handleDeleteShippedOrder = async (shippedItem: ShippedItem) => {
+    if (!selectedUser) return;
+
+    try {
+      const shippedRef = doc(db, `users/${selectedUser.uid}/shipped`, shippedItem.id);
+      await deleteDoc(shippedRef);
+
+      toast({
+        title: "Success",
+        description: `Shipped order for "${shippedItem.productName}" deleted successfully!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to delete shipped order.",
+      });
+    }
+  };
+
+  const handleRecycleShippedOrder = async (shippedItem: ShippedItem) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add to recycled collection
+      const recycledRef = collection(db, `users/${selectedUser.uid}/recycledShipped`);
+      await addDoc(recycledRef, {
+        ...shippedItem,
+        recycledAt: new Date(),
+        recycledBy: adminUser.name || "Admin",
+      });
+
+      // Delete from original collection
+      const shippedRef = doc(db, `users/${selectedUser.uid}/shipped`, shippedItem.id);
+      await deleteDoc(shippedRef);
+
+      toast({
+        title: "Success",
+        description: `Shipped order for "${shippedItem.productName}" moved to recycle bin!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to recycle shipped order.",
+      });
+    }
+  };
+
+  const handleRecycleRestockHistory = async (restockItem: RestockHistory) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add to recycled collection
+      const recycledRef = collection(db, `users/${selectedUser.uid}/recycledRestockHistory`);
+      await addDoc(recycledRef, {
+        ...restockItem,
+        recycledAt: new Date(),
+        recycledBy: adminUser.name || "Admin",
+      });
+
+      // Delete from original collection
+      const restockRef = doc(db, `users/${selectedUser.uid}/restockHistory`, restockItem.id);
+      await deleteDoc(restockRef);
+
+      toast({
+        title: "Success",
+        description: `Restock history for "${restockItem.productName}" moved to recycle bin!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to recycle restock history.",
+      });
+    }
+  };
+
+  const handleRestoreShippedOrder = async (recycledItem: RecycledShippedItem) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add back to original collection
+      const shippedRef = collection(db, `users/${selectedUser.uid}/shipped`);
+      await addDoc(shippedRef, {
+        productName: recycledItem.productName,
+        date: recycledItem.date,
+        shippedQty: recycledItem.shippedQty,
+        remainingQty: recycledItem.remainingQty,
+        packOf: recycledItem.packOf,
+        remarks: recycledItem.remarks,
+      });
+
+      // Delete from recycled collection
+      const recycledRef = doc(db, `users/${selectedUser.uid}/recycledShipped`, recycledItem.id);
+      await deleteDoc(recycledRef);
+
+      toast({
+        title: "Success",
+        description: `Shipped order for "${recycledItem.productName}" restored successfully!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to restore shipped order.",
+      });
+    }
+  };
+
+  const handleRestoreRestockHistory = async (recycledItem: RecycledRestockHistory) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add back to original collection
+      const restockRef = collection(db, `users/${selectedUser.uid}/restockHistory`);
+      await addDoc(restockRef, {
+        productName: recycledItem.productName,
+        previousQuantity: recycledItem.previousQuantity,
+        restockedQuantity: recycledItem.restockedQuantity,
+        newQuantity: recycledItem.newQuantity,
+        restockedBy: recycledItem.restockedBy,
+        restockedAt: recycledItem.restockedAt,
+      });
+
+      // Delete from recycled collection
+      const recycledRef = doc(db, `users/${selectedUser.uid}/recycledRestockHistory`, recycledItem.id);
+      await deleteDoc(recycledRef);
+
+      toast({
+        title: "Success",
+        description: `Restock history for "${recycledItem.productName}" restored successfully!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to restore restock history.",
+      });
+    }
+  };
+
+  const handleRecycleInventoryItem = async (inventoryItem: InventoryItem) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add to recycled collection
+      const recycledRef = collection(db, `users/${selectedUser.uid}/recycledInventory`);
+      await addDoc(recycledRef, {
+        ...inventoryItem,
+        recycledAt: new Date(),
+        recycledBy: adminUser.name || "Admin",
+      });
+
+      // Delete from original collection
+      const inventoryRef = doc(db, `users/${selectedUser.uid}/inventory`, inventoryItem.id);
+      await deleteDoc(inventoryRef);
+
+      toast({
+        title: "Success",
+        description: `Inventory item "${inventoryItem.productName}" moved to recycle bin!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to recycle inventory item.",
+      });
+    }
+  };
+
+  const handleRestoreInventoryItem = async (recycledItem: RecycledInventoryItem) => {
+    if (!selectedUser || !adminUser) return;
+
+    try {
+      // Add back to original collection
+      const inventoryRef = collection(db, `users/${selectedUser.uid}/inventory`);
+      await addDoc(inventoryRef, {
+        productName: recycledItem.productName,
+        quantity: recycledItem.quantity,
+        dateAdded: recycledItem.dateAdded,
+        status: recycledItem.status,
+      });
+
+      // Delete from recycled collection
+      const recycledRef = doc(db, `users/${selectedUser.uid}/recycledInventory`, recycledItem.id);
+      await deleteDoc(recycledRef);
+
+      toast({
+        title: "Success",
+        description: `Inventory item "${recycledItem.productName}" restored successfully!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to restore inventory item.",
       });
     }
   };
@@ -337,6 +572,15 @@ export function AdminInventoryManagement({
                 <History className="h-4 w-4 mr-2" />
                 {showRestockHistory ? "Hide" : "Show"} Restock History
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRecycleSection(!showRecycleSection)}
+                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {showRecycleSection ? "Hide" : "Show"} Recycle Bin
+              </Button>
             </div>
           </CardTitle>
           <CardDescription>
@@ -457,7 +701,32 @@ export function AdminInventoryManagement({
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
+                          <Button variant="outline" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Recycle Product</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to move "{item.productName}" to the recycle bin? 
+                              You can restore it later from the recycle section.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleRecycleInventoryItem(item)}
+                              className="bg-orange-600 hover:bg-orange-700"
+                            >
+                              Recycle
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
@@ -465,7 +734,8 @@ export function AdminInventoryManagement({
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete Product</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to delete "{item.productName}"? This action cannot be undone.
+                              Are you sure you want to permanently delete "{item.productName}"? 
+                              This action cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -572,6 +842,33 @@ export function AdminInventoryManagement({
                         <p className="text-sm text-muted-foreground mt-1">Remarks: {item.remarks}</p>
                       )}
                     </div>
+                    <div className="flex items-center gap-2">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Shipped Order</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete this shipped order for "{item.productName}"? 
+                              This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteShippedOrder(item)}
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -639,6 +936,33 @@ export function AdminInventoryManagement({
                           <span>Date: {formatDate(item.restockedAt)}</span>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Restock History</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete this restock history for "{item.productName}"? 
+                                This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteRestockHistory(item)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </div>
                   ))}
               </div>
@@ -651,6 +975,75 @@ export function AdminInventoryManagement({
                 </p>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recycle Section */}
+      {showRecycleSection && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-orange-600">Recycle Bin</CardTitle>
+            <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {/* Recycled Inventory Items */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4">Recycled Inventory Items ({recycledInventory.length})</h3>
+                {recycledInventoryLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                    ))}
+                  </div>
+                ) : recycledInventory.length > 0 ? (
+                  <div className="space-y-3">
+                    {recycledInventory
+                      .sort((a, b) => {
+                        const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
+                        const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
+                        return dateB.getTime() - dateA.getTime();
+                      })
+                      .map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
+                          <div className="flex-1">
+                            <h4 className="font-semibold">{item.productName}</h4>
+                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                              <span>Qty: {item.quantity}</span>
+                              <span>Added: {formatDate(item.dateAdded)}</span>
+                              <span className="text-orange-600">Recycled: {formatDate(item.recycledAt)}</span>
+                              <span>By: {item.recycledBy}</span>
+                            </div>
+                            <div className="mt-2">
+                              <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
+                                {item.status}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestoreInventoryItem(item)}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            >
+                              <RotateCcw className="h-4 w-4 mr-2" />
+                              Restore
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <RotateCcw className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No recycled inventory items</h3>
+                    <p className="text-muted-foreground">No inventory items have been recycled yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
