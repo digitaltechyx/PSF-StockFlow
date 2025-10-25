@@ -11,6 +11,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Check, ChevronsUpDown } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +26,7 @@ const formSchema = z.object({
   date: z.date({ required_error: "A shipping date is required." }),
   quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
   packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  shipTo: z.string().min(1, "Ship to destination is required."),
   remarks: z.string().optional(),
 });
 
@@ -31,12 +35,14 @@ const formSchema = z.object({
 export function ShipInventoryForm({ userId, inventory }: { userId: string; inventory: InventoryItem[] }) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       packOf: 1,
       quantity: 1,
+      shipTo: "",
       remarks: "",
     },
   });
@@ -72,6 +78,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
           shippedQty: values.quantity,
           remainingQty: newQuantity,
           packOf: values.packOf,
+          shipTo: values.shipTo,
           remarks: values.remarks,
         });
       });
@@ -83,6 +90,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
       form.reset();
       form.setValue('packOf', 1);
       form.setValue('quantity', 1);
+      form.setValue('shipTo', '');
 
     } catch (error: any) {
       toast({
@@ -110,20 +118,51 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Product Name</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a product to ship" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {inventory.filter(item => item.quantity > 0).map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.productName} (In Stock: {item.quantity})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={open}
+                          className="w-full justify-between"
+                        >
+                          {field.value
+                            ? inventory.find((item) => item.id === field.value)?.productName + 
+                              ` (In Stock: ${inventory.find((item) => item.id === field.value)?.quantity})`
+                            : "Select a product to ship..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search products..." />
+                        <CommandList>
+                          <CommandEmpty>No products found.</CommandEmpty>
+                          <CommandGroup>
+                            {inventory.filter(item => item.quantity > 0).map((item) => (
+                              <CommandItem
+                                key={item.id}
+                                value={item.productName}
+                                onSelect={() => {
+                                  field.onChange(item.id);
+                                  setOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${
+                                    field.value === item.id ? "opacity-100" : "opacity-0"
+                                  }`}
+                                />
+                                {item.productName} (In Stock: {item.quantity})
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   <FormMessage />
                 </FormItem>
               )}
@@ -135,6 +174,22 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
                 <FormItem className="flex flex-col">
                   <FormLabel>Shipping Date</FormLabel>
                   <DatePicker date={field.value} setDate={field.onChange} />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="shipTo"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ship To</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)" 
+                      {...field} 
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

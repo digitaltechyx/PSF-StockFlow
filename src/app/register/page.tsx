@@ -60,6 +60,7 @@ export default function RegisterPage() {
         name: values.fullName,
         email: values.email,
         phone: values.phone,
+        password: values.password,
         role: "user",
       });
 

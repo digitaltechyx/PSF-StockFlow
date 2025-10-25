@@ -20,7 +20,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Search, Filter, X } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Search, Filter, X, Eye } from "lucide-react";
 import { format } from "date-fns";
 
 function formatDate(date: ShippedItem["date"]) {
@@ -36,6 +37,20 @@ function formatDate(date: ShippedItem["date"]) {
 export function ShippedTable({ data, inventory }: { data: ShippedItem[], inventory: InventoryItem[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [selectedRemarks, setSelectedRemarks] = useState<string>("");
+  const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
+  const [selectedShipTo, setSelectedShipTo] = useState<string>("");
+  const [isShipToDialogOpen, setIsShipToDialogOpen] = useState(false);
+
+  const handleRemarksClick = (remarks: string) => {
+    setSelectedRemarks(remarks);
+    setIsRemarksDialogOpen(true);
+  };
+
+  const handleShipToClick = (shipTo: string) => {
+    setSelectedShipTo(shipTo);
+    setIsShipToDialogOpen(true);
+  };
 
   // Filtered shipped data
   const filteredData = useMemo(() => {
@@ -125,6 +140,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                 <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Date</TableHead>
                 <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Shipped</TableHead>
                 <TableHead className="text-xs sm:text-sm hidden md:table-cell">Pack</TableHead>
+                <TableHead className="text-xs sm:text-sm hidden md:table-cell">Ship To</TableHead>
                 <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Remarks</TableHead>
             </TableRow>
           </TableHeader>
@@ -141,10 +157,28 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                           <span>Shipped: {item.shippedQty} units</span>
                           <br />
                           <span>Pack: {item.packOf}</span>
+                          <br />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 text-left justify-start text-xs text-gray-500"
+                            onClick={() => handleShipToClick(item.shipTo || "")}
+                          >
+                            <span>Ship To: {item.shipTo}</span>
+                            <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                          </Button>
                           {item.remarks && (
                             <>
                               <br />
-                              <span>Remarks: {item.remarks}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-0 text-left justify-start text-xs text-gray-500"
+                                onClick={() => handleRemarksClick(item.remarks || "")}
+                              >
+                                <span>Remarks: {item.remarks}</span>
+                                <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -155,14 +189,37 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">{item.shippedQty}</TableCell>
                     <TableCell className="hidden md:table-cell">{item.packOf}</TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto p-1 text-left justify-start max-w-20 truncate"
+                        onClick={() => handleShipToClick(item.shipTo || "")}
+                      >
+                        <span className="truncate">{item.shipTo}</span>
+                        <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                      </Button>
+                    </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <span className="truncate max-w-20 block">{item.remarks || "-"}</span>
+                      {item.remarks ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-1 text-left justify-start max-w-20 truncate"
+                          onClick={() => handleRemarksClick(item.remarks || "")}
+                        >
+                          <span className="truncate">{item.remarks}</span>
+                          <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={6} className="text-center py-8">
                     <div className="text-xs sm:text-sm text-gray-500">
                       {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
                     </div>
@@ -173,6 +230,40 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
         </Table>
         </div>
       </CardContent>
+
+      {/* Remarks Dialog */}
+      <Dialog open={isRemarksDialogOpen} onOpenChange={setIsRemarksDialogOpen}>
+        <DialogContent className="max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Full Remarks</DialogTitle>
+            <DialogDescription>Complete remarks for this shipment</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 overflow-y-auto max-h-[60vh]">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                {selectedRemarks || "No remarks available"}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ship To Dialog */}
+      <Dialog open={isShipToDialogOpen} onOpenChange={setIsShipToDialogOpen}>
+        <DialogContent className="max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Ship To Details</DialogTitle>
+            <DialogDescription>Complete shipping address for this shipment</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 overflow-y-auto max-h-[60vh]">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                {selectedShipTo || "No shipping address available"}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

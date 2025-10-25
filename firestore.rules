@@ -64,6 +64,24 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
     // Allow authenticated users to create their own user document during registration
     match /users/{userId} {
       allow create: if request.auth != null && request.auth.uid == userId;

@@ -59,6 +59,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         name: values.name,
         email: values.email,
         phone: values.phone,
+        password: values.password,
         role: values.role,
         status: "pending",
         createdAt: new Date(),

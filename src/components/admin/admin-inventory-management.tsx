@@ -6,18 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { doc, updateDoc, deleteDoc, addDoc, collection } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, addDoc, collection, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw } from "lucide-react";
+import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar } from "lucide-react";
 import { format } from "date-fns";
-import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem } from "@/types";
+import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem, DeleteLog, EditLog } from "@/types";
 import { arrayToCSV, downloadCSV, formatDateForCSV, type InventoryCSVRow, type ShippedCSVRow } from "@/lib/csv-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -36,6 +39,20 @@ const editProductSchema = z.object({
 
 const restockSchema = z.object({
   quantity: z.number().min(1, "Quantity must be at least 1"),
+  restockDate: z.date({ required_error: "A restock date is required." }),
+});
+
+const recycleSchema = z.object({
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+  remarks: z.string().optional(),
+});
+
+const deleteSchema = z.object({
+  reason: z.string().min(1, "Reason for deletion is required."),
+});
+
+const editLogSchema = z.object({
+  reason: z.string().min(1, "Reason for editing is required."),
 });
 
 export function AdminInventoryManagement({
@@ -46,11 +63,31 @@ export function AdminInventoryManagement({
 }: AdminInventoryManagementProps) {
   const { toast } = useToast();
   const { userProfile: adminUser } = useAuth();
+  
+  // Debug authentication state
+  console.log("=== ADMIN INVENTORY MANAGEMENT DEBUG ===");
+  console.log("Admin user:", adminUser);
+  console.log("Admin user role:", adminUser?.role);
+  console.log("Admin user UID:", adminUser?.uid);
+  console.log("Selected user:", selectedUser);
+  console.log("Inventory:", inventory);
+  console.log("Loading:", loading);
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null);
   const [restockingProduct, setRestockingProduct] = useState<InventoryItem | null>(null);
+  const [recyclingProduct, setRecyclingProduct] = useState<InventoryItem | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState<InventoryItem | null>(null);
+  const [editingProductWithLog, setEditingProductWithLog] = useState<InventoryItem | null>(null);
   const [showShipped, setShowShipped] = useState(false);
   const [showRestockHistory, setShowRestockHistory] = useState(false);
   const [showRecycleSection, setShowRecycleSection] = useState(false);
+  const [selectedRemarks, setSelectedRemarks] = useState<string>("");
+  const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
+  const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
+  const [editLogsSearch, setEditLogsSearch] = useState("");
+  const [recycleSearch, setRecycleSearch] = useState("");
+  const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
+  const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
+  const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
 
   // Fetch restock history
   const { data: restockHistory, loading: restockHistoryLoading } = useCollection<RestockHistory>(
@@ -69,11 +106,24 @@ export function AdminInventoryManagement({
   const { data: recycledInventory, loading: recycledInventoryLoading } = useCollection<RecycledInventoryItem>(
     selectedUser ? `users/${selectedUser.uid}/recycledInventory` : ""
   );
+
+  // Fetch delete logs
+  const { data: deleteLogs, loading: deleteLogsLoading } = useCollection<DeleteLog>(
+    selectedUser ? `users/${selectedUser.uid}/deleteLogs` : ""
+  );
+
+  // Fetch edit logs
+  const { data: editLogs, loading: editLogsLoading } = useCollection<EditLog>(
+    selectedUser ? `users/${selectedUser.uid}/editLogs` : ""
+  );
   
   // Search and filter states
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>("all");
   const [inventoryDateFilter, setInventoryDateFilter] = useState<string>("all");
+  const [inventorySortBy, setInventorySortBy] = useState<string>("name-asc");
+  const [inventoryFromDate, setInventoryFromDate] = useState<Date | undefined>();
+  const [inventoryToDate, setInventoryToDate] = useState<Date | undefined>();
   const [shippedSearch, setShippedSearch] = useState("");
   const [shippedDateFilter, setShippedDateFilter] = useState<string>("all");
   const [restockDateFilter, setRestockDateFilter] = useState<string>("all");
@@ -90,6 +140,29 @@ export function AdminInventoryManagement({
     resolver: zodResolver(restockSchema),
     defaultValues: {
       quantity: 1,
+      restockDate: new Date(),
+    },
+  });
+
+  const recycleForm = useForm<z.infer<typeof recycleSchema>>({
+    resolver: zodResolver(recycleSchema),
+    defaultValues: {
+      quantity: 1,
+      remarks: "",
+    },
+  });
+
+  const deleteForm = useForm<z.infer<typeof deleteSchema>>({
+    resolver: zodResolver(deleteSchema),
+    defaultValues: {
+      reason: "",
+    },
+  });
+
+  const editLogForm = useForm<z.infer<typeof editLogSchema>>({
+    resolver: zodResolver(editLogSchema),
+    defaultValues: {
+      reason: "",
     },
   });
 
@@ -102,6 +175,28 @@ export function AdminInventoryManagement({
   const handleRestockProduct = (product: InventoryItem) => {
     setRestockingProduct(product);
     restockForm.setValue("quantity", 1);
+    restockForm.setValue("restockDate", new Date());
+  };
+
+  const handleRecycleProduct = (product: InventoryItem) => {
+    setRecyclingProduct(product);
+    recycleForm.setValue("quantity", 1);
+    recycleForm.setValue("remarks", "");
+  };
+
+  const handleDeleteProduct = (product: InventoryItem) => {
+    setDeletingProduct(product);
+    deleteForm.setValue("reason", "");
+  };
+
+  const handleEditProductWithLog = (product: InventoryItem) => {
+    setEditingProductWithLog(product);
+    editLogForm.setValue("reason", "");
+  };
+
+  const handleRemarksClick = (remarks: string) => {
+    setSelectedRemarks(remarks);
+    setIsRemarksDialogOpen(true);
   };
 
   const onEditSubmit = async (values: z.infer<typeof editProductSchema>) => {
@@ -143,7 +238,7 @@ export function AdminInventoryManagement({
         status: "In Stock",
       });
 
-      // Record restock history
+      // Record restock history with selected date
       const restockHistoryRef = collection(db, `users/${selectedUser.uid}/restockHistory`);
       await addDoc(restockHistoryRef, {
         productName: restockingProduct.productName,
@@ -151,7 +246,7 @@ export function AdminInventoryManagement({
         restockedQuantity: values.quantity,
         newQuantity: newQuantity,
         restockedBy: adminUser.name || "Admin",
-        restockedAt: new Date(),
+        restockedAt: values.restockDate, // Use selected date instead of new Date()
       });
 
       toast({
@@ -169,22 +264,116 @@ export function AdminInventoryManagement({
     }
   };
 
-  const handleDeleteProduct = async (product: InventoryItem) => {
-    if (!selectedUser) return;
+  const onRecycleSubmit = async (values: z.infer<typeof recycleSchema>) => {
+    if (!recyclingProduct) return;
 
     try {
-      const productRef = doc(db, `users/${selectedUser.uid}/inventory`, product.id);
+      console.log("Recycle form submitted with values:", values);
+      await handleRecycleInventoryItem(recyclingProduct, values.quantity, values.remarks);
+      setRecyclingProduct(null);
+      recycleForm.reset();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to recycle product.",
+      });
+    }
+  };
+
+  const onDeleteSubmit = async (values: z.infer<typeof deleteSchema>) => {
+    if (!deletingProduct || !selectedUser || !adminUser) return;
+
+    try {
+      // Log the deletion
+      const deleteLogRef = collection(db, `users/${selectedUser.uid}/deleteLogs`);
+      await addDoc(deleteLogRef, {
+        productName: deletingProduct.productName,
+        quantity: deletingProduct.quantity,
+        dateAdded: deletingProduct.dateAdded,
+        status: deletingProduct.status,
+        deletedAt: new Date(),
+        deletedBy: adminUser.name || "Admin",
+        reason: values.reason,
+      });
+
+      // Delete the product
+      const productRef = doc(db, `users/${selectedUser.uid}/inventory`, deletingProduct.id);
       await deleteDoc(productRef);
 
       toast({
         title: "Success",
-        description: "Product deleted successfully!",
+        description: `Product "${deletingProduct.productName}" deleted successfully!`,
       });
+      setDeletingProduct(null);
+      deleteForm.reset();
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: error.message || "Failed to delete product.",
+      });
+    }
+  };
+
+  const onEditWithLogSubmit = async (values: z.infer<typeof editLogSchema>) => {
+    if (!editingProductWithLog || !selectedUser || !adminUser) return;
+
+    try {
+      // Get current product data
+      const productRef = doc(db, `users/${selectedUser.uid}/inventory`, editingProductWithLog.id);
+      const productDoc = await getDoc(productRef);
+      
+      if (!productDoc.exists()) {
+        throw new Error("Product not found");
+      }
+
+      const currentData = productDoc.data() as Omit<InventoryItem, 'id'>;
+      const previousProductName = currentData.productName;
+      const previousQuantity = currentData.quantity;
+      const previousStatus = currentData.status;
+
+      // Update the product
+      const newStatus = editForm.getValues("quantity") > 0 ? "In Stock" : "Out of Stock";
+      await updateDoc(productRef, {
+        productName: editForm.getValues("productName"),
+        quantity: editForm.getValues("quantity"),
+        status: newStatus,
+      });
+
+      // Log the edit
+      const editLogRef = collection(db, `users/${selectedUser.uid}/editLogs`);
+      const editLogData: any = {
+        productName: editForm.getValues("productName"),
+        previousQuantity: previousQuantity,
+        newQuantity: editForm.getValues("quantity"),
+        previousStatus: previousStatus,
+        newStatus: newStatus,
+        dateAdded: editingProductWithLog.dateAdded,
+        editedAt: new Date(),
+        editedBy: adminUser.name || "Admin",
+        reason: values.reason,
+      };
+
+      // Only include previousProductName if it actually changed
+      if (previousProductName !== editForm.getValues("productName")) {
+        editLogData.previousProductName = previousProductName;
+      }
+
+      await addDoc(editLogRef, editLogData);
+
+      toast({
+        title: "Success",
+        description: `Product "${editForm.getValues("productName")}" updated successfully!`,
+      });
+      setEditingProductWithLog(null);
+      editLogForm.reset();
+      editForm.reset();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update product.",
       });
     }
   };
@@ -351,26 +540,57 @@ export function AdminInventoryManagement({
     }
   };
 
-  const handleRecycleInventoryItem = async (inventoryItem: InventoryItem) => {
+  const handleRecycleInventoryItem = async (inventoryItem: InventoryItem, recycleQuantity: number, remarks?: string) => {
     if (!selectedUser || !adminUser) return;
 
     try {
-      // Add to recycled collection
-      const recycledRef = collection(db, `users/${selectedUser.uid}/recycledInventory`);
-      await addDoc(recycledRef, {
-        ...inventoryItem,
-        recycledAt: new Date(),
-        recycledBy: adminUser.name || "Admin",
-      });
+      if (recycleQuantity >= inventoryItem.quantity) {
+        // Recycle entire item
+        const recycledRef = collection(db, `users/${selectedUser.uid}/recycledInventory`);
+        await addDoc(recycledRef, {
+          ...inventoryItem,
+          recycledAt: new Date(),
+          recycledBy: adminUser.name || "Admin",
+          remarks: remarks || "",
+        });
 
-      // Delete from original collection
-      const inventoryRef = doc(db, `users/${selectedUser.uid}/inventory`, inventoryItem.id);
-      await deleteDoc(inventoryRef);
+        // Delete from original collection
+        const inventoryRef = doc(db, `users/${selectedUser.uid}/inventory`, inventoryItem.id);
+        await deleteDoc(inventoryRef);
 
-      toast({
-        title: "Success",
-        description: `Inventory item "${inventoryItem.productName}" moved to recycle bin!`,
-      });
+        toast({
+          title: "Success",
+          description: `Inventory item "${inventoryItem.productName}" (${recycleQuantity} units) moved to recycle bin!`,
+        });
+      } else {
+        // Partial recycle - update original item and add to recycled
+        const newQuantity = inventoryItem.quantity - recycleQuantity;
+        const newStatus = newQuantity > 0 ? "In Stock" : "Out of Stock";
+
+        // Update original inventory
+        const inventoryRef = doc(db, `users/${selectedUser.uid}/inventory`, inventoryItem.id);
+        await updateDoc(inventoryRef, {
+          quantity: newQuantity,
+          status: newStatus,
+        });
+
+        // Add partial quantity to recycled collection
+        const recycledRef = collection(db, `users/${selectedUser.uid}/recycledInventory`);
+        await addDoc(recycledRef, {
+          productName: inventoryItem.productName,
+          quantity: recycleQuantity,
+          dateAdded: inventoryItem.dateAdded,
+          status: inventoryItem.status,
+          recycledAt: new Date(),
+          recycledBy: adminUser.name || "Admin",
+          remarks: remarks || "",
+        });
+
+        toast({
+          title: "Success",
+          description: `${recycleQuantity} units of "${inventoryItem.productName}" moved to recycle bin! ${newQuantity} units remaining.`,
+        });
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -380,35 +600,6 @@ export function AdminInventoryManagement({
     }
   };
 
-  const handleRestoreInventoryItem = async (recycledItem: RecycledInventoryItem) => {
-    if (!selectedUser || !adminUser) return;
-
-    try {
-      // Add back to original collection
-      const inventoryRef = collection(db, `users/${selectedUser.uid}/inventory`);
-      await addDoc(inventoryRef, {
-        productName: recycledItem.productName,
-        quantity: recycledItem.quantity,
-        dateAdded: recycledItem.dateAdded,
-        status: recycledItem.status,
-      });
-
-      // Delete from recycled collection
-      const recycledRef = doc(db, `users/${selectedUser.uid}/recycledInventory`, recycledItem.id);
-      await deleteDoc(recycledRef);
-
-      toast({
-        title: "Success",
-        description: `Inventory item "${recycledItem.productName}" restored successfully!`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to restore inventory item.",
-      });
-    }
-  };
 
   const formatDate = (date: any) => {
     if (!date) return "N/A";
@@ -420,6 +611,56 @@ export function AdminInventoryManagement({
   const matchesDateFilter = (date: any, filter: string) => {
     if (filter === "all") return true;
     
+    const now = new Date();
+    const itemDate = typeof date === 'string' ? new Date(date) : new Date(date.seconds * 1000);
+    
+    switch (filter) {
+      case "today":
+        return itemDate.toDateString() === now.toDateString();
+      case "week":
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return itemDate >= weekAgo;
+      case "month":
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return itemDate >= monthAgo;
+      case "year":
+        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        return itemDate >= yearAgo;
+      default:
+        return true;
+    }
+  };
+
+  // Filtered data
+  const filteredDeleteLogs = deleteLogs.filter((item) => {
+    const matchesSearch = item.productName.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
+                          item.reason.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
+                          item.deletedBy.toLowerCase().includes(deleteLogsSearch.toLowerCase());
+    const matchesDate = matchesDateFilter(item.deletedAt, deleteLogsDateFilter);
+    return matchesSearch && matchesDate;
+  });
+
+  const filteredEditLogs = editLogs.filter((item) => {
+    const matchesSearch = item.productName.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
+                          item.reason.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
+                          item.editedBy.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
+                          (item.previousProductName && item.previousProductName.toLowerCase().includes(editLogsSearch.toLowerCase()));
+    const matchesDate = matchesDateFilter(item.editedAt, editLogsDateFilter);
+    return matchesSearch && matchesDate;
+  });
+
+  const filteredRecycledInventory = recycledInventory.filter((item) => {
+    const matchesSearch = item.productName.toLowerCase().includes(recycleSearch.toLowerCase()) ||
+                          (item.remarks && item.remarks.toLowerCase().includes(recycleSearch.toLowerCase())) ||
+                          item.recycledBy.toLowerCase().includes(recycleSearch.toLowerCase());
+    const matchesDate = matchesDateFilter(item.recycledAt, recycleDateFilter);
+    return matchesSearch && matchesDate;
+  });
+
+  // Helper function for date picker filtering
+  const matchesDatePickerFilter = (date: any, fromDate?: Date, toDate?: Date) => {
+    if (!fromDate && !toDate) return true;
+    
     let itemDate: Date;
     if (typeof date === 'string') {
       itemDate = new Date(date);
@@ -429,22 +670,24 @@ export function AdminInventoryManagement({
       return false;
     }
     
-    const now = new Date();
-    const daysDiff = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Set time to start/end of day for accurate comparison
+    const itemDateOnly = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
     
-    switch (filter) {
-      case "today":
-        return daysDiff === 0;
-      case "week":
-        return daysDiff <= 7;
-      case "month":
-        return daysDiff <= 30;
-      case "year":
-        return daysDiff <= 365;
-      default:
-        return true;
+    if (fromDate && toDate) {
+      const fromDateOnly = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+      const toDateOnly = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+      return itemDateOnly >= fromDateOnly && itemDateOnly <= toDateOnly;
+    } else if (fromDate) {
+      const fromDateOnly = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+      return itemDateOnly >= fromDateOnly;
+    } else if (toDate) {
+      const toDateOnly = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+      return itemDateOnly <= toDateOnly;
     }
+    
+    return true;
   };
+
 
   // Download functions
   const handleDownloadInventory = () => {
@@ -506,13 +749,31 @@ export function AdminInventoryManagement({
 
   // Filtered inventory data
   const filteredInventory = useMemo(() => {
-    return inventory.filter((item) => {
+    let filtered = inventory.filter((item) => {
       const matchesSearch = item.productName.toLowerCase().includes(inventorySearch.toLowerCase());
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
       const matchesDate = matchesDateFilter(item.dateAdded, inventoryDateFilter);
-      return matchesSearch && matchesStatus && matchesDate;
+      const matchesDatePicker = matchesDatePickerFilter(item.dateAdded, inventoryFromDate, inventoryToDate);
+      return matchesSearch && matchesStatus && matchesDate && matchesDatePicker;
     });
-  }, [inventory, inventorySearch, inventoryStatusFilter, inventoryDateFilter]);
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (inventorySortBy) {
+        case "name-asc":
+          return a.productName.localeCompare(b.productName);
+        case "name-desc":
+          return b.productName.localeCompare(a.productName);
+        case "date-asc":
+          return new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
+        case "date-desc":
+        default:
+          return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime();
+      }
+    });
+
+    return filtered;
+  }, [inventory, inventorySearch, inventoryStatusFilter, inventoryDateFilter, inventoryFromDate, inventoryToDate, inventorySortBy]);
 
   // Filtered shipped data
   const filteredShipped = useMemo(() => {
@@ -549,7 +810,8 @@ export function AdminInventoryManagement({
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* User Info Header */}
       <Card>
         <CardHeader>
@@ -611,8 +873,8 @@ export function AdminInventoryManagement({
         </CardHeader>
         <CardContent>
           {/* Search and Filter Controls */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="sm:col-span-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -661,6 +923,29 @@ export function AdminInventoryManagement({
                 </SelectContent>
               </Select>
             </div>
+            <div className="sm:w-48">
+              <DateRangePicker
+                fromDate={inventoryFromDate}
+                toDate={inventoryToDate}
+                setFromDate={setInventoryFromDate}
+                setToDate={setInventoryToDate}
+                className="w-full"
+              />
+            </div>
+            <div className="sm:w-48">
+              <Select value={inventorySortBy} onValueChange={setInventorySortBy}>
+                <SelectTrigger>
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name-asc">Sort by Name (A-Z)</SelectItem>
+                  <SelectItem value="name-desc">Sort by Name (Z-A)</SelectItem>
+                  <SelectItem value="date-asc">Sort by Date (Oldest)</SelectItem>
+                  <SelectItem value="date-desc">Sort by Date (Newest)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {loading ? (
             <div className="space-y-4">
@@ -684,71 +969,51 @@ export function AdminInventoryManagement({
                       {item.status}
                     </Badge>
                     <div className="flex gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditProduct(item)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRestockProduct(item)}
-                        className="text-green-600 hover:text-green-700"
-                      >
-                        <Package className="h-4 w-4" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
-                            <RotateCcw className="h-4 w-4" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditProductWithLog(item)}
+                          >
+                            <Edit className="h-4 w-4" />
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Recycle Product</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to move "{item.productName}" to the recycle bin? 
-                              You can restore it later from the recycle section.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleRecycleInventoryItem(item)}
-                              className="bg-orange-600 hover:bg-orange-700"
-                            >
-                              Recycle
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                            <Trash2 className="h-4 w-4" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Edit product details</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestockProduct(item)}
+                            className="text-green-600 hover:text-green-700"
+                          >
+                            <Package className="h-4 w-4" />
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Product</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to permanently delete "{item.productName}"? 
-                              This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleDeleteProduct(item)}
-                              className="bg-red-600 hover:bg-red-700"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Restock product</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleRecycleProduct(item)}
+                        className="text-orange-600 hover:text-orange-700"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleDeleteProduct(item)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -836,10 +1101,19 @@ export function AdminInventoryManagement({
                         <span>Shipped: {item.shippedQty} units</span>
                         <span>Remaining: {item.remainingQty}</span>
                         <span>Pack: {item.packOf}</span>
+                        <span>Ship To: {item.shipTo}</span>
                         <span>Date: {formatDate(item.date)}</span>
                       </div>
                       {item.remarks && (
-                        <p className="text-sm text-muted-foreground mt-1">Remarks: {item.remarks}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-0 text-left justify-start text-sm text-muted-foreground mt-1"
+                          onClick={() => handleRemarksClick(item.remarks || "")}
+                        >
+                          <span>Remarks: {item.remarks}</span>
+                          <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                        </Button>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -983,23 +1257,65 @@ export function AdminInventoryManagement({
       {showRecycleSection && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-orange-600">Recycle Bin</CardTitle>
-            <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-orange-600">Recycled Inventory ({filteredRecycledInventory.length})</CardTitle>
+                <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
+              </div>
+              <div className="sm:w-48">
+                <Select value={recycleDateFilter} onValueChange={setRecycleDateFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
+            {/* Search Controls */}
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by product name, reason, or admin..."
+                    value={recycleSearch}
+                    onChange={(e) => setRecycleSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                  {recycleSearch && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                      onClick={() => setRecycleSearch("")}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="space-y-6">
               {/* Recycled Inventory Items */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">Recycled Inventory Items ({recycledInventory.length})</h3>
+                <h3 className="text-lg font-semibold mb-4">Recycled Inventory Items ({filteredRecycledInventory.length})</h3>
                 {recycledInventoryLoading ? (
                   <div className="space-y-4">
                     {[1, 2].map((i) => (
                       <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
                     ))}
                   </div>
-                ) : recycledInventory.length > 0 ? (
+                ) : filteredRecycledInventory.length > 0 ? (
                   <div className="space-y-3">
-                    {recycledInventory
+                    {filteredRecycledInventory
                       .sort((a, b) => {
                         const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
                         const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
@@ -1015,22 +1331,17 @@ export function AdminInventoryManagement({
                               <span className="text-orange-600">Recycled: {formatDate(item.recycledAt)}</span>
                               <span>By: {item.recycledBy}</span>
                             </div>
+                            {item.remarks && (
+                              <div className="mt-2 text-sm">
+                                <span className="text-muted-foreground">Reason: </span>
+                                <span className="text-orange-700 font-medium">{item.remarks}</span>
+                              </div>
+                            )}
                             <div className="mt-2">
                               <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
                                 {item.status}
                               </Badge>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRestoreInventoryItem(item)}
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                            >
-                              <RotateCcw className="h-4 w-4 mr-2" />
-                              Restore
-                            </Button>
                           </div>
                         </div>
                       ))}
@@ -1039,7 +1350,9 @@ export function AdminInventoryManagement({
                   <div className="text-center py-8">
                     <RotateCcw className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No recycled inventory items</h3>
-                    <p className="text-muted-foreground">No inventory items have been recycled yet.</p>
+                    <p className="text-muted-foreground">
+                      {recycledInventory.length === 0 ? "No inventory items have been recycled yet." : "No recycled inventory items match your search or date filter."}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1047,6 +1360,208 @@ export function AdminInventoryManagement({
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Logs Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-red-600">Delete Logs ({filteredDeleteLogs.length})</CardTitle>
+              <CardDescription>View permanently deleted products for {selectedUser.name}</CardDescription>
+            </div>
+            <div className="sm:w-48">
+              <Select value={deleteLogsDateFilter} onValueChange={setDeleteLogsDateFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by date" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Search Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by product name, reason, or admin..."
+                  value={deleteLogsSearch}
+                  onChange={(e) => setDeleteLogsSearch(e.target.value)}
+                  className="pl-10"
+                />
+                {deleteLogsSearch && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                    onClick={() => setDeleteLogsSearch("")}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+          {deleteLogsLoading ? (
+            <div className="space-y-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+              ))}
+            </div>
+          ) : filteredDeleteLogs.length > 0 ? (
+            <div className="space-y-3">
+              {filteredDeleteLogs
+                .sort((a, b) => {
+                  const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
+                  const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
+                  return dateB.getTime() - dateA.getTime();
+                })
+                .map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-red-800">{item.productName}</h4>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                        <span>Qty: {item.quantity}</span>
+                        <span>Added: {formatDate(item.dateAdded)}</span>
+                        <span className="text-red-600">Deleted: {formatDate(item.deletedAt)}</span>
+                        <span>By: {item.deletedBy}</span>
+                      </div>
+                      <div className="mt-2 text-sm">
+                        <span className="text-muted-foreground">Reason: </span>
+                        <span className="text-red-700 font-medium">{item.reason}</span>
+                      </div>
+                      <div className="mt-2">
+                        <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
+                          {item.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Trash2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No deleted products</h3>
+              <p className="text-muted-foreground">
+                {deleteLogs.length === 0 ? "No products have been permanently deleted yet." : "No deleted products match your search or date filter."}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Edit Logs Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-blue-600">Edit Logs ({filteredEditLogs.length})</CardTitle>
+              <CardDescription>View product edit history for {selectedUser.name}</CardDescription>
+            </div>
+            <div className="sm:w-48">
+              <Select value={editLogsDateFilter} onValueChange={setEditLogsDateFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by date" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Search Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by product name, reason, or admin..."
+                  value={editLogsSearch}
+                  onChange={(e) => setEditLogsSearch(e.target.value)}
+                  className="pl-10"
+                />
+                {editLogsSearch && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                    onClick={() => setEditLogsSearch("")}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+          {editLogsLoading ? (
+            <div className="space-y-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+              ))}
+            </div>
+          ) : filteredEditLogs.length > 0 ? (
+            <div className="space-y-3">
+              {filteredEditLogs
+                .sort((a, b) => {
+                  const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
+                  const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
+                  return dateB.getTime() - dateA.getTime();
+                })
+                .map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-blue-800">{item.productName}</h4>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                        <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
+                        <span>Status: {item.previousStatus} → {item.newStatus}</span>
+                        <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
+                        <span>By: {item.editedBy}</span>
+                      </div>
+                      {item.previousProductName && item.previousProductName !== item.productName && (
+                        <div className="mt-1 text-sm">
+                          <span className="text-muted-foreground">Name changed from: </span>
+                          <span className="text-blue-700 font-medium">{item.previousProductName}</span>
+                        </div>
+                      )}
+                      <div className="mt-2 text-sm">
+                        <span className="text-muted-foreground">Reason: </span>
+                        <span className="text-blue-700 font-medium">{item.reason}</span>
+                      </div>
+                      <div className="mt-2">
+                        <Badge variant={item.newStatus === "In Stock" ? "default" : "destructive"}>
+                          {item.newStatus}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Edit className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No product edits</h3>
+              <p className="text-muted-foreground">
+                {editLogs.length === 0 ? "No products have been edited yet." : "No product edits match your search or date filter."}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Edit Product Dialog */}
       <Dialog open={!!editingProduct} onOpenChange={() => setEditingProduct(null)}>
@@ -1134,6 +1649,17 @@ export function AdminInventoryManagement({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={restockForm.control}
+                name="restockDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Restock Date</FormLabel>
+                    <DatePicker date={field.value} setDate={field.onChange} />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <div className="flex gap-2">
                 <Button type="submit" className="flex-1">Restock Product</Button>
                 <Button type="button" variant="outline" onClick={() => setRestockingProduct(null)}>
@@ -1144,6 +1670,283 @@ export function AdminInventoryManagement({
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Recycle Product Dialog */}
+      <Dialog open={!!recyclingProduct} onOpenChange={() => setRecyclingProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Recycle Product</DialogTitle>
+            <DialogDescription>Move inventory to recycle bin for "{recyclingProduct?.productName}"</DialogDescription>
+          </DialogHeader>
+          <Form {...recycleForm}>
+            <form onSubmit={recycleForm.handleSubmit(onRecycleSubmit)} className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <p className="text-sm">
+                  <strong>Current Quantity:</strong> {recyclingProduct?.quantity}
+                </p>
+                <p className="text-sm">
+                  <strong>Product:</strong> {recyclingProduct?.productName}
+                </p>
+              </div>
+              <FormField
+                control={recycleForm.control}
+                name="quantity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quantity to Recycle</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        placeholder="Enter quantity to recycle" 
+                        min="1"
+                        max={recyclingProduct?.quantity || 1}
+                        value={field.value || 1}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground">
+                      Maximum: {recyclingProduct?.quantity} units
+                    </p>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={recycleForm.control}
+                name="remarks"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for Recycling</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Enter reason for recycling (optional)" 
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground">
+                      Optional: Explain why this item is being recycled
+                    </p>
+                  </FormItem>
+                )}
+              />
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-medium"
+                  disabled={false}
+                  onClick={() => console.log("Done button clicked!")}
+                >
+                  Done
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setRecyclingProduct(null)}
+                  className="px-6"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Product Dialog */}
+      <Dialog open={!!deletingProduct} onOpenChange={() => setDeletingProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Product</DialogTitle>
+            <DialogDescription>Permanently delete "{deletingProduct?.productName}" from inventory</DialogDescription>
+          </DialogHeader>
+          <Form {...deleteForm}>
+            <form onSubmit={deleteForm.handleSubmit(onDeleteSubmit)} className="space-y-4">
+              <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
+                <p className="text-sm text-red-800">
+                  <strong>⚠️ Warning:</strong> This action will permanently delete the product from inventory.
+                </p>
+                <div className="mt-2 text-sm">
+                  <p><strong>Product:</strong> {deletingProduct?.productName}</p>
+                  <p><strong>Quantity:</strong> {deletingProduct?.quantity} units</p>
+                  <p><strong>Status:</strong> {deletingProduct?.status}</p>
+                </div>
+              </div>
+              <FormField
+                control={deleteForm.control}
+                name="reason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for Deletion *</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Enter reason for deleting this product" 
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground">
+                      Required: Explain why this product is being deleted
+                    </p>
+                  </FormItem>
+                )}
+              />
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium"
+                >
+                  Delete Product
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setDeletingProduct(null)}
+                  className="px-6"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Product with Log Dialog */}
+      <Dialog open={!!editingProductWithLog} onOpenChange={() => setEditingProductWithLog(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Product with Log</DialogTitle>
+            <DialogDescription>Update product details and provide reason for changes</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            {/* Product Info Display */}
+            <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>📝 Editing:</strong> {editingProductWithLog?.productName}
+              </p>
+              <div className="mt-2 text-sm">
+                <p><strong>Current Quantity:</strong> {editingProductWithLog?.quantity} units</p>
+                <p><strong>Current Status:</strong> {editingProductWithLog?.status}</p>
+                <p><strong>Date Added:</strong> {formatDate(editingProductWithLog?.dateAdded)}</p>
+              </div>
+            </div>
+
+            {/* Edit Form */}
+            <Form {...editForm}>
+              <form onSubmit={editForm.handleSubmit((editValues) => {
+                // Handle edit form submission
+                editLogForm.handleSubmit(onEditWithLogSubmit)();
+              })} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField
+                    control={editForm.control}
+                    name="productName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Product Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter product name" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantity</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            placeholder="Enter quantity" 
+                            {...field}
+                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Reason for Edit */}
+                <FormField
+                  control={editLogForm.control}
+                  name="reason"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reason for Edit *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="Enter reason for editing this product" 
+                          value={field.value || ""}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                      <p className="text-xs text-muted-foreground">
+                        Required: Explain why this product is being edited
+                      </p>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex gap-2">
+                  <Button 
+                    type="submit" 
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                  >
+                    Update Product
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setEditingProductWithLog(null)}
+                    className="px-6"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remarks Dialog */}
+      <Dialog open={isRemarksDialogOpen} onOpenChange={setIsRemarksDialogOpen}>
+        <DialogContent className="max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Full Remarks</DialogTitle>
+            <DialogDescription>Complete remarks for this shipment</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 overflow-y-auto max-h-[60vh]">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                {selectedRemarks || "No remarks available"}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+    </TooltipProvider>
   );
 }

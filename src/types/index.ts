@@ -8,10 +8,12 @@ export interface UserProfile {
   email: string | null;
   name: string | null;
   phone: string | null;
+  password?: string | null;
   role: UserRole;
   status?: UserStatus; // Optional for backward compatibility
   createdAt?: Date;
   approvedAt?: Date;
+  deletedAt?: Date;
 }
 
 export interface InventoryItem {
@@ -36,6 +38,7 @@ export interface ShippedItem {
   // This is the remaining quantity in the main inventory after this shipment
   remainingQty: number; 
   packOf: number;
+  shipTo: string;
   remarks?: string;
 }
 
@@ -62,6 +65,7 @@ export interface RecycledShippedItem {
   shippedQty: number;
   remainingQty: number;
   packOf: number;
+  shipTo: string;
   remarks?: string;
   recycledAt: {
     seconds: number;
@@ -102,6 +106,44 @@ export interface RecycledInventoryItem {
     nanoseconds: number;
   } | string;
   recycledBy: string; // Admin name who recycled
+  remarks?: string; // Reason for recycling
+}
+
+export interface DeleteLog {
+  id: string;
+  productName: string;
+  quantity: number;
+  dateAdded: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  status: 'In Stock' | 'Out of Stock';
+  deletedAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  deletedBy: string; // Admin name who deleted
+  reason: string; // Reason for deletion
+}
+
+export interface EditLog {
+  id: string;
+  productName: string;
+  previousProductName?: string; // In case product name was changed
+  previousQuantity: number;
+  newQuantity: number;
+  previousStatus: 'In Stock' | 'Out of Stock';
+  newStatus: 'In Stock' | 'Out of Stock';
+  dateAdded: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  editedAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  editedBy: string; // Admin name who edited
+  reason: string; // Reason for editing
 }
 
 export interface AuthContextType {
