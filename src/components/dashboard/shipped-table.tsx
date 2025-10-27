@@ -37,6 +37,8 @@ function formatDate(date: ShippedItem["date"]) {
 export function ShippedTable({ data, inventory }: { data: ShippedItem[], inventory: InventoryItem[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [selectedRemarks, setSelectedRemarks] = useState<string>("");
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
   const [selectedShipTo, setSelectedShipTo] = useState<string>("");
@@ -52,14 +54,16 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
     setIsShipToDialogOpen(true);
   };
 
-  // Filtered shipped data
+  // Filtered and sorted shipped data (most recent first)
   const filteredData = useMemo(() => {
-    return data.filter((item) => {
+    const filtered = data.filter((item) => {
       const matchesSearch = item.productName.toLowerCase().includes(searchTerm.toLowerCase());
       
       let matchesDate = true;
       if (dateFilter !== "all") {
-        const itemDate = new Date(item.date.seconds * 1000);
+        const itemDate = typeof item.date === 'string' 
+          ? new Date(item.date) 
+          : new Date(item.date.seconds * 1000);
         const now = new Date();
         const daysDiff = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 60 * 60 * 24));
         
@@ -81,7 +85,25 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
       
       return matchesSearch && matchesDate;
     });
+
+    // Sort by date (most recent first)
+    return filtered.sort((a, b) => {
+      const dateA = typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000);
+      const dateB = typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    });
   }, [data, searchTerm, dateFilter]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedData = filteredData.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [searchTerm, dateFilter]);
 
   return (
     <Card className="w-full">
@@ -116,7 +138,10 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
             </div>
           </div>
           <div className="sm:w-48">
-            <Select value={dateFilter} onValueChange={setDateFilter}>
+            <Select value={dateFilter} onValueChange={(value) => {
+              setDateFilter(value);
+              setCurrentPage(1);
+            }}>
               <SelectTrigger>
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Filter by date" />
@@ -146,7 +171,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
           </TableHeader>
           <TableBody>
               {filteredData.length > 0 ? (
-                filteredData.map((item) => (
+                paginatedData.map((item) => (
                   <TableRow key={item.id} className="text-xs sm:text-sm">
                     <TableCell className="font-medium max-w-32 sm:max-w-none truncate">
                       <div className="flex flex-col sm:block">
@@ -229,6 +254,36 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
           </TableBody>
         </Table>
         </div>
+
+        {/* Pagination Controls */}
+        {filteredData.length > itemsPerPage && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t px-6">
+            <div className="text-sm text-muted-foreground">
+              Showing {startIndex + 1} to {Math.min(endIndex, filteredData.length)} of {filteredData.length} items
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
 
       {/* Remarks Dialog */}

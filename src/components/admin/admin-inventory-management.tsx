@@ -88,6 +88,15 @@ export function AdminInventoryManagement({
   const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
   const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
   const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
+  
+  // Pagination states
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [shippedPage, setShippedPage] = useState(1);
+  const [restockHistoryPage, setRestockHistoryPage] = useState(1);
+  const [deleteLogsPage, setDeleteLogsPage] = useState(1);
+  const [editLogsPage, setEditLogsPage] = useState(1);
+  const [recyclePage, setRecyclePage] = useState(1);
+  const itemsPerPage = 10;
 
   // Fetch restock history
   const { data: restockHistory, loading: restockHistoryLoading } = useCollection<RestockHistory>(
@@ -631,14 +640,25 @@ export function AdminInventoryManagement({
     }
   };
 
-  // Filtered data
+  // Filtered delete logs
   const filteredDeleteLogs = deleteLogs.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
                           item.reason.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
                           item.deletedBy.toLowerCase().includes(deleteLogsSearch.toLowerCase());
     const matchesDate = matchesDateFilter(item.deletedAt, deleteLogsDateFilter);
     return matchesSearch && matchesDate;
+  }).sort((a, b) => {
+    const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
+    const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
+    return dateB.getTime() - dateA.getTime();
   });
+
+  // Pagination for delete logs
+  const deleteLogsTotalPages = Math.ceil(filteredDeleteLogs.length / itemsPerPage);
+  const deleteLogsStartIndex = (deleteLogsPage - 1) * itemsPerPage;
+  const deleteLogsEndIndex = deleteLogsStartIndex + itemsPerPage;
+  const paginatedDeleteLogs = filteredDeleteLogs.slice(deleteLogsStartIndex, deleteLogsEndIndex);
+  const resetDeleteLogsPagination = () => setDeleteLogsPage(1);
 
   const filteredEditLogs = editLogs.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
@@ -647,7 +667,18 @@ export function AdminInventoryManagement({
                           (item.previousProductName && item.previousProductName.toLowerCase().includes(editLogsSearch.toLowerCase()));
     const matchesDate = matchesDateFilter(item.editedAt, editLogsDateFilter);
     return matchesSearch && matchesDate;
+  }).sort((a, b) => {
+    const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
+    const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
+    return dateB.getTime() - dateA.getTime();
   });
+
+  // Pagination for edit logs
+  const editLogsTotalPages = Math.ceil(filteredEditLogs.length / itemsPerPage);
+  const editLogsStartIndex = (editLogsPage - 1) * itemsPerPage;
+  const editLogsEndIndex = editLogsStartIndex + itemsPerPage;
+  const paginatedEditLogs = filteredEditLogs.slice(editLogsStartIndex, editLogsEndIndex);
+  const resetEditLogsPagination = () => setEditLogsPage(1);
 
   const filteredRecycledInventory = recycledInventory.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(recycleSearch.toLowerCase()) ||
@@ -655,7 +686,18 @@ export function AdminInventoryManagement({
                           item.recycledBy.toLowerCase().includes(recycleSearch.toLowerCase());
     const matchesDate = matchesDateFilter(item.recycledAt, recycleDateFilter);
     return matchesSearch && matchesDate;
+  }).sort((a, b) => {
+    const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
+    const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
+    return dateB.getTime() - dateA.getTime();
   });
+
+  // Pagination for recycled inventory
+  const recycleTotalPages = Math.ceil(filteredRecycledInventory.length / itemsPerPage);
+  const recycleStartIndex = (recyclePage - 1) * itemsPerPage;
+  const recycleEndIndex = recycleStartIndex + itemsPerPage;
+  const paginatedRecycledInventory = filteredRecycledInventory.slice(recycleStartIndex, recycleEndIndex);
+  const resetRecyclePagination = () => setRecyclePage(1);
 
   // Helper function for date picker filtering
   const matchesDatePickerFilter = (date: any, fromDate?: Date, toDate?: Date) => {
@@ -718,6 +760,94 @@ export function AdminInventoryManagement({
     });
   };
 
+  const handleGenerateInvoice = async () => {
+    if (!selectedUser) {
+      toast({
+        variant: "destructive",
+        title: "No User Selected",
+        description: "Please select a user first.",
+      });
+      return;
+    }
+
+    // Import invoice generator functions
+    const { generateInvoicePDF, generateInvoiceNumber } = await import('@/lib/invoice-generator');
+    
+    // Get today's shipments
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayShipments = filteredShipped.filter(shippedItem => {
+      const shipmentDate = typeof shippedItem.date === 'string' 
+        ? new Date(shippedItem.date) 
+        : new Date(shippedItem.date.seconds * 1000);
+      shipmentDate.setHours(0, 0, 0, 0);
+      return shipmentDate.getTime() === today.getTime();
+    });
+
+    if (todayShipments.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Shipments Today",
+        description: "No shipments found for today to generate invoice.",
+      });
+      return;
+    }
+
+    // Create invoice data
+    const invoiceNumber = generateInvoiceNumber();
+    const invoiceData = {
+      invoiceNumber,
+      date: format(today, 'MM/dd/yy'),
+      orderNumber: `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`,
+      soldTo: {
+        name: selectedUser.name,
+        email: selectedUser.email,
+        phone: selectedUser.phone || '',
+        address: `${selectedUser.address || ''}`.trim(),
+      },
+      shipTo: todayShipments[0].shipTo || '',
+      fbm: 'Standard Shipping',
+      items: todayShipments.map(shipped => ({
+        quantity: shipped.shippedQty,
+        productName: shipped.productName,
+        packaging: `${shipped.packOf} Nos.`,
+        unitPrice: shipped.unitPrice || 0,
+        amount: (shipped.shippedQty) * (shipped.unitPrice || 0),
+      })),
+    };
+
+    // Calculate totals
+    const subtotal = invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
+    const grandTotal = subtotal; // No tax added
+    
+    // Save invoice to Firestore
+    const invoiceDoc = {
+      invoiceNumber,
+      date: invoiceData.date,
+      orderNumber: invoiceData.orderNumber,
+      soldTo: invoiceData.soldTo,
+      shipTo: invoiceData.shipTo,
+      fbm: invoiceData.fbm,
+      items: invoiceData.items,
+      subtotal,
+      grandTotal,
+      status: 'pending' as const,
+      createdAt: new Date(),
+      userId: selectedUser.uid,
+    };
+    
+    await addDoc(collection(db, `users/${selectedUser.uid}/invoices`), invoiceDoc);
+    
+    // Generate PDF
+    await generateInvoicePDF(invoiceData);
+    
+    toast({
+      title: "Invoice Generated",
+      description: `Invoice ${invoiceNumber} has been generated for ${selectedUser.name}.`,
+    });
+  };
+
   const handleDownloadShipped = () => {
     if (!selectedUser || filteredShipped.length === 0) {
       toast({
@@ -775,22 +905,57 @@ export function AdminInventoryManagement({
     return filtered;
   }, [inventory, inventorySearch, inventoryStatusFilter, inventoryDateFilter, inventoryFromDate, inventoryToDate, inventorySortBy]);
 
+  // Pagination for inventory
+  const inventoryTotalPages = Math.ceil(filteredInventory.length / itemsPerPage);
+  const inventoryStartIndex = (inventoryPage - 1) * itemsPerPage;
+  const inventoryEndIndex = inventoryStartIndex + itemsPerPage;
+  const paginatedInventory = filteredInventory.slice(inventoryStartIndex, inventoryEndIndex);
+  const resetInventoryPagination = () => setInventoryPage(1);
+
   // Filtered shipped data
   const filteredShipped = useMemo(() => {
-    return shipped.filter((item) => {
+    const filtered = shipped.filter((item) => {
       const matchesSearch = item.productName.toLowerCase().includes(shippedSearch.toLowerCase());
       const matchesDate = matchesDateFilter(item.date, shippedDateFilter);
       return matchesSearch && matchesDate;
     });
+
+    // Sort by date (most recent first)
+    return filtered.sort((a, b) => {
+      const dateA = typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000);
+      const dateB = typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    });
   }, [shipped, shippedSearch, shippedDateFilter]);
+
+  // Pagination for shipped
+  const shippedTotalPages = Math.ceil(filteredShipped.length / itemsPerPage);
+  const shippedStartIndex = (shippedPage - 1) * itemsPerPage;
+  const shippedEndIndex = shippedStartIndex + itemsPerPage;
+  const paginatedShipped = filteredShipped.slice(shippedStartIndex, shippedEndIndex);
+  const resetShippedPagination = () => setShippedPage(1);
 
   // Filtered restock history data
   const filteredRestockHistory = useMemo(() => {
-    return restockHistory.filter((item) => {
+    const filtered = restockHistory.filter((item) => {
       const matchesDate = matchesDateFilter(item.restockedAt, restockDateFilter);
       return matchesDate;
     });
+    
+    // Sort by date (most recent first)
+    return filtered.sort((a, b) => {
+      const dateA = typeof a.restockedAt === 'string' ? new Date(a.restockedAt) : new Date(a.restockedAt.seconds * 1000);
+      const dateB = typeof b.restockedAt === 'string' ? new Date(b.restockedAt) : new Date(b.restockedAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    });
   }, [restockHistory, restockDateFilter]);
+
+  // Pagination for restock history
+  const restockHistoryTotalPages = Math.ceil(filteredRestockHistory.length / itemsPerPage);
+  const restockHistoryStartIndex = (restockHistoryPage - 1) * itemsPerPage;
+  const restockHistoryEndIndex = restockHistoryStartIndex + itemsPerPage;
+  const paginatedRestockHistory = filteredRestockHistory.slice(restockHistoryStartIndex, restockHistoryEndIndex);
+  const resetRestockHistoryPagination = () => setRestockHistoryPage(1);
 
   if (!selectedUser) {
     return (
@@ -880,7 +1045,10 @@ export function AdminInventoryManagement({
                 <Input
                   placeholder="Search products..."
                   value={inventorySearch}
-                  onChange={(e) => setInventorySearch(e.target.value)}
+                  onChange={(e) => {
+                    setInventorySearch(e.target.value);
+                    resetInventoryPagination();
+                  }}
                   className="pl-10"
                 />
                 {inventorySearch && (
@@ -896,7 +1064,10 @@ export function AdminInventoryManagement({
               </div>
             </div>
             <div className="sm:w-48">
-              <Select value={inventoryStatusFilter} onValueChange={setInventoryStatusFilter}>
+              <Select value={inventoryStatusFilter} onValueChange={(value) => {
+                setInventoryStatusFilter(value);
+                resetInventoryPagination();
+              }}>
                 <SelectTrigger>
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Filter by status" />
@@ -909,7 +1080,10 @@ export function AdminInventoryManagement({
               </Select>
             </div>
             <div className="sm:w-48">
-              <Select value={inventoryDateFilter} onValueChange={setInventoryDateFilter}>
+              <Select value={inventoryDateFilter} onValueChange={(value) => {
+                setInventoryDateFilter(value);
+                resetInventoryPagination();
+              }}>
                 <SelectTrigger>
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Filter by date" />
@@ -933,7 +1107,10 @@ export function AdminInventoryManagement({
               />
             </div>
             <div className="sm:w-48">
-              <Select value={inventorySortBy} onValueChange={setInventorySortBy}>
+              <Select value={inventorySortBy} onValueChange={(value) => {
+                setInventorySortBy(value);
+                resetInventoryPagination();
+              }}>
                 <SelectTrigger>
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Sort by" />
@@ -955,7 +1132,7 @@ export function AdminInventoryManagement({
             </div>
           ) : filteredInventory.length > 0 ? (
             <div className="space-y-3">
-              {filteredInventory.map((item) => (
+              {paginatedInventory.map((item) => (
                 <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                   <div className="flex-1">
                     <h3 className="font-semibold">{item.productName}</h3>
@@ -996,24 +1173,38 @@ export function AdminInventoryManagement({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Restock product</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleRecycleProduct(item)}
-                        className="text-orange-600 hover:text-orange-700"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleDeleteProduct(item)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleRecycleProduct(item)}
+                          className="text-orange-600 hover:text-orange-700"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Move to Recycle Bin</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDeleteProduct(item)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Permanently delete product</p>
+                      </TooltipContent>
+                    </Tooltip>
                     </div>
                   </div>
                 </div>
@@ -1024,6 +1215,36 @@ export function AdminInventoryManagement({
               <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">No inventory items</h3>
               <p className="text-muted-foreground">This user has no products in their inventory.</p>
+              </div>
+          )}
+
+          {/* Pagination Controls */}
+          {filteredInventory.length > itemsPerPage && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {inventoryStartIndex + 1} to {Math.min(inventoryEndIndex, filteredInventory.length)} of {filteredInventory.length} items
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setInventoryPage(p => Math.max(1, p - 1))}
+                  disabled={inventoryPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm">
+                  Page {inventoryPage} of {inventoryTotalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setInventoryPage(p => Math.min(inventoryTotalPages, p + 1))}
+                  disabled={inventoryPage === inventoryTotalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
@@ -1038,16 +1259,27 @@ export function AdminInventoryManagement({
                 <CardTitle>Shipped Orders ({filteredShipped.length})</CardTitle>
                 <CardDescription>View shipped orders for {selectedUser.name}</CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownloadShipped}
-                disabled={filteredShipped.length === 0}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Download CSV
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleGenerateInvoice}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Generate Invoice
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadShipped}
+                  disabled={filteredShipped.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download CSV
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -1059,7 +1291,10 @@ export function AdminInventoryManagement({
                   <Input
                     placeholder="Search shipped orders..."
                     value={shippedSearch}
-                    onChange={(e) => setShippedSearch(e.target.value)}
+                    onChange={(e) => {
+                      setShippedSearch(e.target.value);
+                      resetShippedPagination();
+                    }}
                     className="pl-10"
                   />
                   {shippedSearch && (
@@ -1075,7 +1310,10 @@ export function AdminInventoryManagement({
                 </div>
               </div>
               <div className="sm:w-48">
-                <Select value={shippedDateFilter} onValueChange={setShippedDateFilter}>
+                <Select value={shippedDateFilter} onValueChange={(value) => {
+                  setShippedDateFilter(value);
+                  resetShippedPagination();
+                }}>
                   <SelectTrigger>
                     <Filter className="h-4 w-4 mr-2" />
                     <SelectValue placeholder="Filter by date" />
@@ -1093,7 +1331,7 @@ export function AdminInventoryManagement({
             
             {filteredShipped.length > 0 ? (
               <div className="space-y-3">
-                {filteredShipped.map((item) => (
+                {paginatedShipped.map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex-1">
                       <h3 className="font-semibold">{item.productName}</h3>
@@ -1153,6 +1391,36 @@ export function AdminInventoryManagement({
                 <p className="text-muted-foreground">No orders have been shipped yet.</p>
               </div>
             )}
+
+            {/* Pagination Controls for Shipped Orders */}
+            {filteredShipped.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {shippedStartIndex + 1} to {Math.min(shippedEndIndex, filteredShipped.length)} of {filteredShipped.length} items
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShippedPage(p => Math.max(1, p - 1))}
+                    disabled={shippedPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {shippedPage} of {shippedTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShippedPage(p => Math.min(shippedTotalPages, p + 1))}
+                    disabled={shippedPage === shippedTotalPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1167,7 +1435,10 @@ export function AdminInventoryManagement({
                 <CardDescription>View restock history for {selectedUser.name}</CardDescription>
               </div>
               <div className="sm:w-48">
-                <Select value={restockDateFilter} onValueChange={setRestockDateFilter}>
+                <Select value={restockDateFilter} onValueChange={(value) => {
+                  setRestockDateFilter(value);
+                  resetRestockHistoryPagination();
+                }}>
                   <SelectTrigger>
                     <Filter className="h-4 w-4 mr-2" />
                     <SelectValue placeholder="Filter by date" />
@@ -1192,13 +1463,7 @@ export function AdminInventoryManagement({
               </div>
             ) : filteredRestockHistory.length > 0 ? (
               <div className="space-y-3">
-                {filteredRestockHistory
-                  .sort((a, b) => {
-                    const dateA = typeof a.restockedAt === 'string' ? new Date(a.restockedAt) : new Date(a.restockedAt.seconds * 1000);
-                    const dateB = typeof b.restockedAt === 'string' ? new Date(b.restockedAt) : new Date(b.restockedAt.seconds * 1000);
-                    return dateB.getTime() - dateA.getTime(); // Sort by newest first
-                  })
-                  .map((item) => (
+                {paginatedRestockHistory.map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex-1">
                         <h3 className="font-semibold">{item.productName}</h3>
@@ -1249,6 +1514,36 @@ export function AdminInventoryManagement({
                 </p>
               </div>
             )}
+
+            {/* Pagination Controls for Restock History */}
+            {filteredRestockHistory.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {restockHistoryStartIndex + 1} to {Math.min(restockHistoryEndIndex, filteredRestockHistory.length)} of {filteredRestockHistory.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRestockHistoryPage(p => Math.max(1, p - 1))}
+                    disabled={restockHistoryPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {restockHistoryPage} of {restockHistoryTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRestockHistoryPage(p => Math.min(restockHistoryTotalPages, p + 1))}
+                    disabled={restockHistoryPage === restockHistoryTotalPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1263,7 +1558,10 @@ export function AdminInventoryManagement({
                 <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
               </div>
               <div className="sm:w-48">
-                <Select value={recycleDateFilter} onValueChange={setRecycleDateFilter}>
+                <Select value={recycleDateFilter} onValueChange={(value) => {
+                  setRecycleDateFilter(value);
+                  resetRecyclePagination();
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Filter by date" />
                   </SelectTrigger>
@@ -1287,7 +1585,10 @@ export function AdminInventoryManagement({
                   <Input
                     placeholder="Search by product name, reason, or admin..."
                     value={recycleSearch}
-                    onChange={(e) => setRecycleSearch(e.target.value)}
+                    onChange={(e) => {
+                      setRecycleSearch(e.target.value);
+                      resetRecyclePagination();
+                    }}
                     className="pl-10"
                   />
                   {recycleSearch && (
@@ -1315,13 +1616,7 @@ export function AdminInventoryManagement({
                   </div>
                 ) : filteredRecycledInventory.length > 0 ? (
                   <div className="space-y-3">
-                    {filteredRecycledInventory
-                      .sort((a, b) => {
-                        const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
-                        const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
-                        return dateB.getTime() - dateA.getTime();
-                      })
-                      .map((item) => (
+                    {paginatedRecycledInventory.map((item) => (
                         <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
                           <div className="flex-1">
                             <h4 className="font-semibold">{item.productName}</h4>
@@ -1355,6 +1650,36 @@ export function AdminInventoryManagement({
                     </p>
                   </div>
                 )}
+
+                {/* Pagination for Recycle Section */}
+                {filteredRecycledInventory.length > itemsPerPage && (
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {recycleStartIndex + 1} to {Math.min(recycleEndIndex, filteredRecycledInventory.length)} of {filteredRecycledInventory.length} records
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRecyclePage(p => Math.max(1, p - 1))}
+                        disabled={recyclePage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm">
+                        Page {recyclePage} of {recycleTotalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRecyclePage(p => Math.min(recycleTotalPages, p + 1))}
+                        disabled={recyclePage === recycleTotalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -1370,7 +1695,10 @@ export function AdminInventoryManagement({
               <CardDescription>View permanently deleted products for {selectedUser.name}</CardDescription>
             </div>
             <div className="sm:w-48">
-              <Select value={deleteLogsDateFilter} onValueChange={setDeleteLogsDateFilter}>
+              <Select value={deleteLogsDateFilter} onValueChange={(value) => {
+                setDeleteLogsDateFilter(value);
+                resetDeleteLogsPagination();
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by date" />
                 </SelectTrigger>
@@ -1394,7 +1722,10 @@ export function AdminInventoryManagement({
                 <Input
                   placeholder="Search by product name, reason, or admin..."
                   value={deleteLogsSearch}
-                  onChange={(e) => setDeleteLogsSearch(e.target.value)}
+                  onChange={(e) => {
+                    setDeleteLogsSearch(e.target.value);
+                    resetDeleteLogsPagination();
+                  }}
                   className="pl-10"
                 />
                 {deleteLogsSearch && (
@@ -1418,13 +1749,7 @@ export function AdminInventoryManagement({
             </div>
           ) : filteredDeleteLogs.length > 0 ? (
             <div className="space-y-3">
-              {filteredDeleteLogs
-                .sort((a, b) => {
-                  const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
-                  const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
-                  return dateB.getTime() - dateA.getTime();
-                })
-                .map((item) => (
+              {paginatedDeleteLogs.map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
                     <div className="flex-1">
                       <h4 className="font-semibold text-red-800">{item.productName}</h4>
@@ -1456,6 +1781,36 @@ export function AdminInventoryManagement({
               </p>
             </div>
           )}
+
+          {/* Pagination Controls for Delete Logs */}
+          {filteredDeleteLogs.length > itemsPerPage && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {deleteLogsStartIndex + 1} to {Math.min(deleteLogsEndIndex, filteredDeleteLogs.length)} of {filteredDeleteLogs.length} records
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteLogsPage(p => Math.max(1, p - 1))}
+                  disabled={deleteLogsPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm">
+                  Page {deleteLogsPage} of {deleteLogsTotalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteLogsPage(p => Math.min(deleteLogsTotalPages, p + 1))}
+                  disabled={deleteLogsPage === deleteLogsTotalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1468,7 +1823,10 @@ export function AdminInventoryManagement({
               <CardDescription>View product edit history for {selectedUser.name}</CardDescription>
             </div>
             <div className="sm:w-48">
-              <Select value={editLogsDateFilter} onValueChange={setEditLogsDateFilter}>
+              <Select value={editLogsDateFilter} onValueChange={(value) => {
+                setEditLogsDateFilter(value);
+                resetEditLogsPagination();
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by date" />
                 </SelectTrigger>
@@ -1492,7 +1850,10 @@ export function AdminInventoryManagement({
                 <Input
                   placeholder="Search by product name, reason, or admin..."
                   value={editLogsSearch}
-                  onChange={(e) => setEditLogsSearch(e.target.value)}
+                  onChange={(e) => {
+                    setEditLogsSearch(e.target.value);
+                    resetEditLogsPagination();
+                  }}
                   className="pl-10"
                 />
                 {editLogsSearch && (
@@ -1516,13 +1877,7 @@ export function AdminInventoryManagement({
             </div>
           ) : filteredEditLogs.length > 0 ? (
             <div className="space-y-3">
-              {filteredEditLogs
-                .sort((a, b) => {
-                  const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
-                  const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
-                  return dateB.getTime() - dateA.getTime();
-                })
-                .map((item) => (
+              {paginatedEditLogs.map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
                     <div className="flex-1">
                       <h4 className="font-semibold text-blue-800">{item.productName}</h4>
@@ -1558,6 +1913,36 @@ export function AdminInventoryManagement({
               <p className="text-muted-foreground">
                 {editLogs.length === 0 ? "No products have been edited yet." : "No product edits match your search or date filter."}
               </p>
+            </div>
+          )}
+
+          {/* Pagination Controls for Edit Logs */}
+          {filteredEditLogs.length > itemsPerPage && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {editLogsStartIndex + 1} to {Math.min(editLogsEndIndex, filteredEditLogs.length)} of {filteredEditLogs.length} records
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditLogsPage(p => Math.max(1, p - 1))}
+                  disabled={editLogsPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm">
+                  Page {editLogsPage} of {editLogsTotalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditLogsPage(p => Math.min(editLogsTotalPages, p + 1))}
+                  disabled={editLogsPage === editLogsTotalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

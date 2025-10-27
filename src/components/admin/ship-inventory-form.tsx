@@ -26,6 +26,7 @@ const formSchema = z.object({
   date: z.date({ required_error: "A shipping date is required." }),
   quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
   packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  unitPrice: z.coerce.number().positive("Unit price must be a positive number."),
   shipTo: z.string().min(1, "Ship to destination is required."),
   remarks: z.string().optional(),
 });
@@ -42,6 +43,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
     defaultValues: {
       packOf: 1,
       quantity: 1,
+      unitPrice: 0,
       shipTo: "",
       remarks: "",
     },
@@ -78,6 +80,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
           shippedQty: values.quantity,
           remainingQty: newQuantity,
           packOf: values.packOf,
+          unitPrice: values.unitPrice,
           shipTo: values.shipTo,
           remarks: values.remarks,
         });
@@ -227,6 +230,24 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="unitPrice"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit Price ($)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      placeholder="Enter unit price" 
+                      step="0.01"
+                      {...field} 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
                 control={form.control}
                 name="remarks"

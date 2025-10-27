@@ -38,6 +38,7 @@ export interface ShippedItem {
   // This is the remaining quantity in the main inventory after this shipment
   remainingQty: number; 
   packOf: number;
+  unitPrice?: number;
   shipTo: string;
   remarks?: string;
 }
@@ -144,6 +145,36 @@ export interface EditLog {
   } | string;
   editedBy: string; // Admin name who edited
   reason: string; // Reason for editing
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  orderNumber: string;
+  soldTo: {
+    name: string;
+    email: string;
+    phone?: string;
+    address?: string;
+  };
+  shipTo: string;
+  fbm: string;
+  items: Array<{
+    quantity: number;
+    productName: string;
+    packaging: string;
+    unitPrice: number;
+    amount: number;
+  }>;
+  subtotal: number;
+  grandTotal: number;
+  status: 'pending' | 'paid';
+  createdAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  userId: string;
 }
 
 export interface AuthContextType {

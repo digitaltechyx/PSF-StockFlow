@@ -2,7 +2,8 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { InventoryItem, ShippedItem, RestockHistory, DeleteLog, EditLog, RecycledInventoryItem } from "@/types";
+import type { InventoryItem, ShippedItem, RestockHistory, DeleteLog, EditLog, RecycledInventoryItem, Invoice } from "@/types";
+import { InvoicesSection } from "@/components/dashboard/invoices-section";
 import { InventoryTable } from "@/components/dashboard/inventory-table";
 import { ShippedTable } from "@/components/dashboard/shipped-table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X } from "lucide-react";
+import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X, FileText } from "lucide-react";
 import { format } from "date-fns";
 
 export default function DashboardPage() {
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [showDeleteLogs, setShowDeleteLogs] = useState(false);
   const [showEditLogs, setShowEditLogs] = useState(false);
   const [showRecycleSection, setShowRecycleSection] = useState(false);
+  const [showInvoices, setShowInvoices] = useState(false);
   const [restockDateFilter, setRestockDateFilter] = useState<string>("all");
   const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
   const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
@@ -27,6 +29,13 @@ export default function DashboardPage() {
   const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
   const [editLogsSearch, setEditLogsSearch] = useState("");
   const [recycleSearch, setRecycleSearch] = useState("");
+  
+  // Pagination states
+  const [restockPage, setRestockPage] = useState(1);
+  const [deleteLogsPage, setDeleteLogsPage] = useState(1);
+  const [editLogsPage, setEditLogsPage] = useState(1);
+  const [recyclePage, setRecyclePage] = useState(1);
+  const itemsPerPage = 10;
   
   const { 
     data: inventoryData, 
@@ -71,6 +80,14 @@ export default function DashboardPage() {
     userProfile ? `users/${userProfile.uid}/recycledInventory` : ""
   );
 
+  // Invoices collection
+  const {
+    data: invoices,
+    loading: invoicesLoading
+  } = useCollection<Invoice>(
+    userProfile ? `users/${userProfile.uid}/invoices` : ""
+  );
+
   const formatDate = (date: any) => {
     if (!date) return "N/A";
     if (typeof date === 'string') return format(new Date(date), "MMM dd, yyyy");
@@ -112,6 +129,21 @@ export default function DashboardPage() {
     return matchesDateFilter(item.restockedAt, restockDateFilter);
   });
 
+  // Pagination calculations for restock history
+  const totalRestockPages = Math.ceil(filteredRestockHistory.length / itemsPerPage);
+  const startRestockIndex = (restockPage - 1) * itemsPerPage;
+  const endRestockIndex = startRestockIndex + itemsPerPage;
+  const paginatedRestockHistory = filteredRestockHistory
+    .sort((a, b) => {
+      const dateA = typeof a.restockedAt === 'string' ? new Date(a.restockedAt) : new Date(a.restockedAt.seconds * 1000);
+      const dateB = typeof b.restockedAt === 'string' ? new Date(b.restockedAt) : new Date(b.restockedAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    })
+    .slice(startRestockIndex, endRestockIndex);
+
+  // Reset pagination when filters change
+  const resetRestockPagination = () => setRestockPage(1);
+
   // Filtered delete logs data
   const filteredDeleteLogs = deleteLogs.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
@@ -120,6 +152,19 @@ export default function DashboardPage() {
     const matchesDate = matchesDateFilter(item.deletedAt, deleteLogsDateFilter);
     return matchesSearch && matchesDate;
   });
+
+  // Pagination for delete logs
+  const totalDeleteLogsPages = Math.ceil(filteredDeleteLogs.length / itemsPerPage);
+  const startDeleteLogsIndex = (deleteLogsPage - 1) * itemsPerPage;
+  const endDeleteLogsIndex = startDeleteLogsIndex + itemsPerPage;
+  const paginatedDeleteLogs = filteredDeleteLogs
+    .sort((a, b) => {
+      const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
+      const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    })
+    .slice(startDeleteLogsIndex, endDeleteLogsIndex);
+  const resetDeleteLogsPagination = () => setDeleteLogsPage(1);
 
   // Filtered edit logs data
   const filteredEditLogs = editLogs.filter((item) => {
@@ -131,6 +176,19 @@ export default function DashboardPage() {
     return matchesSearch && matchesDate;
   });
 
+  // Pagination for edit logs
+  const totalEditLogsPages = Math.ceil(filteredEditLogs.length / itemsPerPage);
+  const startEditLogsIndex = (editLogsPage - 1) * itemsPerPage;
+  const endEditLogsIndex = startEditLogsIndex + itemsPerPage;
+  const paginatedEditLogs = filteredEditLogs
+    .sort((a, b) => {
+      const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
+      const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    })
+    .slice(startEditLogsIndex, endEditLogsIndex);
+  const resetEditLogsPagination = () => setEditLogsPage(1);
+
   // Filtered recycled data
   const filteredRecycledInventory = recycledInventory.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(recycleSearch.toLowerCase()) ||
@@ -139,6 +197,19 @@ export default function DashboardPage() {
     const matchesDate = matchesDateFilter(item.recycledAt, recycleDateFilter);
     return matchesSearch && matchesDate;
   });
+
+  // Pagination for recycled inventory
+  const totalRecyclePages = Math.ceil(filteredRecycledInventory.length / itemsPerPage);
+  const startRecycleIndex = (recyclePage - 1) * itemsPerPage;
+  const endRecycleIndex = startRecycleIndex + itemsPerPage;
+  const paginatedRecycledInventory = filteredRecycledInventory
+    .sort((a, b) => {
+      const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
+      const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    })
+    .slice(startRecycleIndex, endRecycleIndex);
+  const resetRecyclePagination = () => setRecyclePage(1);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -180,6 +251,15 @@ export default function DashboardPage() {
           <RotateCcw className="h-4 w-4" />
           {showRecycleSection ? "Hide" : "Show"} Recycle Bin
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowInvoices(!showInvoices)}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+        >
+          <FileText className="h-4 w-4" />
+          {showInvoices ? "Hide" : "Show"} Invoices ({invoices.filter(inv => inv.status === 'pending').length})
+        </Button>
       </div>
 
       {/* Restock History Section */}
@@ -192,7 +272,10 @@ export default function DashboardPage() {
                 <CardDescription>View when your products were restocked by admins</CardDescription>
               </div>
               <div className="sm:w-48">
-                <Select value={restockDateFilter} onValueChange={setRestockDateFilter}>
+                <Select value={restockDateFilter} onValueChange={(value) => {
+                  setRestockDateFilter(value);
+                  resetRestockPagination();
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Filter by date" />
                   </SelectTrigger>
@@ -216,13 +299,7 @@ export default function DashboardPage() {
               </div>
             ) : filteredRestockHistory.length > 0 ? (
               <div className="space-y-3">
-                {filteredRestockHistory
-                  .sort((a, b) => {
-                    const dateA = typeof a.restockedAt === 'string' ? new Date(a.restockedAt) : new Date(a.restockedAt.seconds * 1000);
-                    const dateB = typeof b.restockedAt === 'string' ? new Date(b.restockedAt) : new Date(b.restockedAt.seconds * 1000);
-                    return dateB.getTime() - dateA.getTime(); // Sort by newest first
-                  })
-                  .map((item) => (
+                {paginatedRestockHistory.map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex-1">
                         <h3 className="font-semibold">{item.productName}</h3>
@@ -244,6 +321,36 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground">
                   {restockHistory.length === 0 ? "No products have been restocked yet." : "No restocks match your date filter."}
                 </p>
+              </div>
+            )}
+            
+            {/* Pagination Controls */}
+            {filteredRestockHistory.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startRestockIndex + 1} to {Math.min(endRestockIndex, filteredRestockHistory.length)} of {filteredRestockHistory.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRestockPage(p => Math.max(1, p - 1))}
+                    disabled={restockPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {restockPage} of {totalRestockPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRestockPage(p => Math.min(totalRestockPages, p + 1))}
+                    disabled={restockPage === totalRestockPages}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -308,13 +415,7 @@ export default function DashboardPage() {
               </div>
             ) : filteredDeleteLogs.length > 0 ? (
               <div className="space-y-3">
-                {filteredDeleteLogs
-                  .sort((a, b) => {
-                    const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
-                    const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
-                    return dateB.getTime() - dateA.getTime(); // Sort by newest first
-                  })
-                  .map((item) => (
+                {paginatedDeleteLogs.map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
                       <div className="flex-1">
                         <h3 className="font-semibold text-red-800">{item.productName}</h3>
@@ -348,6 +449,36 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground">
                   {deleteLogs.length === 0 ? "No products have been permanently deleted yet." : "No deletions match your date filter."}
                 </p>
+              </div>
+            )}
+            
+            {/* Pagination Controls */}
+            {filteredDeleteLogs.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startDeleteLogsIndex + 1} to {Math.min(endDeleteLogsIndex, filteredDeleteLogs.length)} of {filteredDeleteLogs.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteLogsPage(p => Math.max(1, p - 1))}
+                    disabled={deleteLogsPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {deleteLogsPage} of {totalDeleteLogsPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteLogsPage(p => Math.min(totalDeleteLogsPages, p + 1))}
+                    disabled={deleteLogsPage === totalDeleteLogsPages}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -412,13 +543,7 @@ export default function DashboardPage() {
               </div>
             ) : filteredEditLogs.length > 0 ? (
               <div className="space-y-3">
-                {filteredEditLogs
-                  .sort((a, b) => {
-                    const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
-                    const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
-                    return dateB.getTime() - dateA.getTime(); // Sort by newest first
-                  })
-                  .map((item) => (
+                {paginatedEditLogs.map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
                       <div className="flex-1">
                         <h3 className="font-semibold text-blue-800">{item.productName}</h3>
@@ -460,6 +585,36 @@ export default function DashboardPage() {
                 </p>
               </div>
             )}
+            
+            {/* Pagination Controls */}
+            {filteredEditLogs.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startEditLogsIndex + 1} to {Math.min(endEditLogsIndex, filteredEditLogs.length)} of {filteredEditLogs.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditLogsPage(p => Math.max(1, p - 1))}
+                    disabled={editLogsPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {editLogsPage} of {totalEditLogsPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditLogsPage(p => Math.min(totalEditLogsPages, p + 1))}
+                    disabled={editLogsPage === totalEditLogsPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -474,7 +629,10 @@ export default function DashboardPage() {
                 <CardDescription>View inventory items that were moved to recycle bin by admins</CardDescription>
               </div>
               <div className="sm:w-48">
-                <Select value={recycleDateFilter} onValueChange={setRecycleDateFilter}>
+                <Select value={recycleDateFilter} onValueChange={(value) => {
+                  setRecycleDateFilter(value);
+                  resetRecyclePagination();
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Filter by date" />
                   </SelectTrigger>
@@ -522,13 +680,7 @@ export default function DashboardPage() {
               </div>
             ) : filteredRecycledInventory.length > 0 ? (
               <div className="space-y-3">
-                {filteredRecycledInventory
-                  .sort((a, b) => {
-                    const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
-                    const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
-                    return dateB.getTime() - dateA.getTime();
-                  })
-                  .map((item) => (
+                {paginatedRecycledInventory.map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
                       <div className="flex-1">
                         <h4 className="font-semibold">{item.productName}</h4>
@@ -566,6 +718,36 @@ export default function DashboardPage() {
                 </p>
               </div>
             )}
+            
+            {/* Pagination Controls */}
+            {filteredRecycledInventory.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startRecycleIndex + 1} to {Math.min(endRecycleIndex, filteredRecycledInventory.length)} of {filteredRecycledInventory.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRecyclePage(p => Math.max(1, p - 1))}
+                    disabled={recyclePage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {recyclePage} of {totalRecyclePages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRecyclePage(p => Math.min(totalRecyclePages, p + 1))}
+                    disabled={recyclePage === totalRecyclePages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -579,6 +761,11 @@ export default function DashboardPage() {
           {shippedLoading ? <Skeleton className="h-64 sm:h-96 w-full" /> : <ShippedTable data={shippedData} inventory={inventoryData} />}
         </div>
       </div>
+
+      {/* Invoices Section */}
+      {showInvoices && (
+        <InvoicesSection invoices={invoices} loading={invoicesLoading} />
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { AdminInventoryManagement } from "@/components/admin/admin-inventory-man
 import { CreateUserForm } from "@/components/admin/create-user-form";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
+import { InvoiceManagement } from "@/components/admin/invoice-management";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // User Card Component
@@ -195,7 +196,7 @@ export default function AdminDashboardPage() {
 
       {/* Main Tabs */}
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="users">Inventory Management</TabsTrigger>
             <TabsTrigger value="members" className="relative">
               User Management
@@ -208,6 +209,7 @@ export default function AdminDashboardPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="invoices">Invoice Management</TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4 mt-6">
@@ -256,6 +258,10 @@ export default function AdminDashboardPage() {
 
           <TabsContent value="members" className="space-y-4 mt-6">
             <MemberManagement adminUser={adminUser} />
+          </TabsContent>
+
+          <TabsContent value="invoices" className="space-y-4 mt-6">
+            <InvoiceManagement users={users} />
           </TabsContent>
 
       </Tabs>

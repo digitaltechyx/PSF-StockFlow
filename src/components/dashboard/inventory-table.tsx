@@ -38,6 +38,8 @@ function formatDate(date: InventoryItem["dateAdded"]) {
 export function InventoryTable({ data }: { data: InventoryItem[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Filtered inventory data
   const filteredData = useMemo(() => {
@@ -47,6 +49,17 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
       return matchesSearch && matchesStatus;
     });
   }, [data, searchTerm, statusFilter]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedData = filteredData.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
 
   return (
     <Card className="w-full">
@@ -107,7 +120,7 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
             </TableHeader>
             <TableBody>
               {filteredData.length > 0 ? (
-                filteredData.map((item) => (
+                paginatedData.map((item) => (
                <TableRow key={item.id} className="text-xs sm:text-sm">
                     <TableCell className="font-medium max-w-32 sm:max-w-none truncate">
                       <div className="flex flex-col sm:block">
@@ -145,6 +158,36 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
             </TableBody>
           </Table>
         </div>
+
+        {/* Pagination Controls */}
+        {filteredData.length > itemsPerPage && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t px-6">
+            <div className="text-sm text-muted-foreground">
+              Showing {startIndex + 1} to {Math.min(endIndex, filteredData.length)} of {filteredData.length} items
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
