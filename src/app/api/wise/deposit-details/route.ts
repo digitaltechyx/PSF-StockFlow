@@ -82,15 +82,18 @@ export async function GET(request: NextRequest) {
     }
     const bankDetails = await bankRes.json();
 
+    // Wise may return details nested under `details` or `bankDetails`
+    const d = bankDetails?.details || bankDetails?.bankDetails || bankDetails || {};
+
     // Normalize fields for UI
     const details = {
-      accountHolderName: bankDetails?.accountHolderName || null,
-      bankName: bankDetails?.bankName || null,
-      accountNumber: bankDetails?.accountNumber || bankDetails?.accountNumberType || null,
-      routingNumber: bankDetails?.routingNumber || bankDetails?.achRoutingNumber || null,
-      iban: bankDetails?.IBAN || bankDetails?.iban || null,
-      sortCode: bankDetails?.sortCode || null,
-      swift: bankDetails?.swift || bankDetails?.bic || null,
+      accountHolderName: d.accountHolderName || bankDetails?.accountHolderName || null,
+      bankName: d.bankName || bankDetails?.bankName || null,
+      accountNumber: d.accountNumber || d.account || d.clabe || null,
+      routingNumber: d.routingNumber || d.achRoutingNumber || d.routing || null,
+      iban: d.IBAN || d.iban || null,
+      sortCode: d.sortCode || null,
+      swift: d.swift || d.bic || d.swiftCode || null,
       currency,
     };
 
