@@ -67,17 +67,18 @@ export function DateRangePicker({
           <CalendarIcon className="mr-2 h-4 w-4" />
           {formatDateRange()}
           {(fromDate || toDate) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 w-6 p-0 hover:bg-transparent"
+            <span
+              role="button"
+              aria-label="Clear date range"
+              className="ml-auto inline-flex h-6 w-6 items-center justify-center p-0 cursor-pointer hover:opacity-80"
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 clearDates();
               }}
             >
               <X className="h-3 w-3" />
-            </Button>
+            </span>
           )}
         </Button>
       </PopoverTrigger>

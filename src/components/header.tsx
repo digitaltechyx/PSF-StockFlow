@@ -1,19 +1,32 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { LogOut, User as UserIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { Logo } from "./logo";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
-export function Header() {
+interface HeaderProps {
+  onProfileClick?: () => void;
+}
+
+export function Header({ onProfileClick }: HeaderProps) {
   const { signOut, userProfile } = useAuth();
   const router = useRouter();
 
   const handleSignOut = async () => {
     await signOut();
     router.push("/login");
+  };
+
+  const handleProfileClick = () => {
+    if (onProfileClick) {
+      onProfileClick();
+    } else {
+      // Dispatch custom event for dashboard page
+      window.dispatchEvent(new Event('toggle-profile'));
+    }
   };
   
   const getInitials = (name?: string | null) => {
@@ -37,6 +50,10 @@ export function Header() {
           <AvatarImage src={`https://avatar.vercel.sh/${userProfile?.email}.png`} alt={userProfile?.name || 'User'} />
           <AvatarFallback className="text-xs">{getInitials(userProfile?.name)}</AvatarFallback>
         </Avatar>
+        <Button variant="outline" size="icon" className="h-7 w-7 sm:h-9 sm:w-9" onClick={handleProfileClick}>
+          <UserIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+          <span className="sr-only">Profile</span>
+        </Button>
         <Button variant="outline" size="icon" className="h-7 w-7 sm:h-9 sm:w-9" onClick={handleSignOut}>
           <LogOut className="h-3 w-3 sm:h-4 sm:w-4" />
           <span className="sr-only">Logout</span>

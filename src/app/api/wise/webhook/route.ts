@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where, doc, updateDoc } from 'firebase/firestore';
 
 export async function POST(request: NextRequest) {
   try {
@@ -110,18 +112,27 @@ async function handlePaymentSent(data: any) {
 // Handler for payment delivered
 async function handlePaymentDelivered(data: any) {
   console.log('Payment delivered:', data);
-  
-  // Example: Mark invoice as paid
-  const transferId = data.resource?.id;
-  
-  console.log(`Payment delivered for transfer: ${transferId}`);
-  
-  // TODO: Update invoice status to "Paid"
-  // Example:
-  // await updateInvoiceStatus(transferId, 'paid');
-  
-  // You could also send a notification to the customer
-  // await sendPaymentConfirmationEmail(transferId);
+  const reference: string | undefined = data?.data?.reference || data?.resource?.reference || data?.resource?.customerTransactionId;
+  if (!reference) return;
+
+  // Expect reference to contain the invoice number like "INV-2025...."
+  const invoiceNumber = String(reference).match(/INV-[A-Za-z0-9-]+/i)?.[0];
+  if (!invoiceNumber) return;
+
+  // Search all users' invoices for matching invoiceNumber and mark as paid
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    for (const userDoc of usersSnap.docs) {
+      const invQuery = query(collection(db, `users/${userDoc.id}/invoices`), where('invoiceNumber', '==', invoiceNumber));
+      const invSnap = await getDocs(invQuery);
+      for (const inv of invSnap.docs) {
+        await updateDoc(doc(db, `users/${userDoc.id}/invoices/${inv.id}`), { status: 'paid' });
+        console.log(`Invoice ${invoiceNumber} marked paid for user ${userDoc.id}`);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to mark invoice paid from webhook:', e);
+  }
 }
 
 // Add a GET handler for testing

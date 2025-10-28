@@ -137,7 +137,6 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
         date: invoice.date,
         orderNumber: invoice.orderNumber,
         soldTo: invoice.soldTo,
-        shipTo: invoice.shipTo,
         fbm: invoice.fbm,
         items: invoice.items,
       });
@@ -531,7 +530,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                 </div>
               </div>
 
-              {/* Sold To & Ship To */}
+              {/* Sold To and FBM */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="p-4 border rounded-lg">
                   <h4 className="font-semibold mb-2">Sold To</h4>
@@ -541,24 +540,25 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                   <p className="text-sm text-muted-foreground">{selectedInvoice.soldTo.email}</p>
                 </div>
                 <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">Ship To</h4>
-                  <p className="text-sm whitespace-pre-wrap">{selectedInvoice.shipTo}</p>
-                  <p className="text-sm text-muted-foreground mt-2">FBM: {selectedInvoice.fbm}</p>
+                  <h4 className="font-semibold mb-2">FBM</h4>
+                  <p className="text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
                 </div>
               </div>
 
               {/* Items Table */}
               <div className="border rounded-lg overflow-hidden">
-                <div className="bg-muted p-2 grid grid-cols-5 gap-2 text-sm font-semibold">
+                <div className="bg-muted p-2 grid grid-cols-6 gap-2 text-sm font-semibold">
                   <div>Qty</div>
                   <div className="col-span-2">Product</div>
+                  <div>Ship To</div>
                   <div>Unit Price</div>
                   <div>Amount</div>
                 </div>
                 {selectedInvoice.items.map((item, idx) => (
-                  <div key={idx} className="p-2 grid grid-cols-5 gap-2 text-sm border-t">
+                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-6 gap-2 text-sm border-t">
                     <div>{item.quantity}</div>
                     <div className="col-span-2">{item.productName}</div>
+                    <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
                     <div>${item.unitPrice.toFixed(2)}</div>
                     <div className="font-semibold">${item.amount.toFixed(2)}</div>
                   </div>
@@ -594,13 +594,13 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                 </Button>
                 {selectedInvoice.status === 'pending' && (
                   <Button
-                    onClick={() => {
-                      handleMarkAsPaid(selectedInvoice.id, selectedInvoice);
-                      setIsViewDialogOpen(false);
+                    onClick={async () => {
+                      // Redirect user to payment instructions page for now
+                      window.location.href = `/dashboard/invoice/${selectedInvoice.invoiceNumber}/pay?amount=${selectedInvoice.grandTotal}&currency=USD`;
                     }}
                   >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Mark as Paid
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Pay Invoice
                   </Button>
                 )}
               </div>

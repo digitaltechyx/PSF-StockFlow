@@ -98,6 +98,10 @@ export function AdminInventoryManagement({
   const [recyclePage, setRecyclePage] = useState(1);
   const itemsPerPage = 10;
 
+  // Invoice range selection for generating invoice over specific dates
+  const [invoiceFromDate, setInvoiceFromDate] = useState<Date | undefined>();
+  const [invoiceToDate, setInvoiceToDate] = useState<Date | undefined>();
+
   // Fetch restock history
   const { data: restockHistory, loading: restockHistoryLoading } = useCollection<RestockHistory>(
     selectedUser ? `users/${selectedUser.uid}/restockHistory` : ""
@@ -798,7 +802,7 @@ export function AdminInventoryManagement({
     const invoiceNumber = generateInvoiceNumber();
     const invoiceData = {
       invoiceNumber,
-      date: format(today, 'MM/dd/yy'),
+      date: format(today, 'dd/MM/yyyy'),
       orderNumber: `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`,
       soldTo: {
         name: selectedUser.name,
@@ -806,12 +810,12 @@ export function AdminInventoryManagement({
         phone: selectedUser.phone || '',
         address: `${selectedUser.address || ''}`.trim(),
       },
-      shipTo: todayShipments[0].shipTo || '',
       fbm: 'Standard Shipping',
       items: todayShipments.map(shipped => ({
         quantity: shipped.shippedQty,
         productName: shipped.productName,
         packaging: `${shipped.packOf} Nos.`,
+        shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
         amount: (shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
@@ -827,7 +831,6 @@ export function AdminInventoryManagement({
       date: invoiceData.date,
       orderNumber: invoiceData.orderNumber,
       soldTo: invoiceData.soldTo,
-      shipTo: invoiceData.shipTo,
       fbm: invoiceData.fbm,
       items: invoiceData.items,
       subtotal,
@@ -875,6 +878,83 @@ export function AdminInventoryManagement({
       title: "Download Started",
       description: `Shipped orders data for ${selectedUser.name} is being downloaded.`,
     });
+  };
+
+  const handleGenerateInvoiceForRange = async (from?: Date, to?: Date) => {
+    if (!selectedUser) {
+      toast({ variant: "destructive", title: "No User Selected", description: "Please select a user first." });
+      return;
+    }
+    if (!from || !to) {
+      toast({ variant: "destructive", title: "Select Dates", description: "Please select a start and end date." });
+      return;
+    }
+
+    const { generateInvoicePDF, generateInvoiceNumber } = await import('@/lib/invoice-generator');
+
+    // Normalize range to whole days
+    const start = new Date(from);
+    start.setHours(0,0,0,0);
+    const end = new Date(to);
+    end.setHours(23,59,59,999);
+
+    // Filter shipments by date range
+    const rangeShipments = filteredShipped.filter(shippedItem => {
+      const shipmentDate = typeof shippedItem.date === 'string' 
+        ? new Date(shippedItem.date) 
+        : new Date(shippedItem.date.seconds * 1000);
+      return shipmentDate >= start && shipmentDate <= end;
+    });
+
+    if (rangeShipments.length === 0) {
+      toast({ variant: "destructive", title: "No Shipments", description: "No shipments found in the selected date range." });
+      return;
+    }
+
+    const invoiceNumber = generateInvoiceNumber();
+    const invoiceDate = format(new Date(), 'dd/MM/yyyy');
+    const invoiceData = {
+      invoiceNumber,
+      date: invoiceDate,
+      orderNumber: `ORD-${format(new Date(), 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`,
+      soldTo: {
+        name: selectedUser.name,
+        email: selectedUser.email,
+        phone: selectedUser.phone || '',
+        address: `${selectedUser.address || ''}`.trim(),
+      },
+      fbm: 'Standard Shipping',
+      items: rangeShipments.map(shipped => ({
+        quantity: shipped.shippedQty,
+        productName: shipped.productName,
+        packaging: `${shipped.packOf} Nos.`,
+        shipTo: shipped.shipTo || '',
+        unitPrice: shipped.unitPrice || 0,
+        amount: shipped.shippedQty * (shipped.unitPrice || 0),
+      })),
+    } as const;
+
+    const subtotal = invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
+    const grandTotal = subtotal;
+
+    const invoiceDoc = {
+      invoiceNumber,
+      date: invoiceData.date,
+      orderNumber: invoiceData.orderNumber,
+      soldTo: invoiceData.soldTo,
+      fbm: invoiceData.fbm,
+      items: invoiceData.items,
+      subtotal,
+      grandTotal,
+      status: 'pending' as const,
+      createdAt: new Date(),
+      userId: selectedUser.uid,
+      range: { from: start, to: end },
+    };
+
+    await addDoc(collection(db, `users/${selectedUser.uid}/invoices`), invoiceDoc);
+    await generateInvoicePDF(invoiceData);
+    toast({ title: "Invoice Generated", description: `Range invoice ${invoiceNumber} created for ${selectedUser.name}.` });
   };
 
   // Filtered inventory data
@@ -1259,7 +1339,14 @@ export function AdminInventoryManagement({
                 <CardTitle>Shipped Orders ({filteredShipped.length})</CardTitle>
                 <CardDescription>View shipped orders for {selectedUser.name}</CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <DateRangePicker
+                  fromDate={invoiceFromDate}
+                  toDate={invoiceToDate}
+                  setFromDate={setInvoiceFromDate}
+                  setToDate={setInvoiceToDate}
+                  className="sm:w-64"
+                />
                 <Button
                   variant="default"
                   size="sm"
@@ -1268,6 +1355,16 @@ export function AdminInventoryManagement({
                 >
                   <Download className="h-4 w-4" />
                   Generate Invoice
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleGenerateInvoiceForRange(invoiceFromDate, invoiceToDate)}
+                  className="flex items-center gap-2"
+                  disabled={!invoiceFromDate || !invoiceToDate}
+                >
+                  <Download className="h-4 w-4" />
+                  Generate (Range)
                 </Button>
                 <Button
                   variant="outline"

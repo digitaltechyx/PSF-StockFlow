@@ -13,12 +13,12 @@ interface InvoiceData {
   date: string;
   orderNumber: string;
   soldTo: User;
-  shipTo: string;
   fbm: string;
   items: Array<{
     quantity: number;
     productName: string;
     packaging: string;
+    shipTo: string;
     unitPrice: number;
     amount: number;
   }>;
@@ -34,7 +34,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
+  const rightGutter = 10; // extra space on the right edge
   let yPos = margin;
+  let headerLogoHeightUsed = 0;
   
   // Add watermark logo (centered, large, semi-transparent)
   try {
@@ -56,13 +58,16 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
           doc.saveGraphicsState();
           
           // Set global alpha for transparency (watermark effect)
-          doc.setGState(doc.GState({opacity: 0.08}));
+          doc.setGState(doc.GState({opacity: 0.20}));
           
           // Add the watermark logo
           doc.addImage(logoImg, 'PNG', xPos, yPosWatermark, watermarkWidth, watermarkHeight);
           
           // Restore graphics state
           doc.restoreGraphicsState();
+
+          // No header logo; only watermark as requested
+          headerLogoHeightUsed = 0;
           
           resolve(null);
         } catch (error) {
@@ -84,24 +89,31 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   // Company name
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
+  // Push company name below header logo if rendered
+  yPos += headerLogoHeightUsed;
+  // Set brand color for company name (#ff9100)
+  doc.setTextColor(255, 145, 0);
   doc.text('PREP SERVICES FBA', margin, yPos);
+  // Reset to black for the rest of the document
+  doc.setTextColor(0, 0, 0);
   
   yPos += 8;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('ADDR 7000 Atrium Way B05', margin, yPos);
+  doc.text('7000 Atrium Way B05', margin, yPos);
   
   yPos += 5;
   doc.text('Mount Laurel NJ, 08054', margin, yPos);
   
   yPos += 5;
-  doc.text('TEL : (347-661-3010)', margin, yPos);
+  doc.text('TEL: (347) 661-3010', margin, yPos);
   
   yPos += 5;
-  doc.text('EMAIL ID: INFO@PREPSERVICESFBA.COM', margin, yPos);
+  doc.text('Email: INFO@PREPSERVICESFBA.COM', margin, yPos);
+  const companyBlockBottomY = yPos;
   
   // Invoice details (top right)
-  const invoiceDetailsStart = 150;
+  const invoiceDetailsStart = pageWidth - margin - rightGutter - 60; // leave gutter on the right
   yPos = margin;
   
   doc.setFont('helvetica', 'bold');
@@ -110,13 +122,24 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   
   yPos += 7;
   doc.text('DATE:', invoiceDetailsStart, yPos);
-  doc.text(data.date, invoiceDetailsStart + 30, yPos);
+  // Normalize incoming date into DD/MM/YYYY
+  let formattedDate = data.date;
+  try {
+    const d = new Date(data.date);
+    if (!isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      formattedDate = `${dd}/${mm}/${yyyy}`;
+    }
+  } catch {}
+  doc.text(formattedDate, invoiceDetailsStart + 30, yPos);
   
-  // Horizontal line
-  yPos = 50;
-  doc.line(margin, yPos, pageWidth - margin, yPos);
+  // Horizontal line placed below the company block to avoid overlap
+  yPos = Math.max(companyBlockBottomY + 8, 50);
+  doc.line(margin, yPos, pageWidth - margin - rightGutter, yPos);
   
-  // Sold To section
+  // Sold To section (left column)
   yPos += 10;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
@@ -125,52 +148,42 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   yPos += 7;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
+  const soldToTopY = yPos - 7;
   const soldToLines = data.soldTo.name.split('\n');
   soldToLines.forEach((line, index) => {
     doc.text(line, margin, yPos + (index * 5));
   });
   
+  // Track the bottom of the left column content
+  let leftColumnBottomY = yPos + (soldToLines.length - 1) * 5;
+  
   if (data.soldTo.address) {
-    yPos += soldToLines.length * 5 + 2;
-    doc.text(data.soldTo.address, margin, yPos);
+    leftColumnBottomY += 2;
+    doc.text(data.soldTo.address, margin, leftColumnBottomY);
   }
   
   if (data.soldTo.phone) {
-    yPos += 5;
-    doc.text(`TEL: ${data.soldTo.phone}`, margin, yPos);
+    leftColumnBottomY += 5;
+    doc.text(`TEL: ${data.soldTo.phone}`, margin, leftColumnBottomY);
   }
   
   // Add email to Sold To section
   if (data.soldTo.email) {
-    yPos += 5;
-    doc.text(`EMAIL: ${data.soldTo.email}`, margin, yPos);
+    leftColumnBottomY += 5;
+    doc.text(`EMAIL: ${data.soldTo.email}`, margin, leftColumnBottomY);
   }
   
-  // Ship To section (to the right of Sold To)
-  const shipToStartX = 105;
-  let shipToYPos = 58;
-  
+  // FBM block parallel to SOLD TO on the right
+  const fbmStartX = pageWidth - margin - rightGutter - 60; // allocate width for FBM area
   doc.setFont('helvetica', 'bold');
-  doc.text('SHIP TO:', shipToStartX, shipToYPos);
-  
-  shipToYPos += 7;
+  doc.text('FBM:', fbmStartX, soldToTopY);
   doc.setFont('helvetica', 'normal');
-  const shipToLines = data.shipTo.split('\n');
-  shipToLines.forEach((line, index) => {
-    doc.text(line.substring(0, 30), shipToStartX, shipToYPos + (index * 5));
-  });
-  
-  // FBM section
-  shipToYPos += shipToLines.length * 5 + 5;
-  doc.setFont('helvetica', 'bold');
-  doc.text('FBM:', shipToStartX, shipToYPos);
-  
-  shipToYPos += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.text(data.fbm, shipToStartX, shipToYPos);
+  const rightColumnBottomY = soldToTopY + 5;
+  doc.text(String(data.fbm || ''), fbmStartX + 20, rightColumnBottomY);
   
   // Notes section
-  yPos = shipToYPos + 15;
+  // Start notes below both columns and the horizontal line
+  yPos = Math.max(yPos, leftColumnBottomY, rightColumnBottomY) + 15;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.text('NOTE: PLEASE MAKE CHECK PAYABLE TO PREP SERVICES FBA LLC . ALL PRICES FOB', margin, yPos);
@@ -202,10 +215,11 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.text('QUANTITY', margin, tableStartY);
-  doc.text('PRODUCT DESCRIPTION', margin + 25, tableStartY);
-  doc.text('PACKAGING', margin + 100, tableStartY);
-  doc.text('UNIT PRICE $', margin + 130, tableStartY);
-  doc.text('AMOUNT', margin + 160, tableStartY);
+  doc.text('PRODUCT DESCRIPTION', margin + 20, tableStartY);
+  doc.text('SHIP TO', margin + 85, tableStartY);
+  doc.text('PACKAGING', margin + 120, tableStartY);
+  doc.text('UNIT PRICE $', margin + 145, tableStartY);
+  doc.text('AMOUNT', margin + 175, tableStartY);
   
   // Horizontal line under headers
   doc.line(margin, tableStartY + 3, pageWidth - margin, tableStartY + 3);
@@ -221,10 +235,11 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     
     doc.setFont('helvetica', 'normal');
     doc.text(item.quantity.toString(), margin, currentY);
-    doc.text(item.productName.substring(0, 30), margin + 25, currentY);
-    doc.text(item.packaging, margin + 100, currentY);
-    doc.text(`$${item.unitPrice.toFixed(2)}`, margin + 130, currentY);
-    doc.text(`$${item.amount.toFixed(2)}`, margin + 160, currentY);
+    doc.text(item.productName.substring(0, 28), margin + 20, currentY);
+    doc.text(String(item.shipTo || '').substring(0, 22), margin + 85, currentY);
+    doc.text(item.packaging, margin + 120, currentY);
+    doc.text(`$${item.unitPrice.toFixed(2)}`, margin + 145, currentY);
+    doc.text(`$${item.amount.toFixed(2)}`, margin + 175, currentY);
     
     currentY += 7;
   });
@@ -242,12 +257,12 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('GRAND TOTAL', margin, summaryStartY + 12);
-  doc.text(`TOTAL: $${subtotal.toFixed(2)}`, pageWidth - 50, summaryStartY + 12);
+  doc.text(`TOTAL: $${subtotal.toFixed(2)}`, pageWidth - rightGutter - 50, summaryStartY + 12);
   
   // Footer
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(9);
-  doc.text('WE APPRECIATE YOUR BUSINESS', pageWidth / 2, 280, { align: 'center' });
+  doc.text('WE APPRECIATE YOUR BUSINESS', (pageWidth - rightGutter) / 2, 280, { align: 'center' });
   
   // Save the PDF
   doc.save(`Invoice-${data.invoiceNumber}.pdf`);

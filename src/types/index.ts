@@ -158,12 +158,12 @@ export interface Invoice {
     phone?: string;
     address?: string;
   };
-  shipTo: string;
   fbm: string;
   items: Array<{
     quantity: number;
     productName: string;
     packaging: string;
+    shipTo: string;
     unitPrice: number;
     amount: number;
   }>;

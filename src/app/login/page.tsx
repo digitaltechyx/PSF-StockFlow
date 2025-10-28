@@ -85,10 +85,32 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (error: any) {
+      // Map auth error codes to generic, product-friendly messages
+      let friendly = "Unable to sign in. Please try again.";
+      const code = error?.code || "";
+      switch (code) {
+        case "auth/invalid-credential":
+        case "auth/invalid-email":
+        case "auth/user-not-found":
+        case "auth/wrong-password":
+        case "auth/invalid-login-credentials":
+          friendly = "Incorrect email or password.";
+          break;
+        case "auth/too-many-requests":
+          friendly = "Too many attempts. Please try again later.";
+          break;
+        case "auth/user-disabled":
+          friendly = "Your account is disabled. Please contact support.";
+          break;
+        case "auth/network-request-failed":
+          friendly = "Network error. Check your connection and try again.";
+          break;
+      }
+
       toast({
         variant: "destructive",
         title: "Login Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: friendly,
       });
     } finally {
       setIsLoading(false);

@@ -235,7 +235,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
               name="unitPrice"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Unit Price ($)</FormLabel>
+                  <FormLabel>Prep Unit Price ($)</FormLabel>
                   <FormControl>
                     <Input 
                       type="number" 

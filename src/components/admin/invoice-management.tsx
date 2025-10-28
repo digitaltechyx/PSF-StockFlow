@@ -163,7 +163,6 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         date: invoice.date,
         orderNumber: invoice.orderNumber,
         soldTo: invoice.soldTo,
-        shipTo: invoice.shipTo,
         fbm: invoice.fbm,
         items: invoice.items,
       });
@@ -414,7 +413,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   </h3>
                   <div className="space-y-3">
                     {paginatedPendingInvoices.map((invoice) => (
-                        <div key={invoice.id} className="p-4 border rounded-lg bg-yellow-50">
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="p-4 border rounded-lg bg-yellow-50">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
@@ -461,7 +460,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   </h3>
                   <div className="space-y-3">
                     {paginatedPaidInvoices.map((invoice) => (
-                        <div key={invoice.id} className="p-4 border rounded-lg bg-green-50">
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="p-4 border rounded-lg bg-green-50">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
@@ -606,7 +605,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                 </div>
               </div>
 
-              {/* Sold To & Ship To */}
+              {/* Sold To and FBM */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="p-4 border rounded-lg">
                   <h4 className="font-semibold mb-2">Sold To</h4>
@@ -616,24 +615,25 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   <p className="text-sm text-muted-foreground">{selectedInvoice.soldTo.email}</p>
                 </div>
                 <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">Ship To</h4>
-                  <p className="text-sm whitespace-pre-wrap">{selectedInvoice.shipTo}</p>
-                  <p className="text-sm text-muted-foreground mt-2">FBM: {selectedInvoice.fbm}</p>
+                  <h4 className="font-semibold mb-2">FBM</h4>
+                  <p className="text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
                 </div>
               </div>
 
               {/* Items Table */}
               <div className="border rounded-lg overflow-hidden">
-                <div className="bg-muted p-2 grid grid-cols-5 gap-2 text-sm font-semibold">
+                <div className="bg-muted p-2 grid grid-cols-6 gap-2 text-sm font-semibold">
                   <div>Qty</div>
                   <div className="col-span-2">Product</div>
+                  <div>Ship To</div>
                   <div>Unit Price</div>
                   <div>Amount</div>
                 </div>
                 {selectedInvoice.items.map((item, idx) => (
-                  <div key={idx} className="p-2 grid grid-cols-5 gap-2 text-sm border-t">
+                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-6 gap-2 text-sm border-t">
                     <div>{item.quantity}</div>
                     <div className="col-span-2">{item.productName}</div>
+                    <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
                     <div>${item.unitPrice.toFixed(2)}</div>
                     <div className="font-semibold">${item.amount.toFixed(2)}</div>
                   </div>

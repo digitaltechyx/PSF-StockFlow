@@ -7,7 +7,7 @@ import { InvoicesSection } from "@/components/dashboard/invoices-section";
 import { InventoryTable } from "@/components/dashboard/inventory-table";
 import { ShippedTable } from "@/components/dashboard/shipped-table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const [showEditLogs, setShowEditLogs] = useState(false);
   const [showRecycleSection, setShowRecycleSection] = useState(false);
   const [showInvoices, setShowInvoices] = useState(false);
+  
   const [restockDateFilter, setRestockDateFilter] = useState<string>("all");
   const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
   const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
@@ -766,6 +767,7 @@ export default function DashboardPage() {
       {showInvoices && (
         <InvoicesSection invoices={invoices} loading={invoicesLoading} />
       )}
+
     </div>
   );
 }

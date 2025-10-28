@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { Header } from "@/components/header";
+import { ProfileDialog } from "@/components/dashboard/profile-dialog";
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,16 @@ export default function DashboardLayout({
 }) {
   const { user, userProfile, loading, signOut } = useAuth();
   const router = useRouter();
+  const [showProfile, setShowProfile] = useState(false);
+
+  const handleProfileClick = () => {
+    setShowProfile(!showProfile);
+    // Also notify the page to toggle its Profile section
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('toggle-profile'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -42,7 +53,8 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen w-full flex-col">
-      <Header />
+      <Header onProfileClick={handleProfileClick} />
+      <ProfileDialog open={showProfile} onOpenChange={setShowProfile} />
       <main className="flex flex-1 flex-col gap-2 sm:gap-4 md:gap-8 p-2 sm:p-4 md:p-8">
         {children}
       </main>
