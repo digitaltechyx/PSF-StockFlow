@@ -351,10 +351,12 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                       <Button
                         variant="default"
                         size="sm"
-                        onClick={() => handleMarkAsPaid(invoice.id, invoice)}
+                        onClick={() => {
+                          window.location.href = `/dashboard/invoice/${invoice.invoiceNumber}/pay?amount=${invoice.grandTotal}&currency=USD`;
+                        }}
                       >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Mark as Paid
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Pay Invoice
                       </Button>
                     </div>
                   </div>
@@ -594,17 +596,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                   <Download className="h-4 w-4 mr-2" />
                   Download PDF
                 </Button>
-                {selectedInvoice.status === 'pending' && (
-                  <Button
-                    onClick={async () => {
-                      // Redirect user to payment instructions page for now
-                      window.location.href = `/dashboard/invoice/${selectedInvoice.invoiceNumber}/pay?amount=${selectedInvoice.grandTotal}&currency=USD`;
-                    }}
-                  >
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Pay Invoice
-                  </Button>
-                )}
+                {/* Pay button moved to list card; webhook will mark as paid automatically */}
               </div>
             </div>
           )}
