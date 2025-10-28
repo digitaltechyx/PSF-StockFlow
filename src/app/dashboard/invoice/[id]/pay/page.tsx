@@ -53,7 +53,7 @@ export default function PayInvoicePage() {
               </ul>
               <Alert>
                 <AlertDescription>
-                  Include reference "INV-{params.id}" in your transfer so we can match your payment automatically.
+                  Include reference "{params.id}" in your transfer so we can match your payment automatically.
                 </AlertDescription>
               </Alert>
             </div>
