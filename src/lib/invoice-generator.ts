@@ -17,6 +17,7 @@ interface InvoiceData {
   items: Array<{
     quantity: number;
     productName: string;
+    shipDate?: string;
     packaging: string;
     shipTo: string;
     unitPrice: number;
@@ -173,20 +174,12 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     doc.text(`EMAIL: ${data.soldTo.email}`, margin, leftColumnBottomY);
   }
   
-  // FBM block parallel to SOLD TO on the right
-  const fbmStartX = pageWidth - margin - rightGutter - 60; // allocate width for FBM area
-  doc.setFont('helvetica', 'bold');
-  doc.text('FBM:', fbmStartX, soldToTopY);
-  doc.setFont('helvetica', 'normal');
-  const rightColumnBottomY = soldToTopY + 5;
-  doc.text(String(data.fbm || ''), fbmStartX + 20, rightColumnBottomY);
-  
   // Notes section
-  // Start notes below both columns and the horizontal line
-  yPos = Math.max(yPos, leftColumnBottomY, rightColumnBottomY) + 15;
+  // Start notes below the Sold To column and the horizontal line
+  yPos = Math.max(yPos, leftColumnBottomY) + 15;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('NOTE: PLEASE MAKE CHECK PAYABLE TO PREP SERVICES FBA LLC . ALL PRICES FOB', margin, yPos);
+  doc.text('NOTE: Please make all payments to Prep Services FBA LLC. All prices are F.O.B.', margin, yPos);
   
   yPos += 8;
   doc.setFontSize(8);
@@ -200,10 +193,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   doc.text('NET', margin + 30, yPos);
   
   yPos += 5;
-  doc.text('SHIP DATE:', margin, yPos);
-  doc.text(data.date, margin + 30, yPos);
-  
-  yPos += 5;
   doc.text('SHIPPED VIA:', margin, yPos);
   doc.text('Standard', margin + 30, yPos);
   
@@ -214,15 +203,26 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   // Table headers
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.text('QUANTITY', margin, tableStartY);
-  doc.text('PRODUCT DESCRIPTION', margin + 20, tableStartY);
-  doc.text('SHIP TO', margin + 85, tableStartY);
-  doc.text('PACKAGING', margin + 120, tableStartY);
-  doc.text('UNIT PRICE $', margin + 145, tableStartY);
-  doc.text('AMOUNT', margin + 175, tableStartY);
+  const tableRight = pageWidth - margin - rightGutter; // ~185mm
+  const colQty = margin;                  // 15
+  const colProduct = margin + 25;         // 40
+  // Set remaining columns based on fixed separations from the right edge
+  const colAmount = tableRight;           // 185 (right-aligned)
+  const colUnitPrice = colAmount - 22;    // right-aligned
+  const colPackaging = colUnitPrice - 35; // extra spacing from Unit Price
+  const colShipTo = colPackaging - 26;    // 111 (left-aligned)
+  const colShipDate = colShipTo - 26;     // 85 (left-aligned)
+
+  doc.text('QUANTITY', colQty, tableStartY);
+  doc.text('PRODUCT', colProduct, tableStartY);
+  doc.text('DATE', colShipDate, tableStartY);
+  doc.text('SHIP TO', colShipTo, tableStartY);
+  doc.text('PACK', colPackaging, tableStartY);
+  doc.text('UNIT PRICE', colUnitPrice, tableStartY, { align: 'right' });
+  doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
   
   // Horizontal line under headers
-  doc.line(margin, tableStartY + 3, pageWidth - margin, tableStartY + 3);
+  doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
   
   // Table rows
   let currentY = tableStartY + 10;
@@ -234,12 +234,13 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     }
     
     doc.setFont('helvetica', 'normal');
-    doc.text(item.quantity.toString(), margin, currentY);
-    doc.text(item.productName.substring(0, 28), margin + 20, currentY);
-    doc.text(String(item.shipTo || '').substring(0, 22), margin + 85, currentY);
-    doc.text(item.packaging, margin + 120, currentY);
-    doc.text(`$${item.unitPrice.toFixed(2)}`, margin + 145, currentY);
-    doc.text(`$${item.amount.toFixed(2)}`, margin + 175, currentY);
+    doc.text(item.quantity.toString(), colQty, currentY);
+    doc.text(item.productName.substring(0, 30), colProduct, currentY);
+    doc.text(String(item.shipDate || '').substring(0, 10), colShipDate, currentY);
+    doc.text(String(item.shipTo || '').substring(0, 14), colShipTo, currentY);
+    doc.text(item.packaging, colPackaging, currentY);
+    doc.text(`$${item.unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
+    doc.text(`$${item.amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
     
     currentY += 7;
   });

@@ -8,33 +8,75 @@ export async function GET(request: NextRequest) {
     const currency = (searchParams.get('currency') || 'USD').toUpperCase();
 
     const apiKey = process.env.WISE_API_KEY;
-    const profileId = process.env.WISE_PROFILE_ID;
+    let profileId = process.env.WISE_PROFILE_ID;
+    const fallback = {
+      accountHolderName: process.env.WISE_FALLBACK_ACCOUNT_HOLDER || null,
+      bankName: process.env.WISE_FALLBACK_BANK_NAME || null,
+      accountNumber: process.env.WISE_FALLBACK_ACCOUNT_NUMBER || null,
+      routingNumber: process.env.WISE_FALLBACK_ROUTING_NUMBER || null,
+      iban: process.env.WISE_FALLBACK_IBAN || null,
+      sortCode: process.env.WISE_FALLBACK_SORT_CODE || null,
+      swift: process.env.WISE_FALLBACK_SWIFT || null,
+      currency,
+    };
 
-    if (!apiKey || !profileId) {
+    if (!apiKey) {
+      if (Object.values(fallback).some(Boolean)) {
+        return NextResponse.json({ details: fallback });
+      }
       return NextResponse.json({ error: 'Wise API not configured' }, { status: 500 });
+    }
+
+    // Resolve profile id automatically when not provided or not numeric
+    if (!profileId || !/^\d+$/.test(profileId)) {
+      const profilesRes = await fetch(`${WISE_API_BASE.replace('/v4','')}/v1/profiles`, {
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (profilesRes.ok) {
+        const profiles = await profilesRes.json();
+        const business = Array.isArray(profiles) ? profiles.find((p: any) => p.type === 'business') : null;
+        const chosen = business || (Array.isArray(profiles) ? profiles[0] : null);
+        if (chosen?.id) profileId = String(chosen.id);
+      }
+      if (!profileId) {
+        if (Object.values(fallback).some(Boolean)) {
+          return NextResponse.json({ details: fallback });
+        }
+        return NextResponse.json({ error: 'Unable to resolve Wise profile id' }, { status: 500 });
+      }
     }
 
     // 1) Get balances for the profile
     const balancesRes = await fetch(`${WISE_API_BASE}/profiles/${profileId}/balances?types=STANDARD`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
       cache: 'no-store',
     });
     if (!balancesRes.ok) {
+      if (Object.values(fallback).some(Boolean)) {
+        return NextResponse.json({ details: fallback });
+      }
       const text = await balancesRes.text();
       return NextResponse.json({ error: 'Failed to fetch balances', details: text }, { status: 500 });
     }
     const balances = await balancesRes.json();
     const balance = (Array.isArray(balances) ? balances : []).find((b: any) => b.currency === currency);
     if (!balance) {
+      if (Object.values(fallback).some(Boolean)) {
+        return NextResponse.json({ details: fallback });
+      }
       return NextResponse.json({ error: `No ${currency} balance found` }, { status: 404 });
     }
 
     // 2) Get bank details for the balance
     const bankRes = await fetch(`${WISE_API_BASE}/profiles/${profileId}/balances/${balance.id}/bank-details`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
       cache: 'no-store',
     });
     if (!bankRes.ok) {
+      if (Object.values(fallback).some(Boolean)) {
+        return NextResponse.json({ details: fallback });
+      }
       const text = await bankRes.text();
       return NextResponse.json({ error: 'Failed to fetch bank details', details: text }, { status: 500 });
     }
@@ -55,6 +97,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ details });
   } catch (error: any) {
     console.error('Wise deposit details error:', error);
+    const currency = 'USD';
+    const fallback = {
+      accountHolderName: process.env.WISE_FALLBACK_ACCOUNT_HOLDER || null,
+      bankName: process.env.WISE_FALLBACK_BANK_NAME || null,
+      accountNumber: process.env.WISE_FALLBACK_ACCOUNT_NUMBER || null,
+      routingNumber: process.env.WISE_FALLBACK_ROUTING_NUMBER || null,
+      iban: process.env.WISE_FALLBACK_IBAN || null,
+      sortCode: process.env.WISE_FALLBACK_SORT_CODE || null,
+      swift: process.env.WISE_FALLBACK_SWIFT || null,
+      currency,
+    };
+    if (Object.values(fallback).some(Boolean)) {
+      return NextResponse.json({ details: fallback });
+    }
     return NextResponse.json({ error: 'Failed to fetch deposit details' }, { status: 500 });
   }
 }

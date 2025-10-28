@@ -162,6 +162,7 @@ export interface Invoice {
   items: Array<{
     quantity: number;
     productName: string;
+    shipDate?: string;
     packaging: string;
     shipTo: string;
     unitPrice: number;

@@ -622,17 +622,19 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
               {/* Items Table */}
               <div className="border rounded-lg overflow-hidden">
-                <div className="bg-muted p-2 grid grid-cols-6 gap-2 text-sm font-semibold">
+                <div className="bg-muted p-2 grid grid-cols-7 gap-2 text-sm font-semibold">
                   <div>Qty</div>
                   <div className="col-span-2">Product</div>
+                  <div>Ship Date</div>
                   <div>Ship To</div>
                   <div>Unit Price</div>
                   <div>Amount</div>
                 </div>
                 {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-6 gap-2 text-sm border-t">
+                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-7 gap-2 text-sm border-t">
                     <div>{item.quantity}</div>
                     <div className="col-span-2">{item.productName}</div>
+                    <div>{item.shipDate || '-'}</div>
                     <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
                     <div>${item.unitPrice.toFixed(2)}</div>
                     <div className="font-semibold">${item.amount.toFixed(2)}</div>

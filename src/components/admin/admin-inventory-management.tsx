@@ -814,6 +814,9 @@ export function AdminInventoryManagement({
       items: todayShipments.map(shipped => ({
         quantity: shipped.shippedQty,
         productName: shipped.productName,
+        shipDate: (typeof shipped.date === 'string')
+          ? format(new Date(shipped.date), 'dd/MM/yyyy')
+          : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
         packaging: `${shipped.packOf} Nos.`,
         shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
@@ -927,6 +930,9 @@ export function AdminInventoryManagement({
       items: rangeShipments.map(shipped => ({
         quantity: shipped.shippedQty,
         productName: shipped.productName,
+        shipDate: (typeof shipped.date === 'string')
+          ? format(new Date(shipped.date), 'dd/MM/yyyy')
+          : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
         packaging: `${shipped.packOf} Nos.`,
         shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
