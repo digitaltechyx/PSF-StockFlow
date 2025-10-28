@@ -812,7 +812,7 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: todayShipments.map(shipped => ({
-        quantity: shipped.shippedQty,
+        quantity: (shipped as any).boxesShipped ?? shipped.shippedQty,
         productName: shipped.productName,
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
@@ -928,7 +928,7 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: rangeShipments.map(shipped => ({
-        quantity: shipped.shippedQty,
+        quantity: (shipped as any).boxesShipped ?? shipped.shippedQty,
         productName: shipped.productName,
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
@@ -1006,11 +1006,15 @@ export function AdminInventoryManagement({
       return matchesSearch && matchesDate;
     });
 
-    // Sort by date (most recent first)
+    // Sort by createdAt when available, otherwise by date (most recent first)
     return filtered.sort((a, b) => {
-      const dateA = typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000);
-      const dateB = typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
+      const aCreated = (a as any).createdAt
+        ? (typeof (a as any).createdAt === 'string' ? new Date((a as any).createdAt) : new Date((a as any).createdAt.seconds * 1000))
+        : (typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000));
+      const bCreated = (b as any).createdAt
+        ? (typeof (b as any).createdAt === 'string' ? new Date((b as any).createdAt) : new Date((b as any).createdAt.seconds * 1000))
+        : (typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000));
+      return bCreated.getTime() - aCreated.getTime();
     });
   }, [shipped, shippedSearch, shippedDateFilter]);
 
@@ -1439,7 +1443,7 @@ export function AdminInventoryManagement({
                     <div className="flex-1">
                       <h3 className="font-semibold">{item.productName}</h3>
                       <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                        <span>Shipped: {item.shippedQty} units</span>
+                        <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
                         <span>Remaining: {item.remainingQty}</span>
                         <span>Pack: {item.packOf}</span>
                         <span>Ship To: {item.shipTo}</span>

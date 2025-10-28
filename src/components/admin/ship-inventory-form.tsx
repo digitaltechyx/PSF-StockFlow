@@ -61,11 +61,13 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
         }
 
         const currentInventory = inventoryDoc.data() as Omit<InventoryItem, 'id'>;
-        if (currentInventory.quantity < values.quantity) {
+        // Treat shipped quantity as number of boxes; total units shipped = boxes * packOf
+        const totalUnitsShipped = values.quantity * values.packOf;
+        if (currentInventory.quantity < totalUnitsShipped) {
           throw new Error("Not enough stock to ship this quantity.");
         }
 
-        const newQuantity = currentInventory.quantity - values.quantity;
+        const newQuantity = currentInventory.quantity - totalUnitsShipped;
         const newStatus = newQuantity > 0 ? "In Stock" : "Out of Stock";
 
         transaction.update(inventoryDocRef, {
@@ -77,7 +79,11 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
         transaction.set(doc(shippedCollectionRef), {
           productName: currentInventory.productName,
           date: values.date,
-          shippedQty: values.quantity,
+          createdAt: new Date(),
+          // Store total units shipped
+          shippedQty: totalUnitsShipped,
+          // Keep boxes shipped for reference/debugging
+          boxesShipped: values.quantity,
           remainingQty: newQuantity,
           packOf: values.packOf,
           unitPrice: values.unitPrice,
@@ -200,10 +206,10 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
             <div className="grid gap-4 md:grid-cols-2">
               <FormField
                 control={form.control}
-                name="quantity"
+              name="quantity"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Shipped Quantity</FormLabel>
+                    <FormLabel>Shipped Units</FormLabel>
                     <FormControl>
                       <Input type="number" {...field} />
                     </FormControl>

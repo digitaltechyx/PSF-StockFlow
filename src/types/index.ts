@@ -34,7 +34,12 @@ export interface ShippedItem {
     seconds: number;
     nanoseconds: number;
   } | string;
+  createdAt?: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
   shippedQty: number;
+  boxesShipped?: number;
   // This is the remaining quantity in the main inventory after this shipment
   remainingQty: number; 
   packOf: number;

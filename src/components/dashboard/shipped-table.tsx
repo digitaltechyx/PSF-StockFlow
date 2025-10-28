@@ -86,11 +86,15 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
       return matchesSearch && matchesDate;
     });
 
-    // Sort by date (most recent first)
+    // Sort by createdAt when available, otherwise by date (most recent first)
     return filtered.sort((a, b) => {
-      const dateA = typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000);
-      const dateB = typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
+      const aCreated = a.createdAt
+        ? (typeof a.createdAt === 'string' ? new Date(a.createdAt) : new Date(a.createdAt.seconds * 1000))
+        : (typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000));
+      const bCreated = b.createdAt
+        ? (typeof b.createdAt === 'string' ? new Date(b.createdAt) : new Date(b.createdAt.seconds * 1000))
+        : (typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000));
+      return bCreated.getTime() - aCreated.getTime();
     });
   }, [data, searchTerm, dateFilter]);
 
@@ -179,7 +183,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                         <div className="sm:hidden mt-1 space-y-0.5 text-xs text-gray-500">
                           <span>{formatDate(item.date)}</span>
                           <br />
-                          <span>Shipped: {item.shippedQty} units</span>
+                          <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
                           <br />
                           <span>Pack: {item.packOf}</span>
                           <br />
@@ -212,7 +216,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                     <TableCell className="hidden sm:table-cell">
                       <span className="text-xs">{formatDate(item.date)}</span>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell">{item.shippedQty}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{(item as any).boxesShipped ?? item.shippedQty}</TableCell>
                     <TableCell className="hidden md:table-cell">{item.packOf}</TableCell>
                     <TableCell className="hidden md:table-cell">
                       <Button
