@@ -10,10 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Check, ChevronsUpDown } from "lucide-react";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronsUpDown, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +35,7 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -127,10 +126,11 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Product Name</FormLabel>
-                  <Popover open={open} onOpenChange={setOpen}>
-                    <PopoverTrigger asChild>
+                  <Dialog open={open} onOpenChange={setOpen}>
+                    <DialogTrigger asChild>
                       <FormControl>
                         <Button
+                          type="button"
                           variant="outline"
                           role="combobox"
                           aria-expanded={open}
@@ -143,35 +143,54 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-full p-0">
-                      <Command>
-                        <CommandInput placeholder="Search products..." />
-                        <CommandList>
-                          <CommandEmpty>No products found.</CommandEmpty>
-                          <CommandGroup>
-                            {inventory.filter(item => item.quantity > 0).map((item) => (
-                              <CommandItem
-                                key={item.id}
-                                value={item.productName}
-                                onSelect={() => {
-                                  field.onChange(item.id);
-                                  setOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={`mr-2 h-4 w-4 ${
-                                    field.value === item.id ? "opacity-100" : "opacity-0"
-                                  }`}
-                                />
-                                {item.productName} (In Stock: {item.quantity})
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                    </DialogTrigger>
+                    <DialogContent className="p-0">
+                      <DialogTitle className="sr-only">Select a product</DialogTitle>
+                      <div className="p-3 border-b">
+                        <Input
+                          autoFocus
+                          placeholder="Search products..."
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const normalized = query.trim().toLowerCase();
+                              const matches = inventory
+                                .filter(item => item.quantity > 0)
+                                .filter(item => item.productName.toLowerCase().includes(normalized));
+                              const first = matches[0] ?? inventory.filter(item => item.quantity > 0)[0];
+                              if (first) {
+                                field.onChange(first.id);
+                                setOpen(false);
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {inventory
+                          .filter(item => item.quantity > 0)
+                          .filter(item => item.productName.toLowerCase().includes(query.trim().toLowerCase()))
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              role="button"
+                              tabIndex={0}
+                              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                              onClick={() => { field.onChange(item.id); setOpen(false); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { field.onChange(item.id); setOpen(false); }}}
+                            >
+                              <Check className={`h-4 w-4 ${field.value === item.id ? 'opacity-100' : 'opacity-0'}`} />
+                              {item.productName} (In Stock: {item.quantity})
+                            </div>
+                          ))}
+                        {inventory.filter(item => item.quantity > 0).filter(item => item.productName.toLowerCase().includes(query.trim().toLowerCase())).length === 0 && (
+                          <div className="px-3 py-4 text-sm text-muted-foreground">No products found.</div>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                   <FormMessage />
                 </FormItem>
               )}

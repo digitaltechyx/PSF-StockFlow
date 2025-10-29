@@ -251,9 +251,9 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
             </div>
           ) : filteredUsers.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {paginatedUsers.map(({ user, pendingCount, paidCount, totalAmount }) => (
+              {paginatedUsers.map(({ user, pendingCount, paidCount, totalAmount }, idx) => (
                 <Card 
-                  key={user.uid} 
+                  key={`${user.uid || user.email || 'user'}-${idx}`}
                   className="cursor-pointer transition-all hover:shadow-md hover:border-primary"
                   onClick={() => handleViewUserInvoices(user)}
                 >
