@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       iban: process.env.WISE_FALLBACK_IBAN || null,
       sortCode: process.env.WISE_FALLBACK_SORT_CODE || null,
       swift: process.env.WISE_FALLBACK_SWIFT || null,
+      address: process.env.WISE_FALLBACK_ADDRESS || null,
       currency,
     };
 
@@ -86,6 +87,17 @@ export async function GET(request: NextRequest) {
     const d = bankDetails?.details || bankDetails?.bankDetails || bankDetails || {};
 
     // Normalize fields for UI
+    const normalizeAddress = (addr: any) => {
+      if (!addr) return null;
+      const parts = [
+        addr.addressFirstLine || addr.addressLine1 || addr.address,
+        addr.addressSecondLine || addr.addressLine2,
+        [addr.city, addr.state].filter(Boolean).join(', '),
+        [addr.postCode || addr.postalCode, addr.country].filter(Boolean).join(' '),
+      ].filter(Boolean);
+      return parts.join('\n');
+    };
+
     const details = {
       accountHolderName: d.accountHolderName || bankDetails?.accountHolderName || null,
       bankName: d.bankName || bankDetails?.bankName || null,
@@ -94,10 +106,24 @@ export async function GET(request: NextRequest) {
       iban: d.IBAN || d.iban || null,
       sortCode: d.sortCode || null,
       swift: d.swift || d.bic || d.swiftCode || null,
+      address: normalizeAddress(d.address || bankDetails?.address) || null,
       currency,
     };
 
-    return NextResponse.json({ details });
+    // If any fields are missing, backfill from provided fallbacks
+    const merged = {
+      accountHolderName: details.accountHolderName || fallback.accountHolderName,
+      bankName: details.bankName || fallback.bankName,
+      accountNumber: details.accountNumber || fallback.accountNumber,
+      routingNumber: details.routingNumber || fallback.routingNumber,
+      iban: details.iban || fallback.iban,
+      sortCode: details.sortCode || fallback.sortCode,
+      swift: details.swift || fallback.swift,
+      address: details.address || (fallback as any).address || null,
+      currency,
+    };
+
+    return NextResponse.json({ details: merged });
   } catch (error: any) {
     console.error('Wise deposit details error:', error);
     const currency = 'USD';
@@ -109,6 +135,7 @@ export async function GET(request: NextRequest) {
       iban: process.env.WISE_FALLBACK_IBAN || null,
       sortCode: process.env.WISE_FALLBACK_SORT_CODE || null,
       swift: process.env.WISE_FALLBACK_SWIFT || null,
+      address: process.env.WISE_FALLBACK_ADDRESS || null,
       currency,
     };
     if (Object.values(fallback).some(Boolean)) {

@@ -44,7 +44,14 @@ export default function PayInvoicePage() {
             <div className="space-y-2">
               <p className="text-sm">Send a bank transfer to the following account:</p>
               <ul className="text-sm list-disc list-inside space-y-1">
-                {details.bankName && <li>Bank: {details.bankName}</li>}
+                {(details.bankName || details.address) && (
+                  <li>
+                    Bank/Address: {details.bankName}
+                    {details.address && (
+                      <span className="whitespace-pre-line"> {details.address}</span>
+                    )}
+                  </li>
+                )}
                 {details.accountHolderName && <li>Account Holder: {details.accountHolderName}</li>}
                 {details.accountNumber && <li>Account Number: {details.accountNumber}</li>}
                 {details.routingNumber && <li>Routing Number: {details.routingNumber}</li>}
