@@ -40,6 +40,8 @@ export interface ShippedItem {
   } | string;
   shippedQty: number;
   boxesShipped?: number;
+  // Units entered by admin in the shipped units field; used for pricing
+  unitsForPricing?: number;
   // This is the remaining quantity in the main inventory after this shipment
   remainingQty: number; 
   packOf: number;

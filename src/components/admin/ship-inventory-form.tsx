@@ -83,6 +83,8 @@ export function ShipInventoryForm({ userId, inventory }: { userId: string; inven
           shippedQty: totalUnitsShipped,
           // Keep boxes shipped for reference/debugging
           boxesShipped: values.quantity,
+          // Pricing should be based on the number admin entered
+          unitsForPricing: values.quantity,
           remainingQty: newQuantity,
           packOf: values.packOf,
           unitPrice: values.unitPrice,

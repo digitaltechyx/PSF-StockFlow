@@ -812,7 +812,7 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: todayShipments.map(shipped => ({
-        quantity: (shipped as any).boxesShipped ?? shipped.shippedQty,
+        quantity: (shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty,
         productName: shipped.productName,
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
@@ -820,7 +820,7 @@ export function AdminInventoryManagement({
         packaging: `${shipped.packOf} Nos.`,
         shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
-        amount: (shipped.shippedQty) * (shipped.unitPrice || 0),
+        amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
     };
 
@@ -928,7 +928,7 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: rangeShipments.map(shipped => ({
-        quantity: (shipped as any).boxesShipped ?? shipped.shippedQty,
+        quantity: (shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty,
         productName: shipped.productName,
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
@@ -936,7 +936,7 @@ export function AdminInventoryManagement({
         packaging: `${shipped.packOf} Nos.`,
         shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
-        amount: shipped.shippedQty * (shipped.unitPrice || 0),
+        amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
     } as const;
 
