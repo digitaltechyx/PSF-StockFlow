@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X, FileText } from "lucide-react";
 import { format } from "date-fns";
 
@@ -301,19 +302,44 @@ export default function DashboardPage() {
             ) : filteredRestockHistory.length > 0 ? (
               <div className="space-y-3">
                 {paginatedRestockHistory.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{item.productName}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>Previous: {item.previousQuantity}</span>
-                          <span className="text-green-600 font-medium">+{item.restockedQuantity}</span>
-                          <span>New Total: {item.newQuantity}</span>
-                          <span>Restocked by: {item.restockedBy}</span>
-                          <span>Date: {formatDate(item.restockedAt)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+  <div key={item.id}>
+    {/* Mobile: compact with chips */}
+    <div className="block sm:hidden p-3 border rounded-lg">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold text-sm truncate pr-2">{item.productName}</h3>
+        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-green-100 text-green-800">
+          +{item.restockedQuantity}
+        </Badge>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          Prev: {item.previousQuantity} → {item.newQuantity}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          By: {item.restockedBy}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          {formatDate(item.restockedAt)}
+        </Badge>
+      </div>
+    </div>
+    {/* Desktop/Tablet: original row layout */}
+    <div className="hidden sm:block">
+      <div className="flex items-center justify-between p-4 border rounded-lg">
+        <div className="flex-1">
+          <h3 className="font-semibold">{item.productName}</h3>
+          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+            <span>Previous: {item.previousQuantity}</span>
+            <span className="text-green-600 font-medium">+{item.restockedQuantity}</span>
+            <span>New Total: {item.newQuantity}</span>
+            <span>Restocked by: {item.restockedBy}</span>
+            <span>Date: {formatDate(item.restockedAt)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+))}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -417,31 +443,63 @@ export default function DashboardPage() {
             ) : filteredDeleteLogs.length > 0 ? (
               <div className="space-y-3">
                 {paginatedDeleteLogs.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-red-800">{item.productName}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>Quantity: {item.quantity}</span>
-                          <span>Added: {formatDate(item.dateAdded)}</span>
-                          <span className="text-red-600">Deleted: {formatDate(item.deletedAt)}</span>
-                          <span>By: {item.deletedBy}</span>
-                        </div>
-                        <div className="mt-2 text-sm">
-                          <span className="text-muted-foreground">Reason: </span>
-                          <span className="text-red-700 font-medium">{item.reason}</span>
-                        </div>
-                        <div className="mt-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.status === "In Stock" 
-                              ? "bg-green-100 text-green-800" 
-                              : "bg-red-100 text-red-800"
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+  <div key={item.id}>
+    {/* Mobile: compact with chips */}
+    <div className="block sm:hidden p-3 border rounded-lg bg-red-50">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold text-sm text-red-800 truncate pr-2">{item.productName}</h3>
+        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-red-100 text-red-800">
+          -{item.quantity}
+        </Badge>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          Added: {formatDate(item.dateAdded)}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-red-700">
+          Deleted: {formatDate(item.deletedAt)}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          By: {item.deletedBy}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          {item.status}
+        </Badge>
+      </div>
+      <div className="mt-2">
+        <span className="text-[10px] text-muted-foreground">Reason: </span>
+        <span className="text-[10px] text-red-700 font-medium break-words">{item.reason}</span>
+      </div>
+    </div>
+    {/* Desktop/Tablet: original row layout */}
+    <div className="hidden sm:block">
+      <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
+        <div className="flex-1">
+          <h3 className="font-semibold text-red-800">{item.productName}</h3>
+          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+            <span>Quantity: {item.quantity}</span>
+            <span>Added: {formatDate(item.dateAdded)}</span>
+            <span className="text-red-600">Deleted: {formatDate(item.deletedAt)}</span>
+            <span>By: {item.deletedBy}</span>
+          </div>
+          <div className="mt-2 text-sm">
+            <span className="text-muted-foreground">Reason: </span>
+            <span className="text-red-700 font-medium">{item.reason}</span>
+          </div>
+          <div className="mt-2">
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              item.status === "In Stock" 
+                ? "bg-green-100 text-green-800" 
+                : "bg-red-100 text-red-800"
+            }`}>
+              {item.status}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+))}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -545,37 +603,72 @@ export default function DashboardPage() {
             ) : filteredEditLogs.length > 0 ? (
               <div className="space-y-3">
                 {paginatedEditLogs.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-blue-800">{item.productName}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
-                          <span>Status: {item.previousStatus} → {item.newStatus}</span>
-                          <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
-                          <span>By: {item.editedBy}</span>
-                        </div>
-                        {item.previousProductName && item.previousProductName !== item.productName && (
-                          <div className="mt-1 text-sm">
-                            <span className="text-muted-foreground">Name changed from: </span>
-                            <span className="text-blue-700 font-medium">{item.previousProductName}</span>
-                          </div>
-                        )}
-                        <div className="mt-2 text-sm">
-                          <span className="text-muted-foreground">Reason: </span>
-                          <span className="text-blue-700 font-medium">{item.reason}</span>
-                        </div>
-                        <div className="mt-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.newStatus === "In Stock" 
-                              ? "bg-green-100 text-green-800" 
-                              : "bg-red-100 text-red-800"
-                          }`}>
-                            {item.newStatus}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+  <div key={item.id}>
+    {/* Mobile: compact with chips */}
+    <div className="block sm:hidden p-3 border rounded-lg bg-blue-50">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold text-sm text-blue-800 truncate pr-2">{item.productName}</h3>
+        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-blue-100 text-blue-800">
+          {item.previousQuantity} → {item.newQuantity}
+        </Badge>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          Status: {item.previousStatus} → {item.newStatus}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-blue-700">
+          Edited: {formatDate(item.editedAt)}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          By: {item.editedBy}
+        </Badge>
+      </div>
+      {item.previousProductName && item.previousProductName !== item.productName && (
+        <div className="mt-2">
+          <span className="text-[10px] text-muted-foreground">Name from: </span>
+          <span className="text-[10px] text-blue-700 font-medium break-words">{item.previousProductName}</span>
+        </div>
+      )}
+      <div className="mt-2">
+        <span className="text-[10px] text-muted-foreground">Reason: </span>
+        <span className="text-[10px] text-blue-700 font-medium break-words">{item.reason}</span>
+      </div>
+    </div>
+    {/* Desktop/Tablet: original row layout */}
+    <div className="hidden sm:block">
+      <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
+        <div className="flex-1">
+          <h3 className="font-semibold text-blue-800">{item.productName}</h3>
+          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+            <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
+            <span>Status: {item.previousStatus} → {item.newStatus}</span>
+            <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
+            <span>By: {item.editedBy}</span>
+          </div>
+          {item.previousProductName && item.previousProductName !== item.productName && (
+            <div className="mt-1 text-sm">
+              <span className="text-muted-foreground">Name changed from: </span>
+              <span className="text-blue-700 font-medium">{item.previousProductName}</span>
+            </div>
+          )}
+          <div className="mt-2 text-sm">
+            <span className="text-muted-foreground">Reason: </span>
+            <span className="text-blue-700 font-medium">{item.reason}</span>
+          </div>
+          <div className="mt-2">
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              item.newStatus === "In Stock" 
+                ? "bg-green-100 text-green-800" 
+                : "bg-red-100 text-red-800"
+            }`}>
+              {item.newStatus}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+))}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -682,33 +775,73 @@ export default function DashboardPage() {
             ) : filteredRecycledInventory.length > 0 ? (
               <div className="space-y-3">
                 {paginatedRecycledInventory.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
-                      <div className="flex-1">
-                        <h4 className="font-semibold">{item.productName}</h4>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>Qty: {item.quantity}</span>
-                          <span>Added: {formatDate(item.dateAdded)}</span>
-                          <span className="text-orange-600">Recycled: {formatDate(item.recycledAt)}</span>
-                          <span>By: {item.recycledBy}</span>
-                        </div>
-                        {item.remarks && (
-                          <div className="mt-2 text-sm">
-                            <span className="text-muted-foreground">Reason: </span>
-                            <span className="text-orange-700 font-medium">{item.remarks}</span>
-                          </div>
-                        )}
-                        <div className="mt-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.status === "In Stock" 
-                              ? "bg-green-100 text-green-800" 
-                              : "bg-red-100 text-red-800"
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+  <div key={item.id}>
+    {/* Mobile: compact with chips */}
+    <div className="block sm:hidden p-3 border rounded-lg bg-orange-50">
+      <div className="flex items-start justify-between gap-2">
+        <h4 className="font-semibold text-sm truncate pr-2">{item.productName}</h4>
+        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-orange-100 text-orange-800">
+          Qty: {item.quantity}
+        </Badge>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          Added: {formatDate(item.dateAdded)}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-orange-700">
+          Recycled: {formatDate(item.recycledAt)}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+          By: {item.recycledBy}
+        </Badge>
+      </div>
+      {item.remarks && (
+        <div className="mt-2">
+          <span className="text-[10px] text-muted-foreground">Reason: </span>
+          <span className="text-[10px] text-orange-700 font-medium break-words">{item.remarks}</span>
+        </div>
+      )}
+      <div className="mt-2">
+        <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium ${
+          item.status === "In Stock" 
+            ? "bg-green-100 text-green-800" 
+            : "bg-red-100 text-red-800"
+        }`}>
+          {item.status}
+        </span>
+      </div>
+    </div>
+    {/* Desktop/Tablet: original row layout */}
+    <div className="hidden sm:block">
+      <div className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
+        <div className="flex-1">
+          <h4 className="font-semibold">{item.productName}</h4>
+          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+            <span>Qty: {item.quantity}</span>
+            <span>Added: {formatDate(item.dateAdded)}</span>
+            <span className="text-orange-600">Recycled: {formatDate(item.recycledAt)}</span>
+            <span>By: {item.recycledBy}</span>
+          </div>
+          {item.remarks && (
+            <div className="mt-2 text-sm">
+              <span className="text-muted-foreground">Reason: </span>
+              <span className="text-orange-700 font-medium">{item.remarks}</span>
+            </div>
+          )}
+          <div className="mt-2">
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              item.status === "In Stock" 
+                ? "bg-green-100 text-green-800" 
+                : "bg-red-100 text-red-800"
+            }`}>
+              {item.status}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+))}
               </div>
             ) : (
               <div className="text-center py-8">

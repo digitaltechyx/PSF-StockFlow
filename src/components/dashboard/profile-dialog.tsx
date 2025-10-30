@@ -11,7 +11,7 @@ interface ProfileDialogProps {
 export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-full sm:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Profile</DialogTitle>
           <DialogDescription>Update your phone number or change your password.</DialogDescription>

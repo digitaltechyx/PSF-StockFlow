@@ -108,7 +108,40 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Card List */}
+        <div className="block sm:hidden px-4 space-y-3">
+          {filteredData.length > 0 ? (
+            paginatedData.map((item) => (
+              <div key={item.id} className="border rounded-lg p-3 bg-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-sm">{item.productName}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Added: {formatDate(item.dateAdded)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs">Qty</div>
+                    <div className="font-semibold text-sm">{item.quantity}</div>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <Badge 
+                    variant={item.status === "In Stock" ? "secondary" : "destructive"}
+                    className="text-[10px] px-2 py-1"
+                  >
+                    {item.status}
+                  </Badge>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-8 text-xs text-gray-500">
+              {data.length === 0 ? "No inventory items found." : "No items match your search criteria."}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop/Table View */}
+        <div className="hidden sm:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

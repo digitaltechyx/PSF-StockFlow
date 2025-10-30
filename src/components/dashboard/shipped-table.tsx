@@ -161,102 +161,159 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-                <TableHead className="text-xs sm:text-sm">Product</TableHead>
-                <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Date</TableHead>
-                <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Shipped</TableHead>
-                <TableHead className="text-xs sm:text-sm hidden md:table-cell">Pack</TableHead>
-                <TableHead className="text-xs sm:text-sm hidden md:table-cell">Ship To</TableHead>
-                <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Remarks</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-              {filteredData.length > 0 ? (
-                paginatedData.map((item) => (
-                  <TableRow key={item.id} className="text-xs sm:text-sm">
-                    <TableCell className="font-medium max-w-32 sm:max-w-none truncate">
-                      <div className="flex flex-col sm:block">
-                        <span className="font-medium">{item.productName}</span>
-                        <div className="sm:hidden mt-1 space-y-0.5 text-xs text-gray-500">
-                          <span>{formatDate(item.date)}</span>
-                          <br />
-                          <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
-                          <br />
-                          <span>Pack: {item.packOf}</span>
-                          <br />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto p-0 text-left justify-start text-xs text-gray-500"
-                            onClick={() => handleShipToClick(item.shipTo || "")}
-                          >
-                            <span>Ship To: {item.shipTo}</span>
-                            <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
-                          </Button>
-                          {item.remarks && (
-                            <>
-                              <br />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-auto p-0 text-left justify-start text-xs text-gray-500"
-                                onClick={() => handleRemarksClick(item.remarks || "")}
-                              >
-                                <span>Remarks: {item.remarks}</span>
-                                <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
-                              </Button>
-                            </>
-                          )}
+        {/* Mobile Card List */}
+        <div className="block sm:hidden px-4 space-y-3">
+          {filteredData.length > 0 ? (
+            paginatedData.map((item) => (
+              <div key={item.id} className="border rounded-lg p-3 bg-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-sm">{item.productName}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{formatDate(item.date)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs">Shipped Units</div>
+                    <div className="font-semibold text-sm">{(item as any).boxesShipped ?? item.shippedQty}</div>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Pack</div>
+                    <div className="font-medium">{item.packOf}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Ship To</div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-left justify-start text-xs"
+                      onClick={() => handleShipToClick(item.shipTo || "")}
+                    >
+                      <span className="truncate max-w-[140px] inline-block align-middle">{item.shipTo || '-'}</span>
+                      <Eye className="h-3 w-3 ml-1 inline-block align-middle" />
+                    </Button>
+                  </div>
+                </div>
+                {item.remarks && (
+                  <div className="mt-2">
+                    <div className="text-xs text-muted-foreground">Remarks</div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-left justify-start text-xs"
+                      onClick={() => handleRemarksClick(item.remarks || "")}
+                    >
+                      <span className="truncate max-w-[200px] inline-block align-middle">{item.remarks}</span>
+                      <Eye className="h-3 w-3 ml-1 inline-block align-middle" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-8 text-xs text-gray-500">
+              {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop/Table View */}
+        <div className="hidden sm:block overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                  <TableHead className="text-xs sm:text-sm">Product</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Date</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Shipped</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden md:table-cell">Pack</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden md:table-cell">Ship To</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Remarks</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+                {filteredData.length > 0 ? (
+                  paginatedData.map((item) => (
+                    <TableRow key={item.id} className="text-xs sm:text-sm">
+                      <TableCell className="font-medium max-w-32 sm:max-w-none truncate">
+                        <div className="flex flex-col sm:block">
+                          <span className="font-medium">{item.productName}</span>
+                          <div className="sm:hidden mt-1 space-y-0.5 text-xs text-gray-500">
+                            <span>{formatDate(item.date)}</span>
+                            <br />
+                            <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
+                            <br />
+                            <span>Pack: {item.packOf}</span>
+                            <br />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-0 text-left justify-start text-xs text-gray-500"
+                              onClick={() => handleShipToClick(item.shipTo || "")}
+                            >
+                              <span>Ship To: {item.shipTo}</span>
+                              <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                            </Button>
+                            {item.remarks && (
+                              <>
+                                <br />
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-auto p-0 text-left justify-start text-xs text-gray-500"
+                                  onClick={() => handleRemarksClick(item.remarks || "")}
+                                >
+                                  <span>Remarks: {item.remarks}</span>
+                                  <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell">
-                      <span className="text-xs">{formatDate(item.date)}</span>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell">{(item as any).boxesShipped ?? item.shippedQty}</TableCell>
-                    <TableCell className="hidden md:table-cell">{item.packOf}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto p-1 text-left justify-start max-w-20 truncate"
-                        onClick={() => handleShipToClick(item.shipTo || "")}
-                      >
-                        <span className="truncate">{item.shipTo}</span>
-                        <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
-                      </Button>
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {item.remarks ? (
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <span className="text-xs">{formatDate(item.date)}</span>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">{(item as any).boxesShipped ?? item.shippedQty}</TableCell>
+                      <TableCell className="hidden md:table-cell">{item.packOf}</TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-auto p-1 text-left justify-start max-w-20 truncate"
-                          onClick={() => handleRemarksClick(item.remarks || "")}
+                          onClick={() => handleShipToClick(item.shipTo || "")}
                         >
-                          <span className="truncate">{item.remarks}</span>
+                          <span className="truncate">{item.shipTo}</span>
                           <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
                         </Button>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {item.remarks ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-1 text-left justify-start max-w-20 truncate"
+                            onClick={() => handleRemarksClick(item.remarks || "")}
+                          >
+                            <span className="truncate">{item.remarks}</span>
+                            <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <div className="text-xs sm:text-sm text-gray-500">
+                        {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
+                      </div>
+                  </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    <div className="text-xs sm:text-sm text-gray-500">
-                      {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
-                    </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
         </div>
 
         {/* Pagination Controls */}
@@ -292,7 +349,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
 
       {/* Remarks Dialog */}
       <Dialog open={isRemarksDialogOpen} onOpenChange={setIsRemarksDialogOpen}>
-        <DialogContent className="max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Full Remarks</DialogTitle>
             <DialogDescription>Complete remarks for this shipment</DialogDescription>
@@ -309,7 +366,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
 
       {/* Ship To Dialog */}
       <Dialog open={isShipToDialogOpen} onOpenChange={setIsShipToDialogOpen}>
-        <DialogContent className="max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Ship To Details</DialogTitle>
             <DialogDescription>Complete shipping address for this shipment</DialogDescription>
