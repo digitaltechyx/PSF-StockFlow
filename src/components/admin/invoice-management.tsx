@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type Invoice, type UserProfile } from "@/types";
 import { db } from "@/lib/firebase";
-import { collection, query, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
 import type { ShippedItem } from "@/types";
 
 interface InvoiceManagementProps {
@@ -181,6 +181,26 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     }
   };
 
+  const handleMarkAsPaid = async (invoiceId: string, invoice: Invoice) => {
+    try {
+      await updateDoc(doc(db, `users/${invoice.userId}/invoices/${invoiceId}`), {
+        status: 'paid',
+      });
+      toast({
+        title: "Invoice Marked as Paid",
+        description: "Invoice status has been updated.",
+      });
+      loadInvoices(); // Refresh UI
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update invoice status.",
+      });
+    }
+  };
+
   const formatDate = (date: any) => {
     if (!date) return "N/A";
     if (typeof date === 'string') return new Date(date).toLocaleDateString();
@@ -201,10 +221,10 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               <CardDescription>View user invoices and payment status</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Badge variant="secondary" className="text-yellow-600 bg-yellow-100">
+              <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-base font-semibold px-4 py-2">
                 Total Pending: {userSummaries.reduce((sum, s) => sum + s.pendingCount, 0)}
               </Badge>
-              <Badge variant="default" className="text-green-600 bg-green-100">
+              <Badge variant="default" className="text-green-600 bg-green-100 text-base font-semibold px-4 py-2">
                 Total Paid: {userSummaries.reduce((sum, s) => sum + s.paidCount, 0)}
               </Badge>
             </div>
