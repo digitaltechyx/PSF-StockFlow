@@ -443,6 +443,13 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                                 <Download className="h-4 w-4 mr-2" />
                                 Download
                               </Button>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleMarkAsPaid(invoice.id, invoice)}
+                              >
+                                Mark as Paid
+                              </Button>
                             </div>
                           </div>
                         </div>
