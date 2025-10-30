@@ -602,54 +602,54 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
       {/* View Invoice Detail Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="max-w-full sm:max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
+        <DialogContent className="max-w-full sm:max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pb-2 sm:pb-4">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Receipt className="h-4 w-4 sm:h-5 sm:w-5" />
               Invoice Details
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               View complete invoice information
             </DialogDescription>
           </DialogHeader>
           
           {selectedInvoice && (
-            <div className="space-y-6 mt-4">
+            <div className="space-y-4 sm:space-y-6 mt-2 sm:mt-4">
               {/* Invoice Header */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 bg-muted rounded-lg">
                 <div>
-                  <p className="text-sm text-muted-foreground">Invoice Number</p>
-                  <p className="font-semibold">{selectedInvoice.invoiceNumber}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Invoice Number</p>
+                  <p className="font-semibold text-sm sm:text-base break-all">{selectedInvoice.invoiceNumber}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Date</p>
-                  <p className="font-semibold">{selectedInvoice.date}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Date</p>
+                  <p className="font-semibold text-sm sm:text-base">{selectedInvoice.date}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge variant={selectedInvoice.status === 'paid' ? 'default' : 'secondary'}>
+                <div className="sm:col-span-2">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Status</p>
+                  <Badge variant={selectedInvoice.status === 'paid' ? 'default' : 'secondary'} className="text-xs sm:text-sm mt-1">
                     {selectedInvoice.status.toUpperCase()}
                   </Badge>
                 </div>
               </div>
 
               {/* Sold To and FBM */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">Sold To</h4>
-                  <p className="text-sm">{selectedInvoice.soldTo.name}</p>
-                  {selectedInvoice.soldTo.address && <p className="text-sm text-muted-foreground">{selectedInvoice.soldTo.address}</p>}
-                  {selectedInvoice.soldTo.phone && <p className="text-sm text-muted-foreground">{selectedInvoice.soldTo.phone}</p>}
-                  <p className="text-sm text-muted-foreground">{selectedInvoice.soldTo.email}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">Sold To</h4>
+                  <p className="text-xs sm:text-sm">{selectedInvoice.soldTo.name}</p>
+                  {selectedInvoice.soldTo.address && <p className="text-xs sm:text-sm text-muted-foreground break-words">{selectedInvoice.soldTo.address}</p>}
+                  {selectedInvoice.soldTo.phone && <p className="text-xs sm:text-sm text-muted-foreground">{selectedInvoice.soldTo.phone}</p>}
+                  <p className="text-xs sm:text-sm text-muted-foreground break-all">{selectedInvoice.soldTo.email}</p>
                 </div>
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">FBM</h4>
-                  <p className="text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">FBM</h4>
+                  <p className="text-xs sm:text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
                 </div>
               </div>
 
-              {/* Items Table */}
-              <div className="border rounded-lg overflow-hidden">
+              {/* Items Table - Desktop */}
+              <div className="hidden sm:block border rounded-lg overflow-hidden">
                 <div className="bg-muted p-2 grid grid-cols-8 gap-2 text-sm font-semibold">
                   <div>Qty</div>
                   <div className="col-span-2">Product</div>
@@ -672,18 +672,51 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                 ))}
               </div>
 
+              {/* Items Cards - Mobile */}
+              <div className="sm:hidden space-y-3">
+                <h4 className="font-semibold text-sm mb-2">Items</h4>
+                {selectedInvoice.items.map((item, idx) => (
+                  <div key={`${item.productName}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{item.productName}</p>
+                        <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                      </div>
+                      <div className="text-right ml-2">
+                        <p className="font-semibold text-sm">${item.amount.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} each</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Ship Date</p>
+                        <p className="font-medium">{item.shipDate || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Packaging</p>
+                        <p className="font-medium">{item.packaging}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground">Ship To</p>
+                        <p className="font-medium break-words">{item.shipTo}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
               {/* Totals */}
               <div className="flex justify-end">
-                <div className="w-64 space-y-2">
-                  <div className="flex justify-between text-sm">
+                <div className="w-full sm:w-64 space-y-2">
+                  <div className="flex justify-between text-xs sm:text-sm">
                     <span>Subtotal:</span>
                     <span className="font-semibold">${selectedInvoice.subtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-sm text-muted-foreground">
+                  <div className="flex justify-between text-xs sm:text-sm text-muted-foreground">
                     <span>NJ Sales Tax 6.625% - Excluded</span>
                     <span>-</span>
                   </div>
-                  <div className="flex justify-between pt-2 border-t font-bold text-lg">
+                  <div className="flex justify-between pt-2 border-t font-bold text-base sm:text-lg">
                     <span>Grand Total:</span>
                     <span>${selectedInvoice.grandTotal.toFixed(2)}</span>
                   </div>
@@ -691,12 +724,14 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="flex justify-end gap-2 pt-3 sm:pt-4 border-t">
                 <Button
                   variant="outline"
-                  onClick={() => handleDownloadInvoice(selectedInvoice)}
+                  size="sm"
+                  className="text-xs sm:text-sm h-8 sm:h-9 w-full sm:w-auto"
+                  onClick={() => selectedInvoice && handleDownloadInvoice(selectedInvoice)}
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                   Download PDF
                 </Button>
               </div>
