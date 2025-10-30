@@ -76,19 +76,19 @@ function UserManagementModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-full sm:max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-full sm:max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto overflow-x-hidden px-2 sm:px-0">
         <DialogHeader>
-          <DialogTitle>Manage {user.name}'s Inventory</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-sm sm:text-base truncate">Manage {user.name}'s Inventory</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm break-words">
             Add inventory items, track shipments, and manage products for {user.email}
           </DialogDescription>
         </DialogHeader>
         
         <Tabs defaultValue="manage" className="w-full">
-          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-3 sm:gap-0">
-            <TabsTrigger value="manage" className="whitespace-nowrap flex-1">Manage Products</TabsTrigger>
-            <TabsTrigger value="add" className="whitespace-nowrap flex-1">Add Inventory</TabsTrigger>
-            <TabsTrigger value="ship" className="whitespace-nowrap flex-1">Ship Inventory</TabsTrigger>
+          <TabsList className="grid grid-cols-3 w-full gap-1 sm:gap-0">
+            <TabsTrigger value="manage" className="px-2 py-2 text-xs sm:text-sm">Manage Products</TabsTrigger>
+            <TabsTrigger value="add" className="px-2 py-2 text-xs sm:text-sm">Add Inventory</TabsTrigger>
+            <TabsTrigger value="ship" className="px-2 py-2 text-xs sm:text-sm">Ship Inventory</TabsTrigger>
           </TabsList>
           
           <TabsContent value="manage" className="space-y-4">
@@ -127,6 +127,7 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
+  const [mobileSection, setMobileSection] = useState<"users" | "members" | "invoices">("users");
 
   const filteredUsers = useMemo(() => {
     return users
@@ -154,7 +155,7 @@ export default function AdminDashboardPage() {
   ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-16 sm:pb-6">{/* pb-16 to clear bottom tab bar on mobile */}
       {/* Header Section */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -194,7 +195,16 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* Main Tabs */}
+      {/* Mobile Navigation (top buttons) */}
+      <div className="grid grid-cols-3 gap-2 sm:hidden">
+        <Button variant={mobileSection === "users" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("users")}>Inventory</Button>
+        <Button variant={mobileSection === "members" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("members")}>Users</Button>
+        <Button variant={mobileSection === "invoices" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("invoices")}>Invoices</Button>
+      </div>
+
+      {/* Desktop Tabs */}
+      <div className="hidden sm:block">
+        {/* Main Tabs */}
         <Tabs defaultValue="users" className="w-full">
           <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-3 sm:gap-0">
             <TabsTrigger value="users" className="whitespace-nowrap flex-1">
@@ -270,8 +280,55 @@ export default function AdminDashboardPage() {
           <TabsContent value="invoices" className="space-y-4 mt-6">
             <InvoiceManagement users={users} />
           </TabsContent>
+        </Tabs>
+      </div>
 
-      </Tabs>
+      {/* Mobile Content (single-column) */}
+      <div className="sm:hidden">
+        {mobileSection === "users" && (
+          <div className="space-y-4 mt-4">
+            <h3 className="text-lg font-semibold">Users ({totalUsers})</h3>
+            {usersLoading ? (
+              <div className="grid gap-3">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <Card key={`skeleton-m-${i}`}>
+                    <CardHeader>
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-16 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {filteredUsers.map((user) => (
+                  <UserCard 
+                    key={`user-m-${user.uid}`} 
+                    user={user} 
+                    onSelectUser={setSelectedUser}
+                    selectedUser={selectedUser}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {mobileSection === "members" && (
+          <div className="mt-4">
+            <MemberManagement adminUser={adminUser} />
+          </div>
+        )}
+
+        {mobileSection === "invoices" && (
+          <div className="mt-4">
+            <InvoiceManagement users={users} />
+          </div>
+        )}
+      </div>
 
       {/* User Management Modal */}
       {selectedUser && (
@@ -280,6 +337,36 @@ export default function AdminDashboardPage() {
           onClose={() => setSelectedUser(null)}
         />
       )}
+
+      {/* Bottom Tab Bar (Mobile) */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 border-t bg-background px-3 py-2 z-40">
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            variant={mobileSection === "users" ? "default" : "ghost"}
+            className="w-full justify-center"
+            size="sm"
+            onClick={() => setMobileSection("users")}
+          >
+            Inventory
+          </Button>
+          <Button
+            variant={mobileSection === "members" ? "default" : "ghost"}
+            className="w-full justify-center"
+            size="sm"
+            onClick={() => setMobileSection("members")}
+          >
+            Users
+          </Button>
+          <Button
+            variant={mobileSection === "invoices" ? "default" : "ghost"}
+            className="w-full justify-center"
+            size="sm"
+            onClick={() => setMobileSection("invoices")}
+          >
+            Invoices
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

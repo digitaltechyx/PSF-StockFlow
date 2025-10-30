@@ -59,7 +59,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
           doc.saveGraphicsState();
           
           // Set global alpha for transparency (watermark effect)
-          doc.setGState(doc.GState({opacity: 0.15}));
+          doc.setGState(doc.GState({opacity: 0.12}));
           
           // Add the watermark logo
           doc.addImage(logoImg, 'PNG', xPos, yPosWatermark, watermarkWidth, watermarkHeight);

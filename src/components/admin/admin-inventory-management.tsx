@@ -1070,13 +1070,14 @@ export function AdminInventoryManagement({
       {/* User Info Header */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <span>Managing: {selectedUser.name}</span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowShipped(!showShipped)}
+                className="w-full sm:w-auto"
               >
                 {showShipped ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
                 {showShipped ? "Hide" : "Show"} Shipped Orders
@@ -1085,6 +1086,7 @@ export function AdminInventoryManagement({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowRestockHistory(!showRestockHistory)}
+                className="w-full sm:w-auto"
               >
                 <History className="h-4 w-4 mr-2" />
                 {showRestockHistory ? "Hide" : "Show"} Restock History
@@ -1093,14 +1095,14 @@ export function AdminInventoryManagement({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowRecycleSection(!showRecycleSection)}
-                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                className="w-full sm:w-auto text-orange-600 hover:text-orange-700 hover:bg-orange-50"
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
                 {showRecycleSection ? "Hide" : "Show"} Recycle Bin
               </Button>
             </div>
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs sm:text-sm break-words">
             Email: {selectedUser.email} | Phone: {selectedUser.phone || "Not provided"}
           </CardDescription>
         </CardHeader>
@@ -1109,7 +1111,7 @@ export function AdminInventoryManagement({
       {/* Current Inventory */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <CardTitle>Current Inventory ({filteredInventory.length})</CardTitle>
               <CardDescription>Manage products in {selectedUser.name}'s inventory</CardDescription>
@@ -1119,7 +1121,7 @@ export function AdminInventoryManagement({
               size="sm"
               onClick={handleDownloadInventory}
               disabled={filteredInventory.length === 0}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 w-full sm:w-auto"
             >
               <Download className="h-4 w-4" />
               Download CSV
@@ -1223,46 +1225,52 @@ export function AdminInventoryManagement({
           ) : filteredInventory.length > 0 ? (
             <div className="space-y-3">
               {paginatedInventory.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="flex-1">
-                    <h3 className="font-semibold">{item.productName}</h3>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                      <span>Qty: {item.quantity}</span>
-                      <span>Added: {formatDate(item.dateAdded)}</span>
+                <div key={item.id} className="p-3 sm:p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm sm:text-base truncate">{item.productName}</h3>
+                      <div className="mt-1 text-xs sm:text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                        <span>Qty: {item.quantity}</span>
+                        <span>Added: {formatDate(item.dateAdded)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
+                        {item.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
-                      {item.status}
-                    </Badge>
-                    <div className="flex gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditProductWithLog(item)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Edit product details</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestockProduct(item)}
-                            className="text-green-600 hover:text-green-700"
-                          >
-                            <Package className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Restock product</p>
+                  <div className="mt-2 grid grid-cols-2 sm:flex sm:justify-end gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditProductWithLog(item)}
+                          className="w-full sm:w-auto"
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          <span className="sm:hidden">Edit</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Edit product details</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRestockProduct(item)}
+                          className="w-full sm:w-auto text-green-600 hover:text-green-700"
+                        >
+                          <Package className="h-4 w-4 mr-2" />
+                          <span className="sm:hidden">Restock</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Restock product</p>
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
@@ -1271,9 +1279,10 @@ export function AdminInventoryManagement({
                           variant="outline" 
                           size="sm"
                           onClick={() => handleRecycleProduct(item)}
-                          className="text-orange-600 hover:text-orange-700"
+                          className="w-full sm:w-auto text-orange-600 hover:text-orange-700"
                         >
-                          <RotateCcw className="h-4 w-4" />
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                          <span className="sm:hidden">Recycle</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -1286,16 +1295,16 @@ export function AdminInventoryManagement({
                           variant="outline" 
                           size="sm"
                           onClick={() => handleDeleteProduct(item)}
-                          className="text-red-600 hover:text-red-700"
+                          className="w-full sm:w-auto text-red-600 hover:text-red-700"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          <span className="sm:hidden">Delete</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Permanently delete product</p>
                       </TooltipContent>
                     </Tooltip>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -1344,24 +1353,24 @@ export function AdminInventoryManagement({
       {showShipped && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <CardTitle>Shipped Orders ({filteredShipped.length})</CardTitle>
                 <CardDescription>View shipped orders for {selectedUser.name}</CardDescription>
               </div>
-              <div className="flex gap-2 items-center">
+              <div className="grid grid-cols-1 sm:flex sm:flex-row gap-2 items-stretch sm:items-center w-full sm:w-auto">
                 <DateRangePicker
                   fromDate={invoiceFromDate}
                   toDate={invoiceToDate}
                   setFromDate={setInvoiceFromDate}
                   setToDate={setInvoiceToDate}
-                  className="sm:w-64"
+                  className="w-full sm:w-64"
                 />
                 <Button
                   variant="default"
                   size="sm"
                   onClick={handleGenerateInvoice}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 w-full sm:w-auto"
                 >
                   <Download className="h-4 w-4" />
                   Generate Invoice
@@ -1370,7 +1379,7 @@ export function AdminInventoryManagement({
                   variant="outline"
                   size="sm"
                   onClick={() => handleGenerateInvoiceForRange(invoiceFromDate, invoiceToDate)}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 w-full sm:w-auto"
                   disabled={!invoiceFromDate || !invoiceToDate}
                 >
                   <Download className="h-4 w-4" />
@@ -1381,7 +1390,7 @@ export function AdminInventoryManagement({
                   size="sm"
                   onClick={handleDownloadShipped}
                   disabled={filteredShipped.length === 0}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 w-full sm:w-auto"
                 >
                   <Download className="h-4 w-4" />
                   Download CSV
@@ -1439,54 +1448,56 @@ export function AdminInventoryManagement({
             {filteredShipped.length > 0 ? (
               <div className="space-y-3">
                 {paginatedShipped.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{item.productName}</h3>
-                      <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                        <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
-                        <span>Remaining: {item.remainingQty}</span>
-                        <span>Pack: {item.packOf}</span>
-                        <span>Ship To: {item.shipTo}</span>
-                        <span>Date: {formatDate(item.date)}</span>
-                      </div>
-                      {item.remarks && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-auto p-0 text-left justify-start text-sm text-muted-foreground mt-1"
-                          onClick={() => handleRemarksClick(item.remarks || "")}
-                        >
-                          <span>Remarks: {item.remarks}</span>
-                          <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
-                        </Button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm">
-                            <Trash2 className="h-4 w-4" />
+                  <div key={item.id} className="p-3 sm:p-4 border rounded-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm sm:text-base truncate">{item.productName}</h3>
+                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:text-sm text-muted-foreground">
+                          <span className="col-span-1">Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
+                          <span className="col-span-1">Remaining: {item.remainingQty}</span>
+                          <span className="col-span-1">Pack: {item.packOf}</span>
+                          <span className="col-span-1 truncate" title={item.shipTo}>Ship To: {item.shipTo}</span>
+                          <span className="col-span-1">Date: {formatDate(item.date)}</span>
+                        </div>
+                        {item.remarks && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 text-left justify-start text-xs sm:text-sm text-muted-foreground mt-2"
+                            onClick={() => handleRemarksClick(item.remarks || "")}
+                          >
+                            <span className="truncate max-w-[180px] sm:max-w-none">Remarks: {item.remarks}</span>
+                            <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Shipped Order</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete this shipped order for "{item.productName}"? 
-                              This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleDeleteShippedOrder(item)}
-                              className="bg-red-600 hover:bg-red-700"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                        )}
+                      </div>
+                      <div className="w-full sm:w-auto grid grid-cols-1 sm:flex gap-2 sm:items-center sm:justify-end">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm" className="w-full sm:w-auto">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Shipped Order</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete this shipped order for "{item.productName}"?
+                                This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteShippedOrder(item)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1536,12 +1547,12 @@ export function AdminInventoryManagement({
       {showRestockHistory && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <CardTitle>Restock History ({filteredRestockHistory.length})</CardTitle>
                 <CardDescription>View restock history for {selectedUser.name}</CardDescription>
               </div>
-              <div className="sm:w-48">
+              <div className="w-full sm:w-48">
                 <Select value={restockDateFilter} onValueChange={(value) => {
                   setRestockDateFilter(value);
                   resetRestockHistoryPagination();
@@ -1571,30 +1582,30 @@ export function AdminInventoryManagement({
             ) : filteredRestockHistory.length > 0 ? (
               <div className="space-y-3">
                 {paginatedRestockHistory.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{item.productName}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                  <div key={item.id} className="p-3 sm:p-4 border rounded-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm sm:text-base truncate">{item.productName}</h3>
+                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:text-sm text-muted-foreground">
                           <span>Previous: {item.previousQuantity}</span>
-                          <span className="text-green-600 font-medium">+{item.restockedQuantity}</span>
+                          <span className="text-green-600">+{item.restockedQuantity}</span>
                           <span>New Total: {item.newQuantity}</span>
                           <span>Restocked by: {item.restockedBy}</span>
                           <span>Date: {formatDate(item.restockedAt)}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="w-full sm:w-auto grid grid-cols-1 sm:flex gap-2 sm:items-center sm:justify-end">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm">
+                            <Button variant="destructive" size="sm" className="w-full sm:w-auto">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Restock History</AlertDialogTitle>
+                              <AlertDialogTitle>Delete Restock Entry</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete this restock history for "{item.productName}"? 
-                                This action cannot be undone.
+                                Are you sure you want to delete this restock record for "{item.productName}"?
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -1610,7 +1621,8 @@ export function AdminInventoryManagement({
                         </AlertDialog>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -1659,7 +1671,7 @@ export function AdminInventoryManagement({
       {showRecycleSection && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <CardTitle className="text-orange-600">Recycled Inventory ({filteredRecycledInventory.length})</CardTitle>
                 <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
@@ -1796,7 +1808,7 @@ export function AdminInventoryManagement({
       {/* Delete Logs Section */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <CardTitle className="text-red-600">Delete Logs ({filteredDeleteLogs.length})</CardTitle>
               <CardDescription>View permanently deleted products for {selectedUser.name}</CardDescription>
@@ -1924,7 +1936,7 @@ export function AdminInventoryManagement({
       {/* Edit Logs Section */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <CardTitle className="text-blue-600">Edit Logs ({filteredEditLogs.length})</CardTitle>
               <CardDescription>View product edit history for {selectedUser.name}</CardDescription>

@@ -212,7 +212,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
       {/* Search Bar */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
@@ -221,10 +221,10 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               <CardDescription>View user invoices and payment status</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-base font-semibold px-4 py-2">
+              <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
                 Total Pending: {userSummaries.reduce((sum, s) => sum + s.pendingCount, 0)}
               </Badge>
-              <Badge variant="default" className="text-green-600 bg-green-100 text-base font-semibold px-4 py-2">
+              <Badge variant="default" className="text-green-600 bg-green-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
                 Total Paid: {userSummaries.reduce((sum, s) => sum + s.paidCount, 0)}
               </Badge>
             </div>
@@ -433,44 +433,44 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   </h3>
                   <div className="space-y-3">
                     {paginatedPendingInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="p-4 border rounded-lg bg-yellow-50">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h4 className="font-semibold">{invoice.invoiceNumber}</h4>
-                                <Badge variant="secondary">Pending</Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <p>Date: {invoice.date}</p>
-                                <p>Customer: {invoice.soldTo.name}</p>
-                                <p className="font-semibold text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
-                              </div>
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                              <h4 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                              <Badge variant="secondary" className="text-[10px] sm:text-xs">Pending</Badge>
                             </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewInvoice(invoice)}
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDownloadInvoice(invoice)}
-                              >
-                                <Download className="h-4 w-4 mr-2" />
-                                Download
-                              </Button>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleMarkAsPaid(invoice.id, invoice)}
-                              >
-                                Mark as Paid
-                              </Button>
+                            <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
+                              <p>Date: {invoice.date}</p>
+                              <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              onClick={() => handleViewInvoice(invoice)}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              View
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              onClick={() => handleDownloadInvoice(invoice)}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="col-span-2 sm:col-span-1 w-full sm:w-auto"
+                              onClick={() => handleMarkAsPaid(invoice.id, invoice)}
+                            >
+                              Mark as Paid
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -487,39 +487,36 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   </h3>
                   <div className="space-y-3">
                     {paginatedPaidInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="p-4 border rounded-lg bg-green-50">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h4 className="font-semibold">{invoice.invoiceNumber}</h4>
-                                <Badge variant="default" className="bg-green-100 text-green-800">
-                                  Paid
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <p>Date: {invoice.date}</p>
-                                <p>Customer: {invoice.soldTo.name}</p>
-                                <p className="font-semibold text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
-                              </div>
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                              <h4 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                              <Badge variant="default" className="bg-green-100 text-green-800 text-[10px] sm:text-xs">Paid</Badge>
                             </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewInvoice(invoice)}
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDownloadInvoice(invoice)}
-                              >
-                                <Download className="h-4 w-4 mr-2" />
-                                Download
-                              </Button>
+                            <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
+                              <p>Date: {invoice.date}</p>
+                              <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              onClick={() => handleViewInvoice(invoice)}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              View
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              onClick={() => handleDownloadInvoice(invoice)}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -601,7 +598,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
       {/* View Invoice Detail Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-full sm:max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5" />

@@ -219,18 +219,18 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
 
         {/* Desktop/Table View */}
         <div className="hidden sm:block overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
+        <Table>
+          <TableHeader>
+            <TableRow>
                   <TableHead className="text-xs sm:text-sm">Product</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Date</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Shipped</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden md:table-cell">Pack</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden md:table-cell">Ship To</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Remarks</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
                 {filteredData.length > 0 ? (
                   paginatedData.map((item) => (
                     <TableRow key={item.id} className="text-xs sm:text-sm">
@@ -301,19 +301,19 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
                     <TableCell colSpan={6} className="text-center py-8">
                       <div className="text-xs sm:text-sm text-gray-500">
                         {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
                       </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
         </div>
 
         {/* Pagination Controls */}

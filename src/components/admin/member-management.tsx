@@ -152,65 +152,68 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
 
   const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => (
     <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Avatar className="h-10 w-10">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          {/* Left: Avatar + Info */}
+          <div className="flex items-start gap-3 min-w-0">
+            <Avatar className="h-10 w-10 flex-shrink-0">
               <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
               <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
             </Avatar>
-            <div>
-              <h3 className="font-semibold text-sm">{user.name}</h3>
-              <p className="text-xs text-muted-foreground">{user.email}</p>
-              <div className="flex items-center gap-2 mt-1">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-sm truncate">{user.name}</h3>
+              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              <div className="flex items-center flex-wrap gap-2 mt-1">
                 <Badge 
                   variant={
                     user.status === "approved" || !user.status ? "default" : 
                     user.status === "pending" ? "secondary" : "destructive"
-                  } 
-                  className="text-xs"
+                  }
+                  className="text-[10px]"
                 >
                   {user.status === "approved" || !user.status ? "Approved" : 
                    user.status === "pending" ? "Pending" : "Deleted"}
                 </Badge>
                 {user.phone && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
                     <Phone className="h-3 w-3" />
                     {user.phone}
                   </span>
                 )}
                 {user.deletedAt && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     Deleted: {formatDate(user.deletedAt)}
                   </span>
                 )}
-                {isAdmin && (user.status === "approved" || !user.status) && (
-                  <div className="mt-2 p-2 bg-muted rounded-md">
-                    <div className="text-xs font-medium text-muted-foreground mb-1">Login Credentials:</div>
-                    <div className="text-xs flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      <span className="font-mono">{user.email}</span>
-                    </div>
-                    <div className="text-xs flex items-center gap-1 mt-1">
-                      <span className="text-muted-foreground">Password:</span>
-                      <span className="font-mono">{user.password || "Password not stored (created before update)"}</span>
-                    </div>
-                  </div>
-                )}
               </div>
+              {isAdmin && (user.status === "approved" || !user.status) && (
+                <div className="mt-2 p-2 bg-muted rounded-md">
+                  <div className="text-[10px] font-medium text-muted-foreground mb-1">Login Credentials:</div>
+                  <div className="text-[10px] flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    <span className="font-mono break-all">{user.email}</span>
+                  </div>
+                  <div className="text-[10px] flex items-center gap-1 mt-1">
+                    <span className="text-muted-foreground">Password:</span>
+                    <span className="font-mono break-all">{user.password || "Not stored"}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Right: Actions */}
+          <div className="grid grid-cols-3 gap-2 w-full sm:w-auto sm:flex sm:grid-cols-1 sm:gap-2 sm:items-center sm:justify-end">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={() => setSelectedUser(user)}>
+                    <Button variant="outline" size="sm" className="w-full sm:w-8" onClick={() => setSelectedUser(user)}>
                       <Eye className="h-4 w-4" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent className="max-w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>User Details</DialogTitle>
                       <DialogDescription>
@@ -260,6 +263,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                 <p>View user details</p>
               </TooltipContent>
             </Tooltip>
+
             {showActions && (
               <>
                 {user.status === "pending" && (
@@ -269,7 +273,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                         variant="default"
                         size="sm"
                         onClick={() => handleApproveUser(user)}
-                        className="bg-green-600 hover:bg-green-700"
+                        className="w-full sm:w-8 bg-green-600 hover:bg-green-700"
                       >
                         <UserCheck className="h-4 w-4" />
                       </Button>
@@ -283,11 +287,13 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                   variant="destructive" 
                   size="sm"
                   onClick={() => handleDeleteUser(user)}
+                  className="w-full sm:w-8"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </>
             )}
+
             {showRestore && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -295,7 +301,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                     variant="outline"
                     size="sm"
                     onClick={() => handleRestoreUser(user)}
-                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                    className="w-full sm:w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                   >
                     <RotateCcw className="h-4 w-4" />
                   </Button>
@@ -366,18 +372,21 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
         </div>
         
         <Tabs defaultValue="pending" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="pending" className="flex items-center gap-2">
+          <TabsList className="grid grid-cols-3 w-full gap-1 sm:gap-0">
+            <TabsTrigger value="pending" className="flex items-center justify-center gap-1 px-2 py-2 text-xs sm:text-sm">
               <XCircle className="h-4 w-4" />
-              Pending Members ({pendingUsers.length})
+              <span>Pending</span>
+              <Badge variant="secondary" className="text-[10px] sm:text-xs">{pendingUsers.length}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="approved" className="flex items-center gap-2">
+            <TabsTrigger value="approved" className="flex items-center justify-center gap-1 px-2 py-2 text-xs sm:text-sm">
               <CheckCircle className="h-4 w-4" />
-              Approved Members ({approvedUsers.length})
+              <span>Approved</span>
+              <Badge variant="secondary" className="text-[10px] sm:text-xs">{approvedUsers.length}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="deleted" className="flex items-center gap-2">
+            <TabsTrigger value="deleted" className="flex items-center justify-center gap-1 px-2 py-2 text-xs sm:text-sm">
               <Trash2 className="h-4 w-4" />
-              Deleted Members ({deletedUsers.length})
+              <span>Deleted</span>
+              <Badge variant="secondary" className="text-[10px] sm:text-xs">{deletedUsers.length}</Badge>
             </TabsTrigger>
           </TabsList>
           
