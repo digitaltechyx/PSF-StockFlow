@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
   ).length;
 
   return (
-    <div className="space-y-6 pb-16 sm:pb-6">{/* pb-16 to clear bottom tab bar on mobile */}
+    <div className="space-y-6 pb-6">{/* restored bottom padding since bottom tab bar is removed */}
       {/* Header Section */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -338,35 +338,7 @@ export default function AdminDashboardPage() {
         />
       )}
 
-      {/* Bottom Tab Bar (Mobile) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 border-t bg-background px-3 py-2 z-40">
-        <div className="grid grid-cols-3 gap-2">
-          <Button
-            variant={mobileSection === "users" ? "default" : "ghost"}
-            className="w-full justify-center"
-            size="sm"
-            onClick={() => setMobileSection("users")}
-          >
-            Inventory
-          </Button>
-          <Button
-            variant={mobileSection === "members" ? "default" : "ghost"}
-            className="w-full justify-center"
-            size="sm"
-            onClick={() => setMobileSection("members")}
-          >
-            Users
-          </Button>
-          <Button
-            variant={mobileSection === "invoices" ? "default" : "ghost"}
-            className="w-full justify-center"
-            size="sm"
-            onClick={() => setMobileSection("invoices")}
-          >
-            Invoices
-          </Button>
-        </div>
-      </div>
+      {/* Bottom Tab Bar (Mobile) removed */}
     </div>
   );
 }
