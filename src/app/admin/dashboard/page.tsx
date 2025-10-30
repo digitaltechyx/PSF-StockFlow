@@ -76,7 +76,7 @@ function UserManagementModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-full sm:max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Manage {user.name}'s Inventory</DialogTitle>
           <DialogDescription>
@@ -85,10 +85,10 @@ function UserManagementModal({
         </DialogHeader>
         
         <Tabs defaultValue="manage" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="manage">Manage Products</TabsTrigger>
-            <TabsTrigger value="add">Add Inventory</TabsTrigger>
-            <TabsTrigger value="ship">Ship Inventory</TabsTrigger>
+          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-3 sm:gap-0">
+            <TabsTrigger value="manage" className="whitespace-nowrap flex-1">Manage Products</TabsTrigger>
+            <TabsTrigger value="add" className="whitespace-nowrap flex-1">Add Inventory</TabsTrigger>
+            <TabsTrigger value="ship" className="whitespace-nowrap flex-1">Ship Inventory</TabsTrigger>
           </TabsList>
           
           <TabsContent value="manage" className="space-y-4">
@@ -161,12 +161,12 @@ export default function AdminDashboardPage() {
           <h2 className="text-3xl font-bold font-headline">Admin Dashboard</h2>
           <p className="text-muted-foreground">Manage users, members, and inventory</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2">
           <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
             <DialogTrigger asChild>
-              <Button className="flex items-center gap-2">
+              <Button className="flex items-center gap-2 w-full sm:w-auto">
                 <UserPlus className="h-4 w-4" />
-                <span className="hidden sm:inline">Create User</span>
+                <span className="">Create User</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
@@ -182,11 +182,11 @@ export default function AdminDashboardPage() {
               />
             </DialogContent>
           </Dialog>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search users..."
-              className="pl-8 w-48 sm:w-64"
+              className="pl-8 w-full sm:w-64"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -196,10 +196,14 @@ export default function AdminDashboardPage() {
 
       {/* Main Tabs */}
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="users">Inventory Management</TabsTrigger>
-            <TabsTrigger value="members" className="relative">
-              User Management
+          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-3 sm:gap-0">
+            <TabsTrigger value="users" className="whitespace-nowrap flex-1">
+              <span className="sm:hidden">Inventory</span>
+              <span className="hidden sm:inline">Inventory Management</span>
+            </TabsTrigger>
+            <TabsTrigger value="members" className="relative whitespace-nowrap flex-1">
+              <span className="sm:hidden">Users</span>
+              <span className="hidden sm:inline">User Management</span>
               {pendingUsersCount > 0 && (
                 <Badge 
                   variant="destructive" 
@@ -209,7 +213,10 @@ export default function AdminDashboardPage() {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="invoices">Invoice Management</TabsTrigger>
+            <TabsTrigger value="invoices" className="whitespace-nowrap flex-1">
+              <span className="sm:hidden">Invoices</span>
+              <span className="hidden sm:inline">Invoice Management</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4 mt-6">

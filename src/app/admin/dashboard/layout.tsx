@@ -48,8 +48,8 @@ export default function AdminDashboardLayout({
       <header className="sticky top-0 z-30 flex h-12 sm:h-14 md:h-16 items-center gap-2 sm:gap-4 border-b bg-background px-2 sm:px-4 md:px-6">
         <div className="flex items-center gap-1 sm:gap-2 md:gap-4 min-w-0 flex-1">
           <Logo />
-          <h1 className="text-sm sm:text-lg md:text-xl font-bold font-headline truncate">
-            <span className="hidden sm:inline">Admin </span>Dashboard
+          <h1 className="hidden sm:block sm:text-lg md:text-xl font-bold font-headline truncate">
+            Admin Dashboard
           </h1>
         </div>
         <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4 flex-shrink-0">
