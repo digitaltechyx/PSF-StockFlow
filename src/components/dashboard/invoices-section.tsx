@@ -320,21 +320,22 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
           ) : filteredPendingInvoices.length > 0 ? (
             <div className="space-y-3">
               {pendingPaginated.map((invoice) => (
-                  <div key={invoice.id} className="flex items-center justify-between p-4 border rounded-lg bg-yellow-50">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold">{invoice.invoiceNumber}</h3>
-                        <Badge variant="secondary">Pending</Badge>
+                  <div key={invoice.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                        <h3 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h3>
+                        <Badge variant="secondary" className="text-[10px] sm:text-xs">Pending</Badge>
                       </div>
-                      <div className="text-sm text-muted-foreground space-y-1">
+                      <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
                         <p>Date: {invoice.date}</p>
-                        <p className="font-semibold text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
+                        <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                       </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row sm:flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => handleViewInvoice(invoice)}
                       >
                         <Eye className="h-4 w-4 mr-2" />
@@ -343,6 +344,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => handleDownloadInvoice(invoice)}
                       >
                         <Download className="h-4 w-4 mr-2" />
@@ -364,7 +366,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
           
           {/* Pagination for Pending Invoices */}
           {filteredPendingInvoices.length > itemsPerPage && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
                 Showing {startPendingIndex + 1} to {Math.min(endPendingIndex, filteredPendingInvoices.length)} of {filteredPendingInvoices.length} invoices
               </div>
@@ -413,23 +415,22 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
           ) : filteredPaidInvoices.length > 0 ? (
             <div className="space-y-3">
               {paidPaginated.map((invoice) => (
-                  <div key={invoice.id} className="flex items-center justify-between p-4 border rounded-lg bg-green-50">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold">{invoice.invoiceNumber}</h3>
-                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
-                          Paid
-                        </Badge>
+                  <div key={invoice.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                        <h3 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h3>
+                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-[10px] sm:text-xs">Paid</Badge>
                       </div>
-                      <div className="text-sm text-muted-foreground space-y-1">
+                      <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
                         <p>Date: {invoice.date}</p>
-                        <p className="font-semibold text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
+                        <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row sm:flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => handleViewInvoice(invoice)}
                       >
                         <Eye className="h-4 w-4 mr-2" />
@@ -438,6 +439,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => handleDownloadInvoice(invoice)}
                       >
                         <Download className="h-4 w-4 mr-2" />
@@ -459,7 +461,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
           
           {/* Pagination for Paid Invoices */}
           {filteredPaidInvoices.length > itemsPerPage && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
                 Showing {startPaidIndex + 1} to {Math.min(endPaidIndex, filteredPaidInvoices.length)} of {filteredPaidInvoices.length} invoices
               </div>
@@ -491,7 +493,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
 
       {/* View Invoice Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-full sm:max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5" />
