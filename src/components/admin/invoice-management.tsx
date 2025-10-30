@@ -359,53 +359,53 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
       {/* User Invoices Detail Dialog */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
+        <DialogContent className="max-w-4xl max-h-[90vh] sm:max-h-[90vh] h-[100dvh] sm:h-auto overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pb-2 sm:pb-4">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Receipt className="h-4 w-4 sm:h-5 sm:w-5" />
               {selectedUser?.name}'s Invoices
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               View and manage all invoices for {selectedUser?.name}
             </DialogDescription>
           </DialogHeader>
           
           {selectedUser && (
-            <div className="space-y-6 mt-4">
+            <div className="space-y-4 sm:space-y-6 mt-2 sm:mt-4">
               {/* User Info */}
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 sm:p-4 bg-muted rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Name</p>
-                    <p className="font-semibold">{selectedUser.name}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Name</p>
+                    <p className="font-semibold text-sm sm:text-base break-words">{selectedUser.name}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Email</p>
-                    <p className="font-semibold">{selectedUser.email}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Email</p>
+                    <p className="font-semibold text-sm sm:text-base break-all">{selectedUser.email}</p>
                   </div>
                 </div>
               </div>
 
               {/* Date Range Filter */}
-              <div className="p-4 border rounded-lg space-y-3">
-                <h4 className="font-semibold text-sm">Filter by Date Range</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">From Date</label>
+              <div className="p-3 sm:p-4 border rounded-lg space-y-3">
+                <h4 className="font-semibold text-xs sm:text-sm">Filter by Date Range</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <label className="text-xs sm:text-sm text-muted-foreground">From Date</label>
                     <Input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full"
+                      className="w-full text-sm"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">To Date</label>
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <label className="text-xs sm:text-sm text-muted-foreground">To Date</label>
                     <Input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full"
+                      className="w-full text-sm"
                     />
                   </div>
                 </div>
@@ -417,7 +417,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                       setStartDate("");
                       setEndDate("");
                     }}
-                    className="w-full"
+                    className="w-full text-xs sm:text-sm"
                   >
                     Clear Filter
                   </Button>
@@ -426,47 +426,47 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
               {/* Pending Invoices */}
               {filteredPendingInvoices.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-yellow-600" />
+                <div className="space-y-3 sm:space-y-4">
+                  <h3 className="font-semibold text-sm sm:text-lg flex items-center gap-2">
+                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-600" />
                     Pending Invoices ({filteredPendingInvoices.length})
                   </h3>
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     {paginatedPendingInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
-                              <h4 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h4>
-                              <Badge variant="secondary" className="text-[10px] sm:text-xs">Pending</Badge>
+                            <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                              <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                              <Badge variant="secondary" className="text-[9px] sm:text-xs shrink-0">Pending</Badge>
                             </div>
                             <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
                               <p>Date: {invoice.date}</p>
                               <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row">
+                          <div className="grid grid-cols-2 gap-2 w-full">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="w-full sm:w-auto"
+                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
                               onClick={() => handleViewInvoice(invoice)}
                             >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
+                              <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">View</span>
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
-                              className="w-full sm:w-auto"
+                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
                               onClick={() => handleDownloadInvoice(invoice)}
                             >
-                              <Download className="h-4 w-4 mr-2" />
-                              Download
+                              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Download</span>
                             </Button>
                             <Button
                               variant="default"
                               size="sm"
-                              className="col-span-2 sm:col-span-1 w-full sm:w-auto"
+                              className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
                               onClick={() => handleMarkAsPaid(invoice.id, invoice)}
                             >
                               Mark as Paid
@@ -480,42 +480,42 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
               {/* Paid Invoices */}
               {filteredPaidInvoices.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
+                <div className="space-y-3 sm:space-y-4">
+                  <h3 className="font-semibold text-sm sm:text-lg flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
                     Paid Invoices ({filteredPaidInvoices.length})
                   </h3>
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     {paginatedPaidInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
+                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
-                              <h4 className="font-semibold text-sm sm:text-base truncate">{invoice.invoiceNumber}</h4>
-                              <Badge variant="default" className="bg-green-100 text-green-800 text-[10px] sm:text-xs">Paid</Badge>
+                            <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                              <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                              <Badge variant="default" className="bg-green-100 text-green-800 text-[9px] sm:text-xs shrink-0">Paid</Badge>
                             </div>
                             <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
                               <p>Date: {invoice.date}</p>
                               <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-row">
+                          <div className="grid grid-cols-2 gap-2 w-full">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="w-full sm:w-auto"
+                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
                               onClick={() => handleViewInvoice(invoice)}
                             >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
+                              <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">View</span>
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
-                              className="w-full sm:w-auto"
+                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
                               onClick={() => handleDownloadInvoice(invoice)}
                             >
-                              <Download className="h-4 w-4 mr-2" />
-                              Download
+                              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Download</span>
                             </Button>
                           </div>
                         </div>
@@ -525,34 +525,36 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               )}
 
               {selectedUserInvoices.length === 0 && (
-                <div className="text-center py-12">
-                  <Receipt className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No invoices found</h3>
-                  <p className="text-muted-foreground">This user has no invoices yet.</p>
+                <div className="text-center py-8 sm:py-12">
+                  <Receipt className="h-12 w-12 sm:h-16 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+                  <h3 className="text-sm sm:text-lg font-semibold mb-1 sm:mb-2">No invoices found</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground">This user has no invoices yet.</p>
                 </div>
               )}
 
               {/* Pagination for Pending Invoices */}
               {filteredPendingInvoices.length > itemsPerPage && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                  <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
                     Showing {pendingStartIndex + 1} to {Math.min(pendingEndIndex, filteredPendingInvoices.length)} of {filteredPendingInvoices.length} pending invoices
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm h-8 sm:h-9"
                       onClick={() => setPendingInvoicesPage(p => Math.max(1, p - 1))}
                       disabled={pendingInvoicesPage === 1}
                     >
                       Previous
                     </Button>
-                    <span className="text-sm">
+                    <span className="text-xs sm:text-sm">
                       Page {pendingInvoicesPage} of {totalPendingInvoicesPages}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm h-8 sm:h-9"
                       onClick={() => setPendingInvoicesPage(p => Math.min(totalPendingInvoicesPages, p + 1))}
                       disabled={pendingInvoicesPage === totalPendingInvoicesPages}
                     >
@@ -564,25 +566,27 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
               {/* Pagination for Paid Invoices */}
               {filteredPaidInvoices.length > itemsPerPage && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                  <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
                     Showing {paidStartIndex + 1} to {Math.min(paidEndIndex, filteredPaidInvoices.length)} of {filteredPaidInvoices.length} paid invoices
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm h-8 sm:h-9"
                       onClick={() => setPaidInvoicesPage(p => Math.max(1, p - 1))}
                       disabled={paidInvoicesPage === 1}
                     >
                       Previous
                     </Button>
-                    <span className="text-sm">
+                    <span className="text-xs sm:text-sm">
                       Page {paidInvoicesPage} of {totalPaidInvoicesPages}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm h-8 sm:h-9"
                       onClick={() => setPaidInvoicesPage(p => Math.min(totalPaidInvoicesPages, p + 1))}
                       disabled={paidInvoicesPage === totalPaidInvoicesPages}
                     >
