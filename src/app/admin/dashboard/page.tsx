@@ -17,6 +17,7 @@ import { CreateUserForm } from "@/components/admin/create-user-form";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
 import { InvoiceManagement } from "@/components/admin/invoice-management";
+import { PDFManagement } from "@/components/admin/pdf-management";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // User Card Component
@@ -127,7 +128,7 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [mobileSection, setMobileSection] = useState<"users" | "members" | "invoices">("users");
+  const [mobileSection, setMobileSection] = useState<"users" | "members" | "invoices" | "pdfs">("users");
 
   const filteredUsers = useMemo(() => {
     return users
@@ -196,17 +197,18 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Mobile Navigation (top buttons) */}
-      <div className="grid grid-cols-3 gap-2 sm:hidden">
+      <div className="grid grid-cols-4 gap-2 sm:hidden">
         <Button variant={mobileSection === "users" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("users")}>Inventory</Button>
         <Button variant={mobileSection === "members" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("members")}>Users</Button>
         <Button variant={mobileSection === "invoices" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("invoices")}>Invoices</Button>
+        <Button variant={mobileSection === "pdfs" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("pdfs")}>PDFs</Button>
       </div>
 
       {/* Desktop Tabs */}
       <div className="hidden sm:block">
         {/* Main Tabs */}
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-3 sm:gap-0">
+          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-4 sm:gap-0">
             <TabsTrigger value="users" className="whitespace-nowrap flex-1">
               <span className="sm:hidden">Inventory</span>
               <span className="hidden sm:inline">Inventory Management</span>
@@ -226,6 +228,10 @@ export default function AdminDashboardPage() {
             <TabsTrigger value="invoices" className="whitespace-nowrap flex-1">
               <span className="sm:hidden">Invoices</span>
               <span className="hidden sm:inline">Invoice Management</span>
+            </TabsTrigger>
+            <TabsTrigger value="pdfs" className="whitespace-nowrap flex-1">
+              <span className="sm:hidden">PDFs</span>
+              <span className="hidden sm:inline">PDF Management</span>
             </TabsTrigger>
           </TabsList>
 
@@ -280,6 +286,9 @@ export default function AdminDashboardPage() {
           <TabsContent value="invoices" className="space-y-4 mt-6">
             <InvoiceManagement users={users} />
           </TabsContent>
+          <TabsContent value="pdfs" className="space-y-4 mt-6">
+            <PDFManagement />
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -326,6 +335,12 @@ export default function AdminDashboardPage() {
         {mobileSection === "invoices" && (
           <div className="mt-4">
             <InvoiceManagement users={users} />
+          </div>
+        )}
+
+        {mobileSection === "pdfs" && (
+          <div className="mt-4">
+            <PDFManagement />
           </div>
         )}
       </div>

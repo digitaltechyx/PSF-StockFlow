@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { InventoryItem, ShippedItem, RestockHistory, DeleteLog, EditLog, RecycledInventoryItem, Invoice } from "@/types";
+import type { InventoryItem, ShippedItem, RestockHistory, DeleteLog, EditLog, RecycledInventoryItem, Invoice, UploadedPDF } from "@/types";
 import { InvoicesSection } from "@/components/dashboard/invoices-section";
 import { InventoryTable } from "@/components/dashboard/inventory-table";
 import { ShippedTable } from "@/components/dashboard/shipped-table";
@@ -13,30 +13,41 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X, FileText } from "lucide-react";
+import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X, FileText, Upload, Loader2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { validatePDFFile, compressPDF } from "@/lib/pdf-compression";
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export default function DashboardPage() {
-  const { userProfile } = useAuth();
+  const { userProfile, user } = useAuth();
+  const { toast } = useToast();
+  const [isUploadingPDF, setIsUploadingPDF] = useState(false);
+  const [pdfFileInputRef, setPdfFileInputRef] = useState<HTMLInputElement | null>(null);
   const [showRestockHistory, setShowRestockHistory] = useState(false);
   const [showDeleteLogs, setShowDeleteLogs] = useState(false);
   const [showEditLogs, setShowEditLogs] = useState(false);
   const [showRecycleSection, setShowRecycleSection] = useState(false);
   const [showInvoices, setShowInvoices] = useState(false);
+  const [showUploadedLabels, setShowUploadedLabels] = useState(false);
   
   const [restockDateFilter, setRestockDateFilter] = useState<string>("all");
   const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
   const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
   const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
+  const [labelsDateFilter, setLabelsDateFilter] = useState<string>("all");
   const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
   const [editLogsSearch, setEditLogsSearch] = useState("");
   const [recycleSearch, setRecycleSearch] = useState("");
+  const [labelsSearch, setLabelsSearch] = useState("");
   
   // Pagination states
   const [restockPage, setRestockPage] = useState(1);
   const [deleteLogsPage, setDeleteLogsPage] = useState(1);
   const [editLogsPage, setEditLogsPage] = useState(1);
   const [recyclePage, setRecyclePage] = useState(1);
+  const [labelsPage, setLabelsPage] = useState(1);
   const itemsPerPage = 10;
   
   const { 
@@ -89,6 +100,16 @@ export default function DashboardPage() {
   } = useCollection<Invoice>(
     userProfile ? `users/${userProfile.uid}/invoices` : ""
   );
+
+  // Uploaded PDFs collection (filter by uploadedBy)
+  const {
+    data: allUploadedPDFs,
+    loading: uploadedPDFsLoading
+  } = useCollection<UploadedPDF>("uploadedPDFs");
+
+  // Filter uploaded PDFs by current user
+  const uploadedPDFs = allUploadedPDFs.filter((pdf) => pdf.uploadedBy === user?.uid);
+
 
   const formatDate = (date: any) => {
     if (!date) return "N/A";
@@ -145,6 +166,7 @@ export default function DashboardPage() {
 
   // Reset pagination when filters change
   const resetRestockPagination = () => setRestockPage(1);
+  const resetLabelsPagination = () => setLabelsPage(1);
 
   // Filtered delete logs data
   const filteredDeleteLogs = deleteLogs.filter((item) => {
@@ -213,6 +235,30 @@ export default function DashboardPage() {
     .slice(startRecycleIndex, endRecycleIndex);
   const resetRecyclePagination = () => setRecyclePage(1);
 
+  // Filtered uploaded PDFs
+  const filteredUploadedPDFs = uploadedPDFs.filter((pdf) => {
+    const matchesSearch =
+      labelsSearch === "" ||
+      pdf.fileName.toLowerCase().includes(labelsSearch.toLowerCase()) ||
+      pdf.invoiceNumber.toLowerCase().includes(labelsSearch.toLowerCase());
+
+    const matchesDate = matchesDateFilter(pdf.uploadedAt, labelsDateFilter);
+
+    return matchesSearch && matchesDate;
+  });
+
+  // Pagination for uploaded PDFs
+  const totalLabelsPages = Math.ceil(filteredUploadedPDFs.length / itemsPerPage);
+  const startLabelsIndex = (labelsPage - 1) * itemsPerPage;
+  const endLabelsIndex = startLabelsIndex + itemsPerPage;
+  const paginatedUploadedPDFs = filteredUploadedPDFs
+    .sort((a, b) => {
+      const dateA = typeof a.uploadedAt === 'string' ? new Date(a.uploadedAt) : new Date(a.uploadedAt.seconds * 1000);
+      const dateB = typeof b.uploadedAt === 'string' ? new Date(b.uploadedAt) : new Date(b.uploadedAt.seconds * 1000);
+      return dateB.getTime() - dateA.getTime();
+    })
+    .slice(startLabelsIndex, endLabelsIndex);
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Toggle Buttons */}
@@ -261,6 +307,15 @@ export default function DashboardPage() {
         >
           <FileText className="h-4 w-4" />
           {showInvoices ? "Hide" : "Show"} Invoices ({invoices.filter(inv => inv.status === 'pending').length})
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowUploadedLabels(!showUploadedLabels)}
+          className="flex items-center gap-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+        >
+          <FileText className="h-4 w-4" />
+          {showUploadedLabels ? "Hide" : "Show"} Uploaded Labels
         </Button>
       </div>
 
@@ -896,11 +951,317 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Uploaded Labels Section */}
+      {showUploadedLabels && (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-purple-600">Uploaded Labels ({filteredUploadedPDFs.length})</CardTitle>
+                <CardDescription>View and manage your uploaded PDF labels</CardDescription>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by filename or invoice #..."
+                    value={labelsSearch}
+                    onChange={(e) => {
+                      setLabelsSearch(e.target.value);
+                      resetLabelsPagination();
+                    }}
+                    className="pl-10 w-full"
+                  />
+                  {labelsSearch && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                      onClick={() => {
+                        setLabelsSearch("");
+                        resetLabelsPagination();
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <Select
+                  value={labelsDateFilter}
+                  onValueChange={(value) => {
+                    setLabelsDateFilter(value);
+                    resetLabelsPagination();
+                  }}
+                >
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                <label>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      if (!user || !user.uid) {
+                        toast({
+                          variant: "destructive",
+                          title: "Error",
+                          description: "Please log in to upload PDFs.",
+                        });
+                        return;
+                      }
+
+                      setIsUploadingPDF(true);
+
+                      try {
+                        // Validate PDF file
+                        const validation = validatePDFFile(file);
+                        if (!validation.valid) {
+                          toast({
+                            variant: "destructive",
+                            title: "Invalid File",
+                            description: validation.error || "Please upload a valid PDF file.",
+                          });
+                          setIsUploadingPDF(false);
+                          if (pdfFileInputRef) pdfFileInputRef.value = '';
+                          return;
+                        }
+
+                        // Compress PDF if needed
+                        const compressionResult = await compressPDF(file);
+                        if (!compressionResult.success) {
+                          toast({
+                            variant: "destructive",
+                            title: "File Too Large",
+                            description: compressionResult.error || "File size exceeds 1MB limit.",
+                          });
+                          setIsUploadingPDF(false);
+                          if (pdfFileInputRef) pdfFileInputRef.value = '';
+                          return;
+                        }
+
+                        const fileToUpload = compressionResult.file || file;
+
+                        // Prepare form data
+                        const formData = new FormData();
+                        formData.append('file', fileToUpload);
+                        formData.append('invoiceNumber', file.name.replace('.pdf', ''));
+                        formData.append('userId', user.uid);
+                        formData.append('userName', userProfile?.name || `User_${user.uid}`);
+
+                        // Upload to Google Drive via API
+                        const response = await fetch('/api/drive/upload', {
+                          method: 'POST',
+                          body: formData,
+                        });
+
+                        const result = await response.json();
+
+                        if (!response.ok) {
+                          if (result.requiresAuth) {
+                            // Redirect to Google OAuth
+                            window.location.href = '/api/auth/google';
+                            return;
+                          }
+                          throw new Error(result.error || 'Failed to upload PDF');
+                        }
+
+                        // Save metadata to Firestore
+                        const pdfMetadata = {
+                          fileId: result.fileId,
+                          fileName: result.fileName,
+                          webViewLink: result.webViewLink,
+                          size: parseInt(result.size || '0'),
+                          uploadedAt: serverTimestamp(),
+                          uploadedBy: user.uid,
+                          invoiceNumber: file.name.replace('.pdf', ''),
+                          invoiceId: '',
+                        };
+
+                        // Add to uploadedPDFs collection
+                        await addDoc(collection(db, 'uploadedPDFs'), pdfMetadata);
+
+                        toast({
+                          title: "Label Uploaded Successfully",
+                          description: "Your PDF label has been uploaded to Google Drive.",
+                        });
+
+                        // Reset form
+                        if (pdfFileInputRef) pdfFileInputRef.value = '';
+
+                      } catch (error) {
+                        console.error("Error uploading PDF:", error);
+                        toast({
+                          variant: "destructive",
+                          title: "Upload Failed",
+                          description: error instanceof Error ? error.message : "Failed to upload PDF. Please try again.",
+                        });
+                      } finally {
+                        setIsUploadingPDF(false);
+                      }
+                    }}
+                    disabled={isUploadingPDF}
+                    ref={(input) => {
+                      if (input) setPdfFileInputRef(input);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white w-full sm:w-auto"
+                    disabled={isUploadingPDF}
+                    onClick={() => pdfFileInputRef?.click()}
+                  >
+                    {isUploadingPDF ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        Upload Labels
+                      </>
+                    )}
+                  </Button>
+                </label>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {uploadedPDFsLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                ))}
+              </div>
+            ) : filteredUploadedPDFs.length > 0 ? (
+              <div className="space-y-3">
+                {paginatedUploadedPDFs.map((pdf) => (
+                  <div key={pdf.id}>
+                    {/* Mobile: compact with chips */}
+                    <div className="block sm:hidden p-3 border rounded-lg bg-purple-50">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm text-purple-800 truncate">{pdf.fileName}</h3>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">{pdf.invoiceNumber}</p>
+                        </div>
+                        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-purple-100 text-purple-800">
+                          {formatFileSize(pdf.size)}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
+                          {formatDate(pdf.uploadedAt)}
+                        </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-[10px] h-6 px-2"
+                          onClick={() => window.open(pdf.webViewLink, "_blank")}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                      </div>
+                    </div>
+                    {/* Desktop/Tablet: original row layout */}
+                    <div className="hidden sm:block">
+                      <div className="flex items-center justify-between p-4 border rounded-lg bg-purple-50">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-purple-800 truncate">{pdf.fileName}</h3>
+                          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                            <span className="truncate">Invoice: {pdf.invoiceNumber}</span>
+                            <span>Uploaded: {formatDate(pdf.uploadedAt)}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {formatFileSize(pdf.size)}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 ml-4"
+                          onClick={() => window.open(pdf.webViewLink, "_blank")}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          View on Drive
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-semibold">No labels uploaded yet</p>
+                <p className="text-sm mt-2">
+                  {uploadedPDFs.length === 0
+                    ? "Upload your first PDF label using the 'Upload Labels' button above."
+                    : "No labels match your search or filter criteria."}
+                </p>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredUploadedPDFs.length > itemsPerPage && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startLabelsIndex + 1} to {Math.min(endLabelsIndex, filteredUploadedPDFs.length)} of {filteredUploadedPDFs.length} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLabelsPage(p => Math.max(1, p - 1))}
+                    disabled={labelsPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {labelsPage} of {totalLabelsPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLabelsPage(p => Math.min(totalLabelsPages, p + 1))}
+                    disabled={labelsPage === totalLabelsPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Invoices Section */}
       {showInvoices && (
         <InvoicesSection invoices={invoices} loading={invoicesLoading} />
       )}
-
     </div>
   );
+}
+
+// Helper function to format file size
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 }

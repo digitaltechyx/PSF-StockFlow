@@ -5,14 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, Download, CheckCircle, Clock, X, Eye, DollarSign, Receipt } from "lucide-react";
+import { Search, Download, CheckCircle, Clock, X, Eye, DollarSign, Receipt, Upload, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { generateInvoicePDF } from "@/lib/invoice-generator";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
+import { validatePDFFile, compressPDF } from "@/lib/pdf-compression";
 import type { Invoice } from "@/types";
 
 interface InvoicesSectionProps {
@@ -22,6 +24,7 @@ interface InvoicesSectionProps {
 
 export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
@@ -31,6 +34,8 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [pendingPage, setPendingPage] = useState(1);
   const [paidPage, setPaidPage] = useState(1);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadFileInputRef, setUploadFileInputRef] = useState<HTMLInputElement | null>(null);
   const itemsPerPage = 10;
 
   const pendingInvoices = invoices.filter(inv => inv.status === 'pending');
@@ -173,6 +178,128 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
         title: "Error",
         description: "Failed to update invoice status.",
       });
+    }
+  };
+
+  const handleUploadPDF = async (invoice: Invoice, file: File) => {
+    if (!user || !user.uid) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please log in to upload PDFs.",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Validate PDF file
+      const validation = validatePDFFile(file);
+      if (!validation.valid) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: validation.error || "Please upload a valid PDF file.",
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      // Compress PDF if needed
+      const compressionResult = await compressPDF(file);
+      if (!compressionResult.success) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: compressionResult.error || "File size exceeds 1MB limit.",
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      const fileToUpload = compressionResult.file || file;
+
+      // Prepare form data
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('invoiceNumber', invoice.invoiceNumber);
+      formData.append('userId', user.uid);
+
+      // Upload to Google Drive via API
+      const response = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to upload PDF');
+      }
+
+      // Save metadata to Firestore
+      const pdfMetadata = {
+        fileId: result.fileId,
+        fileName: result.fileName,
+        webViewLink: result.webViewLink,
+        size: parseInt(result.size || '0'),
+        uploadedAt: serverTimestamp(),
+        uploadedBy: user.uid,
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceId: invoice.id,
+      };
+
+      // Add to uploadedPDFs collection
+      const pdfDocRef = await addDoc(collection(db, 'uploadedPDFs'), pdfMetadata);
+
+      // Update invoice with PDF reference
+      await updateDoc(doc(db, `users/${invoice.userId}/invoices/${invoice.id}`), {
+        uploadedPdf: {
+          id: pdfDocRef.id,
+          ...pdfMetadata,
+          uploadedAt: new Date(),
+        },
+      });
+
+      toast({
+        title: "PDF Uploaded Successfully",
+        description: "Your PDF has been uploaded to Google Drive.",
+      });
+
+      // Reset file input
+      if (uploadFileInputRef) {
+        uploadFileInputRef.value = '';
+      }
+
+      // Refresh invoice data
+      if (selectedInvoice && selectedInvoice.id === invoice.id) {
+        setSelectedInvoice({
+          ...selectedInvoice,
+          uploadedPdf: {
+            id: pdfDocRef.id,
+            ...pdfMetadata,
+            uploadedAt: new Date(),
+          },
+        });
+      }
+
+    } catch (error) {
+      console.error("Error uploading PDF:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload PDF. Please try again.",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>, invoice: Invoice) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleUploadPDF(invoice, file);
     }
   };
 
@@ -615,7 +742,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end gap-2 pt-3 sm:pt-4 border-t">
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-3 sm:pt-4 border-t">
                 <Button
                   variant="outline"
                   size="sm"
@@ -625,7 +752,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                   <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                   Download PDF
                 </Button>
-                {/* Pay button moved to list card; webhook will mark as paid automatically */}
+                {/* PDF upload/view buttons moved to PDF section */}
               </div>
             </div>
           )}

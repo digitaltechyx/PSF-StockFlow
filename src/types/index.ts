@@ -183,6 +183,22 @@ export interface Invoice {
     nanoseconds: number;
   } | string;
   userId: string;
+  uploadedPdf?: UploadedPDF; // Reference to uploaded PDF
+}
+
+export interface UploadedPDF {
+  id: string;
+  fileId: string; // Google Drive file ID
+  fileName: string;
+  webViewLink: string; // Google Drive view link
+  size: number;
+  uploadedAt: {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  uploadedBy: string; // User ID who uploaded
+  invoiceNumber: string; // Associated invoice number
+  invoiceId: string; // Associated invoice ID
 }
 
 export interface AuthContextType {
