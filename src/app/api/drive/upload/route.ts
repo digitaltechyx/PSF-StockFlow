@@ -208,10 +208,8 @@ export async function POST(request: NextRequest) {
     // Get or create date folder inside user folder
     const dateFolderId = await getOrCreateFolder(drive, currentDate, userFolderId);
 
-    // Create file metadata
-    const fileName = invoiceNumber 
-      ? `Invoice_${invoiceNumber}_${currentDate}.pdf`
-      : `PDF_${currentDate}_${Date.now()}.pdf`;
+    // Use original filename, preserving the original name
+    const fileName = file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`;
     
     const fileMetadata = {
       name: fileName,

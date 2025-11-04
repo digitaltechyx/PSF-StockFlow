@@ -73,8 +73,20 @@ export function PDFManagement({ className }: PDFManagementProps) {
       return matchesSearch && matchesDate;
     }).sort((a, b) => {
       // Sort by upload date (newest first)
-      const dateA = typeof a.uploadedAt === "string" ? new Date(a.uploadedAt) : new Date(a.uploadedAt.seconds * 1000);
-      const dateB = typeof b.uploadedAt === "string" ? new Date(b.uploadedAt) : new Date(b.uploadedAt.seconds * 1000);
+      // Handle null/undefined uploadedAt
+      if (!a.uploadedAt) return 1; // Put null dates at the end
+      if (!b.uploadedAt) return -1;
+      
+      const dateA = typeof a.uploadedAt === "string" 
+        ? new Date(a.uploadedAt) 
+        : a.uploadedAt.seconds 
+          ? new Date(a.uploadedAt.seconds * 1000)
+          : new Date(0);
+      const dateB = typeof b.uploadedAt === "string" 
+        ? new Date(b.uploadedAt) 
+        : b.uploadedAt.seconds 
+          ? new Date(b.uploadedAt.seconds * 1000)
+          : new Date(0);
       return dateB.getTime() - dateA.getTime();
     });
   }, [uploadedPDFs, searchTerm, dateFilter]);
@@ -93,7 +105,8 @@ export function PDFManagement({ className }: PDFManagementProps) {
   const formatDate = (date: any) => {
     if (!date) return "N/A";
     if (typeof date === "string") return format(new Date(date), "MMM dd, yyyy HH:mm");
-    return format(new Date(date.seconds * 1000), "MMM dd, yyyy HH:mm");
+    if (date.seconds) return format(new Date(date.seconds * 1000), "MMM dd, yyyy HH:mm");
+    return "N/A";
   };
 
   const formatFileSize = (bytes: number) => {

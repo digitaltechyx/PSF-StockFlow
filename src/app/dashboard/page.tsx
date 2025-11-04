@@ -114,7 +114,8 @@ export default function DashboardPage() {
   const formatDate = (date: any) => {
     if (!date) return "N/A";
     if (typeof date === 'string') return format(new Date(date), "MMM dd, yyyy");
-    return format(new Date(date.seconds * 1000), "MMM dd, yyyy");
+    if (date.seconds) return format(new Date(date.seconds * 1000), "MMM dd, yyyy");
+    return "N/A";
   };
 
   // Helper function for date filtering
@@ -253,8 +254,20 @@ export default function DashboardPage() {
   const endLabelsIndex = startLabelsIndex + itemsPerPage;
   const paginatedUploadedPDFs = filteredUploadedPDFs
     .sort((a, b) => {
-      const dateA = typeof a.uploadedAt === 'string' ? new Date(a.uploadedAt) : new Date(a.uploadedAt.seconds * 1000);
-      const dateB = typeof b.uploadedAt === 'string' ? new Date(b.uploadedAt) : new Date(b.uploadedAt.seconds * 1000);
+      // Handle null/undefined uploadedAt
+      if (!a.uploadedAt) return 1; // Put null dates at the end
+      if (!b.uploadedAt) return -1;
+      
+      const dateA = typeof a.uploadedAt === 'string' 
+        ? new Date(a.uploadedAt) 
+        : a.uploadedAt.seconds 
+          ? new Date(a.uploadedAt.seconds * 1000)
+          : new Date(0);
+      const dateB = typeof b.uploadedAt === 'string' 
+        ? new Date(b.uploadedAt) 
+        : b.uploadedAt.seconds 
+          ? new Date(b.uploadedAt.seconds * 1000)
+          : new Date(0);
       return dateB.getTime() - dateA.getTime();
     })
     .slice(startLabelsIndex, endLabelsIndex);
