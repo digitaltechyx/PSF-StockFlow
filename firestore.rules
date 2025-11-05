@@ -97,14 +97,15 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Allow users to create their own uploaded PDFs
+    // Allow users to manage their own uploaded PDFs
     match /uploadedPDFs/{pdfId} {
-      // Allow authenticated users to read all PDFs (needed for admin dashboard)
-      // This allows both users and admins to read all PDFs
-      allow read: if request.auth != null;
-      allow list: if request.auth != null;
+      // Allow users to read their own PDFs, admins can read all
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
       
-      // Allow users to create their own uploaded PDFs
+      // Allow users to create their own PDFs
       allow create: if request.auth != null && 
         request.resource.data.uploadedBy == request.auth.uid;
       
@@ -112,10 +113,6 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-      
-      // Allow admins to create/update/delete any PDF (backup rule)
-      allow create, update, delete: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
   }
 }

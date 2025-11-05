@@ -183,22 +183,23 @@ export interface Invoice {
     nanoseconds: number;
   } | string;
   userId: string;
-  uploadedPdf?: UploadedPDF; // Reference to uploaded PDF
 }
 
 export interface UploadedPDF {
   id: string;
-  fileId: string; // Google Drive file ID
   fileName: string;
-  webViewLink: string; // Google Drive view link
-  size: number;
+  storagePath: string; // Full path in Firebase Storage
+  downloadURL: string; // Download URL from Firebase Storage
+  size: number; // File size in bytes
   uploadedAt: {
     seconds: number;
     nanoseconds: number;
   } | string;
-  uploadedBy: string; // User ID who uploaded
-  invoiceNumber: string; // Associated invoice number
-  invoiceId: string; // Associated invoice ID
+  uploadedBy: string; // User ID
+  uploadedByName: string; // User name (client name)
+  year: string; // e.g., "2024"
+  month: string; // e.g., "January" or "01"
+  date: string; // e.g., "2024-01-15"
 }
 
 export interface AuthContextType {

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useCollection } from "@/hooks/use-collection";
-import type { UserProfile, InventoryItem, ShippedItem } from "@/types";
+import type { UserProfile, InventoryItem, ShippedItem, UploadedPDF } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -155,6 +155,12 @@ export default function AdminDashboardPage() {
     user.uid !== adminUser?.uid && user.status === "pending"
   ).length;
 
+  // Fetch all uploaded PDFs for admin
+  const {
+    data: allUploadedPDFs,
+    loading: pdfsLoading
+  } = useCollection<UploadedPDF>("uploadedPDFs");
+
   return (
     <div className="space-y-6 pb-6">{/* restored bottom padding since bottom tab bar is removed */}
       {/* Header Section */}
@@ -287,7 +293,7 @@ export default function AdminDashboardPage() {
             <InvoiceManagement users={users} />
           </TabsContent>
           <TabsContent value="pdfs" className="space-y-4 mt-6">
-            <PDFManagement />
+            <PDFManagement pdfs={allUploadedPDFs} loading={pdfsLoading} />
           </TabsContent>
         </Tabs>
       </div>
@@ -340,7 +346,7 @@ export default function AdminDashboardPage() {
 
         {mobileSection === "pdfs" && (
           <div className="mt-4">
-            <PDFManagement />
+            <PDFManagement pdfs={allUploadedPDFs} loading={pdfsLoading} />
           </div>
         )}
       </div>

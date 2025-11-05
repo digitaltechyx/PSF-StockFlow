@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to upload and read PDFs from any path
+    // This allows the folder structure: Year/Month/Client Name/Date/FileName
+    // to work with spaces and special characters in file names
+    match /{allPaths=**} {
+      // Allow authenticated users to read any file
+      allow read: if request.auth != null;
+      
+      // Allow authenticated users to upload PDFs (only PDFs)
+      // Note: File size is validated client-side to 1MB after compression
+      allow write: if request.auth != null 
+        && request.resource.contentType == 'application/pdf'
+        && request.resource.size < 2 * 1024 * 1024; // 2MB limit (allowing some buffer for compression)
+      
+      // Allow authenticated users to delete files
+      allow delete: if request.auth != null;
+    }
+  }
+}
+
