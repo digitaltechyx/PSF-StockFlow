@@ -230,7 +230,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
             disabled={isUploading}
           >
             <FileText className="h-4 w-4 mr-2" />
-            {fileUploads.length === 0 ? "Select PDFs" : `Add More PDFs (${fileUploads.length} selected)`}
+                {fileUploads.length === 0 ? "Select Labels" : `Add More Labels (${fileUploads.length} selected)`}
           </Button>
         </label>
 
@@ -259,7 +259,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
               ) : (
                 <>
                   <Upload className="h-4 w-4" />
-                  Upload {pendingFiles.length > 0 ? `${pendingFiles.length} ` : ""}PDF{pendingFiles.length !== 1 ? "s" : ""}
+                  Upload {pendingFiles.length > 0 ? `${pendingFiles.length} ` : ""}Label{pendingFiles.length !== 1 ? "s" : ""}
                 </>
               )}
             </Button>

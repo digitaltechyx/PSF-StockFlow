@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, ExternalLink, FileText, X } from "lucide-react";
+import { Search, Download, ExternalLink, FileText, X, Eye } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
+import { ref, getBlob } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 
 interface PDFListProps {
   pdfs: UploadedPDF[];
@@ -20,6 +23,8 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedPDF, setSelectedPDF] = useState<UploadedPDF | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const itemsPerPage = 10;
 
   // Filter PDFs
@@ -114,8 +119,135 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  const handleDownload = (pdf: UploadedPDF) => {
-    window.open(pdf.downloadURL, "_blank");
+  const handleView = (pdf: UploadedPDF) => {
+    setSelectedPDF(pdf);
+    setIsViewDialogOpen(true);
+  };
+
+  const handleDownload = async (pdf: UploadedPDF) => {
+    try {
+      console.log("Download button clicked for:", pdf.fileName);
+      
+      // Use Firebase Storage SDK to get the file as blob (no CORS issues)
+      const storageRef = ref(storage, pdf.storagePath);
+      const blob = await getBlob(storageRef);
+      
+      // Create a blob URL from the fetched data
+      const blobURL = URL.createObjectURL(blob);
+      
+      // Create a download link
+      const link = document.createElement("a");
+      link.href = blobURL;
+      link.download = pdf.fileName;
+      link.style.position = "fixed";
+      link.style.top = "-9999px";
+      link.style.left = "-9999px";
+      
+      // Append to body
+      document.body.appendChild(link);
+      
+      // Force a click event
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      });
+      
+      link.dispatchEvent(clickEvent);
+      
+      // Cleanup after a delay
+      setTimeout(() => {
+        if (document.body.contains(link)) {
+          document.body.removeChild(link);
+        }
+        URL.revokeObjectURL(blobURL);
+      }, 200);
+    } catch (error) {
+      console.error("Download error:", error);
+      // Fallback: try using the download URL directly
+      try {
+        const response = await fetch(pdf.downloadURL);
+        if (response.ok) {
+          const blob = await response.blob();
+          const blobURL = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = blobURL;
+          link.download = pdf.fileName;
+          link.style.position = "fixed";
+          link.style.top = "-9999px";
+          link.style.left = "-9999px";
+          document.body.appendChild(link);
+          
+          const clickEvent = new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          });
+          link.dispatchEvent(clickEvent);
+          
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+            URL.revokeObjectURL(blobURL);
+          }, 200);
+        } else {
+          throw new Error("Fetch failed");
+        }
+      } catch (fallbackError) {
+        console.error("Fallback error:", fallbackError);
+        // Last resort: open in new tab
+        window.open(pdf.downloadURL, "_blank");
+      }
+    }
+  };
+
+  const handleViewInNewTab = (pdf: UploadedPDF) => {
+    // Open PDF in new tab with proper title and icon
+    const newWindow = window.open("", "_blank");
+    if (newWindow) {
+      // Create a data URL for a simple PDF icon (SVG)
+      const pdfIconSVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+      `;
+      const pdfIconDataURL = `data:image/svg+xml,${encodeURIComponent(pdfIconSVG)}`;
+      
+      newWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>${pdf.fileName}</title>
+            <link rel="icon" type="image/svg+xml" href="${pdfIconDataURL}">
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+              }
+              iframe {
+                width: 100%;
+                height: 100vh;
+                border: none;
+              }
+            </style>
+          </head>
+          <body>
+            <iframe src="${pdf.downloadURL}" title="${pdf.fileName}"></iframe>
+          </body>
+        </html>
+      `);
+      newWindow.document.close();
+    } else {
+      // Fallback: direct open
+      window.open(pdf.downloadURL, "_blank");
+    }
   };
 
   return (
@@ -123,8 +255,8 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
       <CardHeader>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-purple-600">Uploaded PDFs ({filteredPDFs.length})</CardTitle>
-            <CardDescription>View and manage your uploaded PDF files</CardDescription>
+            <CardTitle className="text-purple-600">Uploaded Labels ({filteredPDFs.length})</CardTitle>
+            <CardDescription>View and manage your uploaded label files</CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:flex-initial">
@@ -205,10 +337,10 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
                       variant="outline"
                       size="sm"
                       className="text-[10px] h-6 px-2"
-                      onClick={() => handleDownload(pdf)}
+                      onClick={() => handleView(pdf)}
                     >
-                      <Download className="h-3 w-3 mr-1" />
-                      Download
+                      <Eye className="h-3 w-3 mr-1" />
+                      View
                     </Button>
                   </div>
                 </div>
@@ -230,10 +362,10 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
                       variant="outline"
                       size="sm"
                       className="flex items-center gap-2 ml-4"
-                      onClick={() => handleDownload(pdf)}
+                      onClick={() => handleView(pdf)}
                     >
-                      <Download className="h-4 w-4" />
-                      Download
+                      <Eye className="h-4 w-4" />
+                      View
                     </Button>
                   </div>
                 </div>
@@ -243,11 +375,11 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
         ) : (
           <div className="text-center py-12 text-muted-foreground">
             <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
-            <p className="text-lg font-semibold">No PDFs uploaded yet</p>
+            <p className="text-lg font-semibold">No labels uploaded yet</p>
             <p className="text-sm mt-2">
               {pdfs.length === 0
-                ? "Upload your first PDF using the upload button above."
-                : "No PDFs match your search or filter criteria."}
+                ? "Upload your first label using the upload button above."
+                : "No labels match your search or filter criteria."}
             </p>
           </div>
         )}
@@ -282,6 +414,66 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
           </div>
         )}
       </CardContent>
+
+      {/* View PDF Dialog */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedPDF?.fileName}</DialogTitle>
+            <DialogDescription>
+              View PDF uploaded by {selectedPDF?.uploadedByName} on {formatDate(selectedPDF?.uploadedAt)}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPDF && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-semibold">File Name:</span>
+                  <p className="text-muted-foreground">{selectedPDF.fileName}</p>
+                </div>
+                <div>
+                  <span className="font-semibold">Client:</span>
+                  <p className="text-muted-foreground">{selectedPDF.uploadedByName}</p>
+                </div>
+                <div>
+                  <span className="font-semibold">File Size:</span>
+                  <p className="text-muted-foreground">{formatFileSize(selectedPDF.size)}</p>
+                </div>
+                <div>
+                  <span className="font-semibold">Upload Date:</span>
+                  <p className="text-muted-foreground">{formatDate(selectedPDF.uploadedAt)}</p>
+                </div>
+                <div>
+                  <span className="font-semibold">Storage Path:</span>
+                  <p className="text-muted-foreground break-all">{selectedPDF.storagePath}</p>
+                </div>
+                <div>
+                  <span className="font-semibold">Folder:</span>
+                  <p className="text-muted-foreground">
+                    {selectedPDF.year}/{selectedPDF.month}/{selectedPDF.date}
+                  </p>
+                </div>
+              </div>
+
+              {/* PDF Viewer */}
+              <div className="border rounded-lg overflow-hidden">
+                <iframe
+                  src={selectedPDF.downloadURL}
+                  className="w-full h-[600px]"
+                  title={selectedPDF.fileName}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={() => handleViewInNewTab(selectedPDF)} className="flex-1">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open in New Tab
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

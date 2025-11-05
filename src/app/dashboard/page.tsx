@@ -287,7 +287,7 @@ export default function DashboardPage() {
           className="flex items-center gap-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
         >
           <FileText className="h-4 w-4" />
-          {showPDFs ? "Hide" : "Show"} PDFs ({uploadedPDFs.length})
+          {showPDFs ? "Hide" : "Show"} Labels ({uploadedPDFs.length})
         </Button>
       </div>
 
@@ -923,13 +923,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* PDFs Section */}
+      {/* Labels Section */}
       {showPDFs && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-purple-600">Upload PDF</CardTitle>
-              <CardDescription>Upload PDF files to Firebase Storage</CardDescription>
+              <CardTitle className="text-purple-600">Upload Labels</CardTitle>
+              <CardDescription>Upload label files to Firebase Storage</CardDescription>
             </CardHeader>
             <CardContent>
               {userProfile && user && (

@@ -207,7 +207,7 @@ export default function AdminDashboardPage() {
         <Button variant={mobileSection === "users" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("users")}>Inventory</Button>
         <Button variant={mobileSection === "members" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("members")}>Users</Button>
         <Button variant={mobileSection === "invoices" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("invoices")}>Invoices</Button>
-        <Button variant={mobileSection === "pdfs" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("pdfs")}>PDFs</Button>
+        <Button variant={mobileSection === "pdfs" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("pdfs")}>Labels</Button>
       </div>
 
       {/* Desktop Tabs */}
@@ -236,8 +236,8 @@ export default function AdminDashboardPage() {
               <span className="hidden sm:inline">Invoice Management</span>
             </TabsTrigger>
             <TabsTrigger value="pdfs" className="whitespace-nowrap flex-1">
-              <span className="sm:hidden">PDFs</span>
-              <span className="hidden sm:inline">PDF Management</span>
+              <span className="sm:hidden">Labels</span>
+              <span className="hidden sm:inline">Labels Management</span>
             </TabsTrigger>
           </TabsList>
 
