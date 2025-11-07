@@ -10,12 +10,21 @@ export async function POST(request: NextRequest) {
     // Get access token
     const tokenResponse = await fetch(`${request.nextUrl.origin}/api/onedrive/token`);
     if (!tokenResponse.ok) {
+      const tokenError = await tokenResponse.text();
+      console.error('Token error:', tokenError);
       return NextResponse.json(
-        { error: 'Failed to get access token' },
+        { error: 'Failed to get access token', details: tokenError },
         { status: 500 }
       );
     }
-    const { accessToken } = await tokenResponse.json();
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.accessToken) {
+      return NextResponse.json(
+        { error: 'No access token received', details: tokenData },
+        { status: 500 }
+      );
+    }
+    const { accessToken } = tokenData;
 
     // Parse form data
     const formData = await request.formData();
@@ -81,20 +90,44 @@ export async function POST(request: NextRequest) {
         if (!folderResponse.ok) {
           const errorData = await folderResponse.text();
           console.error('Error creating folder:', errorData);
+          let errorMessage = `Failed to create folder: ${folderName}`;
+          try {
+            const errorJson = JSON.parse(errorData);
+            errorMessage = errorJson.error?.message || errorJson.error_description || errorMessage;
+          } catch (e) {
+            errorMessage = errorData || errorMessage;
+          }
           return NextResponse.json(
-            { error: `Failed to create folder: ${folderName}` },
+            { error: errorMessage, details: errorData },
             { status: 500 }
           );
         }
       }
 
       // Get folder ID for next iteration
+      if (!folderResponse.ok && folderResponse.status !== 404) {
+        const errorData = await folderResponse.text();
+        console.error('Error checking folder:', errorData);
+        let errorMessage = `Failed to check folder: ${folderName}`;
+        try {
+          const errorJson = JSON.parse(errorData);
+          errorMessage = errorJson.error?.message || errorJson.error_description || errorMessage;
+        } catch (e) {
+          errorMessage = errorData || errorMessage;
+        }
+        return NextResponse.json(
+          { error: errorMessage, details: errorData },
+          { status: 500 }
+        );
+      }
+      
       const folderData = await folderResponse.json();
       currentFolderId = folderData.id;
     }
 
     // Upload file to the final folder
     const fileName = folderPath.split('/').pop()!;
+    // Use the correct upload endpoint - upload to the folder using the folder ID
     const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${currentFolderId}:/${encodeURIComponent(fileName)}:/content`;
 
     const uploadResponse = await fetch(uploadUrl, {
@@ -109,8 +142,16 @@ export async function POST(request: NextRequest) {
     if (!uploadResponse.ok) {
       const errorData = await uploadResponse.text();
       console.error('Upload error:', errorData);
+      let errorMessage = 'Failed to upload file to OneDrive';
+      try {
+        const errorJson = JSON.parse(errorData);
+        errorMessage = errorJson.error?.message || errorJson.error_description || errorMessage;
+      } catch (e) {
+        // If parsing fails, use the raw error data
+        errorMessage = errorData || errorMessage;
+      }
       return NextResponse.json(
-        { error: 'Failed to upload file to OneDrive' },
+        { error: errorMessage, details: errorData },
         { status: 500 }
       );
     }

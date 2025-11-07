@@ -99,7 +99,16 @@ export async function uploadPDF(
     }
 
     if (!response.ok) {
-      const errorData = await response.json();
+      let errorMessage = "Failed to upload PDF to OneDrive";
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.details || errorMessage;
+        console.error('Upload error details:', errorData);
+      } catch (e) {
+        const errorText = await response.text();
+        errorMessage = errorText || errorMessage;
+        console.error('Upload error:', errorText);
+      }
       if (onProgress) {
         onProgress({
           progress: 0,
@@ -108,7 +117,7 @@ export async function uploadPDF(
       }
       return {
         success: false,
-        error: errorData.error || "Failed to upload PDF to OneDrive",
+        error: errorMessage,
       };
     }
 
