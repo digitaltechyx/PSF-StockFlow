@@ -2,47 +2,16 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { InventoryItem, ShippedItem, RestockHistory, DeleteLog, EditLog, RecycledInventoryItem, Invoice, UploadedPDF } from "@/types";
-import { InvoicesSection } from "@/components/dashboard/invoices-section";
+import type { InventoryItem, ShippedItem, Invoice } from "@/types";
 import { InventoryTable } from "@/components/dashboard/inventory-table";
 import { ShippedTable } from "@/components/dashboard/shipped-table";
-import { PDFUpload } from "@/components/dashboard/pdf-upload";
-import { PDFList } from "@/components/dashboard/pdf-list";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { History, Eye, EyeOff, Trash2, Edit, RotateCcw, Search, X, FileText } from "lucide-react";
-import { format } from "date-fns";
-import { useToast } from "@/hooks/use-toast";
+import { Package, Truck, DollarSign } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
 
 export default function DashboardPage() {
-  const { userProfile, user } = useAuth();
-  const { toast } = useToast();
-  const [showRestockHistory, setShowRestockHistory] = useState(false);
-  const [showDeleteLogs, setShowDeleteLogs] = useState(false);
-  const [showEditLogs, setShowEditLogs] = useState(false);
-  const [showRecycleSection, setShowRecycleSection] = useState(false);
-  const [showInvoices, setShowInvoices] = useState(false);
-  const [showPDFs, setShowPDFs] = useState(false);
-  
-  const [restockDateFilter, setRestockDateFilter] = useState<string>("all");
-  const [deleteLogsDateFilter, setDeleteLogsDateFilter] = useState<string>("all");
-  const [editLogsDateFilter, setEditLogsDateFilter] = useState<string>("all");
-  const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
-  const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
-  const [editLogsSearch, setEditLogsSearch] = useState("");
-  const [recycleSearch, setRecycleSearch] = useState("");
-  
-  // Pagination states
-  const [restockPage, setRestockPage] = useState(1);
-  const [deleteLogsPage, setDeleteLogsPage] = useState(1);
-  const [editLogsPage, setEditLogsPage] = useState(1);
-  const [recyclePage, setRecyclePage] = useState(1);
-  const itemsPerPage = 10;
+  const { userProfile } = useAuth();
   
   const { 
     data: inventoryData, 
@@ -58,36 +27,6 @@ export default function DashboardPage() {
     userProfile ? `users/${userProfile.uid}/shipped` : ""
   );
 
-  const { 
-    data: restockHistory, 
-    loading: restockHistoryLoading 
-  } = useCollection<RestockHistory>(
-    userProfile ? `users/${userProfile.uid}/restockHistory` : ""
-  );
-
-  const { 
-    data: deleteLogs, 
-    loading: deleteLogsLoading 
-  } = useCollection<DeleteLog>(
-    userProfile ? `users/${userProfile.uid}/deleteLogs` : ""
-  );
-
-  const { 
-    data: editLogs, 
-    loading: editLogsLoading 
-  } = useCollection<EditLog>(
-    userProfile ? `users/${userProfile.uid}/editLogs` : ""
-  );
-
-  // Recycled items collections
-  const { 
-    data: recycledInventory, 
-    loading: recycledInventoryLoading 
-  } = useCollection<RecycledInventoryItem>(
-    userProfile ? `users/${userProfile.uid}/recycledInventory` : ""
-  );
-
-  // Invoices collection
   const {
     data: invoices,
     loading: invoicesLoading
@@ -95,867 +34,167 @@ export default function DashboardPage() {
     userProfile ? `users/${userProfile.uid}/invoices` : ""
   );
 
-  // Uploaded PDFs collection
-  const {
-    data: allUploadedPDFs,
-    loading: uploadedPDFsLoading
-  } = useCollection<UploadedPDF>("uploadedPDFs");
+  // Calculate total quantity of all inventory items
+  const totalItemsInInventory = useMemo(() => {
+    return inventoryData.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  }, [inventoryData]);
 
-  // Filter PDFs by current user (for regular users, show only their own; admins see all)
-  const uploadedPDFs = userProfile?.role === "admin" 
-    ? allUploadedPDFs 
-    : allUploadedPDFs.filter((pdf) => pdf.uploadedBy === user?.uid);
+  // Calculate total pending amount from invoices
+  const totalPendingAmount = useMemo(() => {
+    const pendingInvoices = invoices.filter(inv => inv.status === 'pending');
+    return pendingInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+  }, [invoices]);
 
-
-  const formatDate = (date: any) => {
-    if (!date) return "N/A";
-    if (typeof date === 'string') return format(new Date(date), "MMM dd, yyyy");
-    if (date.seconds) return format(new Date(date.seconds * 1000), "MMM dd, yyyy");
-    return "N/A";
-  };
-
-  // Helper function for date filtering
-  const matchesDateFilter = (date: any, filter: string) => {
-    if (filter === "all") return true;
-    
-    let itemDate: Date;
-    if (typeof date === 'string') {
-      itemDate = new Date(date);
-    } else if (date && typeof date === 'object' && date.seconds) {
-      itemDate = new Date(date.seconds * 1000);
-    } else {
-      return false;
-    }
-    
-    const now = new Date();
-    const daysDiff = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    switch (filter) {
-      case "today":
-        return daysDiff === 0;
-      case "week":
-        return daysDiff <= 7;
-      case "month":
-        return daysDiff <= 30;
-      case "year":
-        return daysDiff <= 365;
-      default:
-        return true;
-    }
-  };
-
-  // Filtered restock history data
-  const filteredRestockHistory = restockHistory.filter((item) => {
-    return matchesDateFilter(item.restockedAt, restockDateFilter);
+  // Track current date to update when date changes
+  const [currentDate, setCurrentDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   });
 
-  // Pagination calculations for restock history
-  const totalRestockPages = Math.ceil(filteredRestockHistory.length / itemsPerPage);
-  const startRestockIndex = (restockPage - 1) * itemsPerPage;
-  const endRestockIndex = startRestockIndex + itemsPerPage;
-  const paginatedRestockHistory = filteredRestockHistory
-    .sort((a, b) => {
-      const dateA = typeof a.restockedAt === 'string' ? new Date(a.restockedAt) : new Date(a.restockedAt.seconds * 1000);
-      const dateB = typeof b.restockedAt === 'string' ? new Date(b.restockedAt) : new Date(b.restockedAt.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(startRestockIndex, endRestockIndex);
+  // Update current date every minute to catch date changes
+  useEffect(() => {
+    const updateDate = () => {
+      const today = new Date();
+      const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      setCurrentDate(todayString);
+    };
 
-  // Reset pagination when filters change
-  const resetRestockPagination = () => setRestockPage(1);
+    // Update immediately
+    updateDate();
 
-  // Filtered delete logs data
-  const filteredDeleteLogs = deleteLogs.filter((item) => {
-    const matchesSearch = item.productName.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
-                          item.reason.toLowerCase().includes(deleteLogsSearch.toLowerCase()) ||
-                          item.deletedBy.toLowerCase().includes(deleteLogsSearch.toLowerCase());
-    const matchesDate = matchesDateFilter(item.deletedAt, deleteLogsDateFilter);
-    return matchesSearch && matchesDate;
-  });
+    // Update every minute to catch date changes
+    const interval = setInterval(updateDate, 60000);
 
-  // Pagination for delete logs
-  const totalDeleteLogsPages = Math.ceil(filteredDeleteLogs.length / itemsPerPage);
-  const startDeleteLogsIndex = (deleteLogsPage - 1) * itemsPerPage;
-  const endDeleteLogsIndex = startDeleteLogsIndex + itemsPerPage;
-  const paginatedDeleteLogs = filteredDeleteLogs
-    .sort((a, b) => {
-      const dateA = typeof a.deletedAt === 'string' ? new Date(a.deletedAt) : new Date(a.deletedAt.seconds * 1000);
-      const dateB = typeof b.deletedAt === 'string' ? new Date(b.deletedAt) : new Date(b.deletedAt.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(startDeleteLogsIndex, endDeleteLogsIndex);
-  const resetDeleteLogsPagination = () => setDeleteLogsPage(1);
+    return () => clearInterval(interval);
+  }, []);
 
-  // Filtered edit logs data
-  const filteredEditLogs = editLogs.filter((item) => {
-    const matchesSearch = item.productName.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
-                          item.reason.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
-                          item.editedBy.toLowerCase().includes(editLogsSearch.toLowerCase()) ||
-                          (item.previousProductName && item.previousProductName.toLowerCase().includes(editLogsSearch.toLowerCase()));
-    const matchesDate = matchesDateFilter(item.editedAt, editLogsDateFilter);
-    return matchesSearch && matchesDate;
-  });
-
-  // Pagination for edit logs
-  const totalEditLogsPages = Math.ceil(filteredEditLogs.length / itemsPerPage);
-  const startEditLogsIndex = (editLogsPage - 1) * itemsPerPage;
-  const endEditLogsIndex = startEditLogsIndex + itemsPerPage;
-  const paginatedEditLogs = filteredEditLogs
-    .sort((a, b) => {
-      const dateA = typeof a.editedAt === 'string' ? new Date(a.editedAt) : new Date(a.editedAt.seconds * 1000);
-      const dateB = typeof b.editedAt === 'string' ? new Date(b.editedAt) : new Date(b.editedAt.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(startEditLogsIndex, endEditLogsIndex);
-  const resetEditLogsPagination = () => setEditLogsPage(1);
-
-  // Filtered recycled data
-  const filteredRecycledInventory = recycledInventory.filter((item) => {
-    const matchesSearch = item.productName.toLowerCase().includes(recycleSearch.toLowerCase()) ||
-                          (item.remarks && item.remarks.toLowerCase().includes(recycleSearch.toLowerCase())) ||
-                          item.recycledBy.toLowerCase().includes(recycleSearch.toLowerCase());
-    const matchesDate = matchesDateFilter(item.recycledAt, recycleDateFilter);
-    return matchesSearch && matchesDate;
-  });
-
-  // Pagination for recycled inventory
-  const totalRecyclePages = Math.ceil(filteredRecycledInventory.length / itemsPerPage);
-  const startRecycleIndex = (recyclePage - 1) * itemsPerPage;
-  const endRecycleIndex = startRecycleIndex + itemsPerPage;
-  const paginatedRecycledInventory = filteredRecycledInventory
-    .sort((a, b) => {
-      const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt.seconds * 1000);
-      const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt.seconds * 1000);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(startRecycleIndex, endRecycleIndex);
-  const resetRecyclePagination = () => setRecyclePage(1);
+  // Calculate today's shipped orders
+  const todaysShippedOrders = useMemo(() => {
+    return shippedData.filter((item) => {
+      if (!item.date) return false;
+      
+      let itemDate: Date;
+      if (typeof item.date === 'string') {
+        itemDate = new Date(item.date);
+      } else if (item.date.seconds) {
+        itemDate = new Date(item.date.seconds * 1000);
+      } else {
+        return false;
+      }
+      
+      const itemDateString = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+      return itemDateString === currentDate;
+    }).length;
+  }, [shippedData, currentDate]);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Toggle Buttons */}
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowRestockHistory(!showRestockHistory)}
-          className="flex items-center gap-2"
-        >
-          <History className="h-4 w-4" />
-          {showRestockHistory ? "Hide" : "Show"} Restock History
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowDeleteLogs(!showDeleteLogs)}
-          className="flex items-center gap-2"
-        >
-          <Trash2 className="h-4 w-4" />
-          {showDeleteLogs ? "Hide" : "Show"} Delete Logs
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowEditLogs(!showEditLogs)}
-          className="flex items-center gap-2"
-        >
-          <Edit className="h-4 w-4" />
-          {showEditLogs ? "Hide" : "Show"} Edit Logs
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowRecycleSection(!showRecycleSection)}
-          className="flex items-center gap-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-        >
-          <RotateCcw className="h-4 w-4" />
-          {showRecycleSection ? "Hide" : "Show"} Recycle Bin
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowInvoices(!showInvoices)}
-          className="flex items-center gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-        >
-          <FileText className="h-4 w-4" />
-          {showInvoices ? "Hide" : "Show"} Invoices ({invoices.filter(inv => inv.status === 'pending').length})
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowPDFs(!showPDFs)}
-          className="flex items-center gap-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-        >
-          <FileText className="h-4 w-4" />
-          {showPDFs ? "Hide" : "Show"} Labels ({uploadedPDFs.length})
-        </Button>
-      </div>
-
-      {/* Restock History Section */}
-      {showRestockHistory && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Restock History ({filteredRestockHistory.length})</CardTitle>
-                <CardDescription>View when your products were restocked by admins</CardDescription>
-              </div>
-              <div className="sm:w-48">
-                <Select value={restockDateFilter} onValueChange={(value) => {
-                  setRestockDateFilter(value);
-                  resetRestockPagination();
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Time</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-2 border-blue-200/50 bg-gradient-to-br from-blue-50 to-blue-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-blue-900">Total Items in Inventory</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center shadow-md">
+              <Package className="h-5 w-5 text-white" />
             </div>
           </CardHeader>
           <CardContent>
-            {restockHistoryLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
-                ))}
+            <div className="text-3xl font-bold text-blue-900">{totalItemsInInventory}</div>
+            <p className="text-xs text-blue-700 mt-1">Total quantity of all items</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-green-900">Total Pending Amount</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center shadow-md">
+              <DollarSign className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {invoicesLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-green-900">${totalPendingAmount.toFixed(2)}</div>
+                <p className="text-xs text-green-700 mt-1">Pending invoices total</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50 to-purple-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-purple-900">Today's Shipped Orders</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-purple-500 flex items-center justify-center shadow-md">
+              <Truck className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-purple-900">{todaysShippedOrders}</div>
+            <p className="text-xs text-purple-700 mt-1">Orders shipped today</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-2 shadow-xl overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-xl font-bold text-white">Inventory</CardTitle>
+                <CardDescription className="text-blue-100 mt-1">
+                  Manage your product inventory
+                </CardDescription>
               </div>
-            ) : filteredRestockHistory.length > 0 ? (
-              <div className="space-y-3">
-                {paginatedRestockHistory.map((item) => (
-  <div key={item.id}>
-    {/* Mobile: compact with chips */}
-    <div className="block sm:hidden p-3 border rounded-lg">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-sm truncate pr-2">{item.productName}</h3>
-        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-green-100 text-green-800">
-          +{item.restockedQuantity}
-        </Badge>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          Prev: {item.previousQuantity} → {item.newQuantity}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          By: {item.restockedBy}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          {formatDate(item.restockedAt)}
-        </Badge>
-      </div>
-    </div>
-    {/* Desktop/Tablet: original row layout */}
-    <div className="hidden sm:block">
-      <div className="flex items-center justify-between p-4 border rounded-lg">
-        <div className="flex-1">
-          <h3 className="font-semibold">{item.productName}</h3>
-          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-            <span>Previous: {item.previousQuantity}</span>
-            <span className="text-green-600 font-medium">+{item.restockedQuantity}</span>
-            <span>New Total: {item.newQuantity}</span>
-            <span>Restocked by: {item.restockedBy}</span>
-            <span>Date: {formatDate(item.restockedAt)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-))}
+              <div className="h-12 w-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <Package className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {inventoryLoading ? (
+              <div className="p-6 space-y-4">
+                <Skeleton className="h-64 w-full" />
               </div>
             ) : (
-              <div className="text-center py-8">
-                <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No restock history</h3>
-                <p className="text-muted-foreground">
-                  {restockHistory.length === 0 ? "No products have been restocked yet." : "No restocks match your date filter."}
-                </p>
-              </div>
-            )}
-            
-            {/* Pagination Controls */}
-            {filteredRestockHistory.length > itemsPerPage && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  Showing {startRestockIndex + 1} to {Math.min(endRestockIndex, filteredRestockHistory.length)} of {filteredRestockHistory.length} records
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRestockPage(p => Math.max(1, p - 1))}
-                    disabled={restockPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {restockPage} of {totalRestockPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRestockPage(p => Math.min(totalRestockPages, p + 1))}
-                    disabled={restockPage === totalRestockPages}
-                  >
-                    Next
-                  </Button>
-                </div>
+              <div className="p-6">
+                <InventoryTable data={inventoryData} />
               </div>
             )}
           </CardContent>
         </Card>
-      )}
 
-      {/* Delete Logs Section */}
-      {showDeleteLogs && (
-        <Card>
-          <CardHeader>
+        <Card className="border-2 shadow-xl overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white pb-4">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-red-600">Delete Logs ({filteredDeleteLogs.length})</CardTitle>
-                <CardDescription>View products that were permanently deleted by admins</CardDescription>
+                <CardTitle className="text-xl font-bold text-white">
+                  Order Shipped ({shippedData.length})
+                </CardTitle>
+                <CardDescription className="text-purple-100 mt-1">
+                  Track your shipped orders
+                </CardDescription>
               </div>
-              <div className="sm:w-48">
-                <Select value={deleteLogsDateFilter} onValueChange={setDeleteLogsDateFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Time</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="h-12 w-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <Truck className="h-6 w-6 text-white" />
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {/* Search Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by product name, reason, or admin..."
-                    value={deleteLogsSearch}
-                    onChange={(e) => setDeleteLogsSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                  {deleteLogsSearch && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                      onClick={() => setDeleteLogsSearch("")}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-            {deleteLogsLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
-                ))}
-              </div>
-            ) : filteredDeleteLogs.length > 0 ? (
-              <div className="space-y-3">
-                {paginatedDeleteLogs.map((item) => (
-  <div key={item.id}>
-    {/* Mobile: compact with chips */}
-    <div className="block sm:hidden p-3 border rounded-lg bg-red-50">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-sm text-red-800 truncate pr-2">{item.productName}</h3>
-        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-red-100 text-red-800">
-          -{item.quantity}
-        </Badge>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          Added: {formatDate(item.dateAdded)}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-red-700">
-          Deleted: {formatDate(item.deletedAt)}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          By: {item.deletedBy}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          {item.status}
-        </Badge>
-      </div>
-      <div className="mt-2">
-        <span className="text-[10px] text-muted-foreground">Reason: </span>
-        <span className="text-[10px] text-red-700 font-medium break-words">{item.reason}</span>
-      </div>
-    </div>
-    {/* Desktop/Tablet: original row layout */}
-    <div className="hidden sm:block">
-      <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50">
-        <div className="flex-1">
-          <h3 className="font-semibold text-red-800">{item.productName}</h3>
-          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-            <span>Quantity: {item.quantity}</span>
-            <span>Added: {formatDate(item.dateAdded)}</span>
-            <span className="text-red-600">Deleted: {formatDate(item.deletedAt)}</span>
-            <span>By: {item.deletedBy}</span>
-          </div>
-          <div className="mt-2 text-sm">
-            <span className="text-muted-foreground">Reason: </span>
-            <span className="text-red-700 font-medium">{item.reason}</span>
-          </div>
-          <div className="mt-2">
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              item.status === "In Stock" 
-                ? "bg-green-100 text-green-800" 
-                : "bg-red-100 text-red-800"
-            }`}>
-              {item.status}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-))}
+          <CardContent className="p-0">
+            {shippedLoading ? (
+              <div className="p-6 space-y-4">
+                <Skeleton className="h-64 w-full" />
               </div>
             ) : (
-              <div className="text-center py-8">
-                <Trash2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No deleted products</h3>
-                <p className="text-muted-foreground">
-                  {deleteLogs.length === 0 ? "No products have been permanently deleted yet." : "No deletions match your date filter."}
-                </p>
-              </div>
-            )}
-            
-            {/* Pagination Controls */}
-            {filteredDeleteLogs.length > itemsPerPage && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  Showing {startDeleteLogsIndex + 1} to {Math.min(endDeleteLogsIndex, filteredDeleteLogs.length)} of {filteredDeleteLogs.length} records
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDeleteLogsPage(p => Math.max(1, p - 1))}
-                    disabled={deleteLogsPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {deleteLogsPage} of {totalDeleteLogsPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDeleteLogsPage(p => Math.min(totalDeleteLogsPages, p + 1))}
-                    disabled={deleteLogsPage === totalDeleteLogsPages}
-                  >
-                    Next
-                  </Button>
-                </div>
+              <div className="p-6">
+                <ShippedTable data={shippedData} inventory={inventoryData} />
               </div>
             )}
           </CardContent>
         </Card>
-      )}
-
-      {/* Edit Logs Section */}
-      {showEditLogs && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-blue-600">Edit Logs ({filteredEditLogs.length})</CardTitle>
-                <CardDescription>View products that were edited by admins</CardDescription>
-              </div>
-              <div className="sm:w-48">
-                <Select value={editLogsDateFilter} onValueChange={setEditLogsDateFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Time</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Search Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by product name, reason, or admin..."
-                    value={editLogsSearch}
-                    onChange={(e) => setEditLogsSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                  {editLogsSearch && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                      onClick={() => setEditLogsSearch("")}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-            {editLogsLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
-                ))}
-              </div>
-            ) : filteredEditLogs.length > 0 ? (
-              <div className="space-y-3">
-                {paginatedEditLogs.map((item) => (
-  <div key={item.id}>
-    {/* Mobile: compact with chips */}
-    <div className="block sm:hidden p-3 border rounded-lg bg-blue-50">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-sm text-blue-800 truncate pr-2">{item.productName}</h3>
-        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-blue-100 text-blue-800">
-          {item.previousQuantity} → {item.newQuantity}
-        </Badge>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          Status: {item.previousStatus} → {item.newStatus}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-blue-700">
-          Edited: {formatDate(item.editedAt)}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          By: {item.editedBy}
-        </Badge>
-      </div>
-      {item.previousProductName && item.previousProductName !== item.productName && (
-        <div className="mt-2">
-          <span className="text-[10px] text-muted-foreground">Name from: </span>
-          <span className="text-[10px] text-blue-700 font-medium break-words">{item.previousProductName}</span>
-        </div>
-      )}
-      <div className="mt-2">
-        <span className="text-[10px] text-muted-foreground">Reason: </span>
-        <span className="text-[10px] text-blue-700 font-medium break-words">{item.reason}</span>
-      </div>
-    </div>
-    {/* Desktop/Tablet: original row layout */}
-    <div className="hidden sm:block">
-      <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
-        <div className="flex-1">
-          <h3 className="font-semibold text-blue-800">{item.productName}</h3>
-          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-            <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
-            <span>Status: {item.previousStatus} → {item.newStatus}</span>
-            <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
-            <span>By: {item.editedBy}</span>
-          </div>
-          {item.previousProductName && item.previousProductName !== item.productName && (
-            <div className="mt-1 text-sm">
-              <span className="text-muted-foreground">Name changed from: </span>
-              <span className="text-blue-700 font-medium">{item.previousProductName}</span>
-            </div>
-          )}
-          <div className="mt-2 text-sm">
-            <span className="text-muted-foreground">Reason: </span>
-            <span className="text-blue-700 font-medium">{item.reason}</span>
-          </div>
-          <div className="mt-2">
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              item.newStatus === "In Stock" 
-                ? "bg-green-100 text-green-800" 
-                : "bg-red-100 text-red-800"
-            }`}>
-              {item.newStatus}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Edit className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No product edits</h3>
-                <p className="text-muted-foreground">
-                  {editLogs.length === 0 ? "No products have been edited yet." : "No edits match your date filter."}
-                </p>
-              </div>
-            )}
-            
-            {/* Pagination Controls */}
-            {filteredEditLogs.length > itemsPerPage && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  Showing {startEditLogsIndex + 1} to {Math.min(endEditLogsIndex, filteredEditLogs.length)} of {filteredEditLogs.length} records
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditLogsPage(p => Math.max(1, p - 1))}
-                    disabled={editLogsPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {editLogsPage} of {totalEditLogsPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditLogsPage(p => Math.min(totalEditLogsPages, p + 1))}
-                    disabled={editLogsPage === totalEditLogsPages}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recycle Section */}
-      {showRecycleSection && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-orange-600">Recycled Inventory ({filteredRecycledInventory.length})</CardTitle>
-                <CardDescription>View inventory items that were moved to recycle bin by admins</CardDescription>
-              </div>
-              <div className="sm:w-48">
-                <Select value={recycleDateFilter} onValueChange={(value) => {
-                  setRecycleDateFilter(value);
-                  resetRecyclePagination();
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Time</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Search Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by product name, reason, or admin..."
-                    value={recycleSearch}
-                    onChange={(e) => setRecycleSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                  {recycleSearch && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                      onClick={() => setRecycleSearch("")}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-            {recycledInventoryLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
-                ))}
-              </div>
-            ) : filteredRecycledInventory.length > 0 ? (
-              <div className="space-y-3">
-                {paginatedRecycledInventory.map((item) => (
-  <div key={item.id}>
-    {/* Mobile: compact with chips */}
-    <div className="block sm:hidden p-3 border rounded-lg bg-orange-50">
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="font-semibold text-sm truncate pr-2">{item.productName}</h4>
-        <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-orange-100 text-orange-800">
-          Qty: {item.quantity}
-        </Badge>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          Added: {formatDate(item.dateAdded)}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20 text-orange-700">
-          Recycled: {formatDate(item.recycledAt)}
-        </Badge>
-        <Badge variant="outline" className="text-[10px] border-muted-foreground/20">
-          By: {item.recycledBy}
-        </Badge>
-      </div>
-      {item.remarks && (
-        <div className="mt-2">
-          <span className="text-[10px] text-muted-foreground">Reason: </span>
-          <span className="text-[10px] text-orange-700 font-medium break-words">{item.remarks}</span>
-        </div>
-      )}
-      <div className="mt-2">
-        <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium ${
-          item.status === "In Stock" 
-            ? "bg-green-100 text-green-800" 
-            : "bg-red-100 text-red-800"
-        }`}>
-          {item.status}
-        </span>
-      </div>
-    </div>
-    {/* Desktop/Tablet: original row layout */}
-    <div className="hidden sm:block">
-      <div className="flex items-center justify-between p-4 border rounded-lg bg-orange-50">
-        <div className="flex-1">
-          <h4 className="font-semibold">{item.productName}</h4>
-          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-            <span>Qty: {item.quantity}</span>
-            <span>Added: {formatDate(item.dateAdded)}</span>
-            <span className="text-orange-600">Recycled: {formatDate(item.recycledAt)}</span>
-            <span>By: {item.recycledBy}</span>
-          </div>
-          {item.remarks && (
-            <div className="mt-2 text-sm">
-              <span className="text-muted-foreground">Reason: </span>
-              <span className="text-orange-700 font-medium">{item.remarks}</span>
-            </div>
-          )}
-          <div className="mt-2">
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              item.status === "In Stock" 
-                ? "bg-green-100 text-green-800" 
-                : "bg-red-100 text-red-800"
-            }`}>
-              {item.status}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <RotateCcw className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No recycled inventory items</h3>
-                <p className="text-muted-foreground">
-                  {recycledInventory.length === 0 ? "No inventory items have been recycled yet." : "No recycled inventory items match your date filter."}
-                </p>
-              </div>
-            )}
-            
-            {/* Pagination Controls */}
-            {filteredRecycledInventory.length > itemsPerPage && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  Showing {startRecycleIndex + 1} to {Math.min(endRecycleIndex, filteredRecycledInventory.length)} of {filteredRecycledInventory.length} records
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRecyclePage(p => Math.max(1, p - 1))}
-                    disabled={recyclePage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {recyclePage} of {totalRecyclePages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRecyclePage(p => Math.min(totalRecyclePages, p + 1))}
-                    disabled={recyclePage === totalRecyclePages}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Main Dashboard Grid */}
-      <div className="grid gap-2 sm:gap-4 md:gap-8 lg:grid-cols-2">
-        <div className="grid auto-rows-max items-start gap-2 sm:gap-4 md:gap-8">
-          {inventoryLoading ? <Skeleton className="h-64 sm:h-96 w-full" /> : <InventoryTable data={inventoryData} />}
-        </div>
-        <div className="grid auto-rows-max items-start gap-2 sm:gap-4 md:gap-8">
-          {shippedLoading ? <Skeleton className="h-64 sm:h-96 w-full" /> : <ShippedTable data={shippedData} inventory={inventoryData} />}
-        </div>
-      </div>
-
-      {/* Labels Section */}
-      {showPDFs && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-purple-600">Upload Labels</CardTitle>
-              <CardDescription>Upload label files to Firebase Storage</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {userProfile && user && (
-                <PDFUpload
-                  userId={user.uid}
-                  userName={userProfile.name || `User_${user.uid}`}
-                  onUploadSuccess={() => {
-                    // PDF list will automatically refresh via useCollection hook
-                  }}
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          <PDFList
-            pdfs={uploadedPDFs}
-            loading={uploadedPDFsLoading}
-            currentUserId={user?.uid}
-          />
-        </div>
-      )}
-
-      {/* Invoices Section */}
-      {showInvoices && (
-        <InvoicesSection invoices={invoices} loading={invoicesLoading} />
-      )}
     </div>
   );
 }

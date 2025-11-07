@@ -10,8 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Search, Download, FileText, X, Eye, ExternalLink, Printer } from "lucide-react";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
-import { ref, getBlob } from "firebase/storage";
-import { storage } from "@/lib/firebase";
+// OneDrive integration - no Firebase Storage imports needed
 
 interface PDFManagementProps {
   pdfs: UploadedPDF[];
@@ -137,76 +136,61 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
     try {
       console.log("Download button clicked for:", pdf.fileName);
       
-      // Use Firebase Storage SDK to get the file as blob (no CORS issues)
-      const storageRef = ref(storage, pdf.storagePath);
-      const blob = await getBlob(storageRef);
-      
-      // Create a blob URL from the fetched data
-      const blobURL = URL.createObjectURL(blob);
-      
-      // Create a download link
-      const link = document.createElement("a");
-      link.href = blobURL;
-      link.download = pdf.fileName;
-      link.style.position = "fixed";
-      link.style.top = "-9999px";
-      link.style.left = "-9999px";
-      
-      // Append to body
-      document.body.appendChild(link);
-      
-      // Force a click event
-      const clickEvent = new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      });
-      
-      link.dispatchEvent(clickEvent);
-      
-      // Cleanup after a delay
-      setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
+      // Use OneDrive download URL
+      if (pdf.downloadURL) {
+        // Get download URL from OneDrive API if needed
+        const response = await fetch(`/api/onedrive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const downloadUrl = data.downloadUrl || pdf.downloadURL;
+          
+          // Fetch the file
+          const fileResponse = await fetch(downloadUrl);
+          if (fileResponse.ok) {
+            const blob = await fileResponse.blob();
+            const blobURL = URL.createObjectURL(blob);
+            
+            // Create a download link
+            const link = document.createElement("a");
+            link.href = blobURL;
+            link.download = pdf.fileName;
+            link.style.position = "fixed";
+            link.style.top = "-9999px";
+            link.style.left = "-9999px";
+            
+            // Append to body
+            document.body.appendChild(link);
+            
+            // Force a click event
+            const clickEvent = new MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+            });
+            
+            link.dispatchEvent(clickEvent);
+            
+            // Cleanup after a delay
+            setTimeout(() => {
+              if (document.body.contains(link)) {
+                document.body.removeChild(link);
+              }
+              URL.revokeObjectURL(blobURL);
+            }, 200);
+          }
+        } else {
+          // Fallback: use direct download URL
+          window.open(pdf.downloadURL, '_blank');
         }
-        URL.revokeObjectURL(blobURL);
-      }, 200);
+      } else {
+        // Fallback: try using the download URL directly
+        window.open(pdf.downloadURL, '_blank');
+      }
     } catch (error) {
       console.error("Download error:", error);
-      // Fallback: try using the download URL directly
-      try {
-        const response = await fetch(pdf.downloadURL);
-        if (response.ok) {
-          const blob = await response.blob();
-          const blobURL = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = blobURL;
-          link.download = pdf.fileName;
-          link.style.position = "fixed";
-          link.style.top = "-9999px";
-          link.style.left = "-9999px";
-          document.body.appendChild(link);
-          
-          const clickEvent = new MouseEvent("click", {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-          });
-          link.dispatchEvent(clickEvent);
-          
-          setTimeout(() => {
-            if (document.body.contains(link)) {
-              document.body.removeChild(link);
-            }
-            URL.revokeObjectURL(blobURL);
-          }, 200);
-        } else {
-          throw new Error("Fetch failed");
-        }
-      } catch (fallbackError) {
-        console.error("Fallback error:", fallbackError);
-        // Last resort: open in new tab
-        window.open(pdf.downloadURL, "_blank");
+      // Final fallback: open in new tab
+      if (pdf.downloadURL) {
+        window.open(pdf.downloadURL, '_blank');
       }
     }
   };

@@ -10,8 +10,7 @@ import { Search, Download, ExternalLink, FileText, X, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
-import { ref, getBlob } from "firebase/storage";
-import { storage } from "@/lib/firebase";
+// OneDrive integration - no Firebase Storage imports needed
 
 interface PDFListProps {
   pdfs: UploadedPDF[];

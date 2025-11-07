@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
-import { Header } from "@/components/header";
 import { ProfileDialog } from "@/components/dashboard/profile-dialog";
+import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import {
+  SidebarProvider,
+  SidebarInset,
+} from "@/components/ui/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -52,12 +57,17 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <Header onProfileClick={handleProfileClick} />
-      <ProfileDialog open={showProfile} onOpenChange={setShowProfile} />
-      <main className="flex flex-1 flex-col gap-2 sm:gap-4 md:gap-8 p-2 sm:p-4 md:p-8">
-        {children}
-      </main>
-    </div>
+    <SidebarProvider>
+      <div className="flex min-h-screen w-full">
+        <DashboardSidebar />
+        <SidebarInset className="flex flex-col flex-1">
+          <DashboardHeader onProfileClick={handleProfileClick} />
+          <ProfileDialog open={showProfile} onOpenChange={setShowProfile} />
+          <main className="flex flex-1 flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-8 overflow-auto">
+            {children}
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }

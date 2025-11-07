@@ -18,7 +18,9 @@ import * as z from "zod";
 import { doc, updateDoc, deleteDoc, addDoc, collection, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar } from "lucide-react";
+import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar, Plus, Truck, FileText, List } from "lucide-react";
+import { AddInventoryForm } from "@/components/admin/add-inventory-form";
+import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
 import { format } from "date-fns";
 import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem, DeleteLog, EditLog } from "@/types";
 import { arrayToCSV, downloadCSV, formatDateForCSV, type InventoryCSVRow, type ShippedCSVRow } from "@/lib/csv-utils";
@@ -77,9 +79,8 @@ export function AdminInventoryManagement({
   const [recyclingProduct, setRecyclingProduct] = useState<InventoryItem | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<InventoryItem | null>(null);
   const [editingProductWithLog, setEditingProductWithLog] = useState<InventoryItem | null>(null);
-  const [showShipped, setShowShipped] = useState(false);
-  const [showRestockHistory, setShowRestockHistory] = useState(false);
-  const [showRecycleSection, setShowRecycleSection] = useState(false);
+  // Single state to track active section
+  const [activeSection, setActiveSection] = useState<string>("current-inventory");
   const [selectedRemarks, setSelectedRemarks] = useState<string>("");
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
   const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
@@ -1068,47 +1069,248 @@ export function AdminInventoryManagement({
     <TooltipProvider>
       <div className="space-y-6">
       {/* User Info Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <span>Managing: {selectedUser.name}</span>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowShipped(!showShipped)}
-                className="w-full sm:w-auto"
-              >
-                {showShipped ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                {showShipped ? "Hide" : "Show"} Shipped Orders
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowRestockHistory(!showRestockHistory)}
-                className="w-full sm:w-auto"
-              >
-                <History className="h-4 w-4 mr-2" />
-                {showRestockHistory ? "Hide" : "Show"} Restock History
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowRecycleSection(!showRecycleSection)}
-                className="w-full sm:w-auto text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {showRecycleSection ? "Hide" : "Show"} Recycle Bin
-              </Button>
+      <Card className="border-2 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+          <div className="flex flex-col gap-4">
+            <div>
+              <CardTitle className="text-xl font-bold text-gray-900">Managing: {selectedUser.name}</CardTitle>
+              <CardDescription className="text-sm text-gray-600 mt-1">
+                Email: {selectedUser.email} | Phone: {selectedUser.phone || "Not provided"}
+              </CardDescription>
             </div>
-          </CardTitle>
-          <CardDescription className="text-xs sm:text-sm break-words">
-            Email: {selectedUser.email} | Phone: {selectedUser.phone || "Not provided"}
-          </CardDescription>
+            
+            {/* Section Navigation Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mt-2">
+              {/* Add Inventory Card */}
+              <div
+                onClick={() => setActiveSection("add-inventory")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "add-inventory"
+                    ? "border-indigo-500 bg-gradient-to-br from-indigo-50 to-indigo-100 shadow-lg scale-105 ring-2 ring-indigo-200"
+                    : "border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "add-inventory" ? "bg-indigo-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "add-inventory" ? "text-indigo-900" : "text-gray-700"
+                    }`}>
+                      Add Inventory
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      New product
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ship Inventory Card */}
+              <div
+                onClick={() => setActiveSection("ship-inventory")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "ship-inventory"
+                    ? "border-cyan-500 bg-gradient-to-br from-cyan-50 to-cyan-100 shadow-lg scale-105 ring-2 ring-cyan-200"
+                    : "border-gray-200 bg-white hover:border-cyan-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "ship-inventory" ? "bg-cyan-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "ship-inventory" ? "text-cyan-900" : "text-gray-700"
+                    }`}>
+                      Ship Inventory
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Record shipment
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Inventory Card */}
+              <div
+                onClick={() => setActiveSection("current-inventory")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "current-inventory"
+                    ? "border-violet-500 bg-gradient-to-br from-violet-50 to-violet-100 shadow-lg scale-105 ring-2 ring-violet-200"
+                    : "border-gray-200 bg-white hover:border-violet-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "current-inventory" ? "bg-violet-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <List className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "current-inventory" ? "text-violet-900" : "text-gray-700"
+                    }`}>
+                      Current Inventory
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {inventory.length} items
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Shipped Orders Card */}
+              <div
+                onClick={() => setActiveSection("shipped-orders")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "shipped-orders"
+                    ? "border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg scale-105 ring-2 ring-blue-200"
+                    : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "shipped-orders" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <Package className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "shipped-orders" ? "text-blue-900" : "text-gray-700"
+                    }`}>
+                      Shipped Orders
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {shipped.length} items
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Restock Summary Card */}
+              <div
+                onClick={() => setActiveSection("restock-history")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "restock-history"
+                    ? "border-green-500 bg-gradient-to-br from-green-50 to-green-100 shadow-lg scale-105 ring-2 ring-green-200"
+                    : "border-gray-200 bg-white hover:border-green-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "restock-history" ? "bg-green-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <History className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "restock-history" ? "text-green-900" : "text-gray-700"
+                    }`}>
+                      Restock Summary
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      View logs
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Disposed Inventory Card */}
+              <div
+                onClick={() => setActiveSection("recycle-bin")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "recycle-bin"
+                    ? "border-orange-500 bg-gradient-to-br from-orange-50 to-orange-100 shadow-lg scale-105 ring-2 ring-orange-200"
+                    : "border-gray-200 bg-white hover:border-orange-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "recycle-bin" ? "bg-orange-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <RotateCcw className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "recycle-bin" ? "text-orange-900" : "text-gray-700"
+                    }`}>
+                      Disposed Inventory
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Disposed items
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Edit Log Card */}
+              <div
+                onClick={() => setActiveSection("edit-log")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "edit-log"
+                    ? "border-pink-500 bg-gradient-to-br from-pink-50 to-pink-100 shadow-lg scale-105 ring-2 ring-pink-200"
+                    : "border-gray-200 bg-white hover:border-pink-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "edit-log" ? "bg-pink-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "edit-log" ? "text-pink-900" : "text-gray-700"
+                    }`}>
+                      Edit Log
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {editLogs.length} records
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delete Log Card */}
+              <div
+                onClick={() => setActiveSection("delete-log")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "delete-log"
+                    ? "border-red-500 bg-gradient-to-br from-red-50 to-red-100 shadow-lg scale-105 ring-2 ring-red-200"
+                    : "border-gray-200 bg-white hover:border-red-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "delete-log" ? "bg-red-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <Trash2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "delete-log" ? "text-red-900" : "text-gray-700"
+                    }`}>
+                      Delete Log
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {deleteLogs.length} records
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </CardHeader>
       </Card>
 
       {/* Current Inventory */}
+      {activeSection === "current-inventory" && (
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -1348,9 +1550,46 @@ export function AdminInventoryManagement({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Shipped Orders (Conditional) */}
-      {showShipped && (
+      {/* Add Inventory Section */}
+      {activeSection === "add-inventory" && selectedUser && (
+        <Card className="border-2 border-indigo-200 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-b">
+            <CardTitle className="text-indigo-900 flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add New Inventory
+            </CardTitle>
+            <CardDescription className="text-indigo-700">
+              Add a new product to {selectedUser.name}'s inventory
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
+            <AddInventoryForm userId={selectedUser.uid} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ship Inventory Section */}
+      {activeSection === "ship-inventory" && selectedUser && (
+        <Card className="border-2 border-cyan-200 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-cyan-50 to-cyan-100 border-b">
+            <CardTitle className="text-cyan-900 flex items-center gap-2">
+              <Truck className="h-5 w-5" />
+              Ship Inventory
+            </CardTitle>
+            <CardDescription className="text-cyan-700">
+              Record a shipment from {selectedUser.name}'s inventory
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
+            <ShipInventoryForm userId={selectedUser.uid} inventory={inventory} />
+          </CardContent>
+        </Card>
+      )}
+
+      {activeSection === "shipped-orders" && (
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -1543,14 +1782,14 @@ export function AdminInventoryManagement({
         </Card>
       )}
 
-      {/* Restock History (Conditional) */}
-      {showRestockHistory && (
+      {/* Restock Summary (Conditional) */}
+      {activeSection === "restock-history" && (
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <CardTitle>Restock History ({filteredRestockHistory.length})</CardTitle>
-                <CardDescription>View restock history for {selectedUser.name}</CardDescription>
+                <CardTitle>Restock Summary ({filteredRestockHistory.length})</CardTitle>
+                <CardDescription>View restock summary for {selectedUser.name}</CardDescription>
               </div>
               <div className="w-full sm:w-48">
                 <Select value={restockDateFilter} onValueChange={(value) => {
@@ -1627,14 +1866,14 @@ export function AdminInventoryManagement({
             ) : (
               <div className="text-center py-8">
                 <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No restock history</h3>
+                <h3 className="text-lg font-semibold mb-2">No restock summary</h3>
                 <p className="text-muted-foreground">
                   {restockHistory.length === 0 ? "No products have been restocked yet." : "No restocks match your date filter."}
                 </p>
               </div>
             )}
 
-            {/* Pagination Controls for Restock History */}
+            {/* Pagination Controls for Restock Summary */}
             {filteredRestockHistory.length > itemsPerPage && (
               <div className="flex items-center justify-between mt-4 pt-4 border-t">
                 <div className="text-sm text-muted-foreground">
@@ -1667,13 +1906,13 @@ export function AdminInventoryManagement({
         </Card>
       )}
 
-      {/* Recycle Section */}
-      {showRecycleSection && (
+      {/* Disposed Inventory Section */}
+      {activeSection === "recycle-bin" && (
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <CardTitle className="text-orange-600">Recycled Inventory ({filteredRecycledInventory.length})</CardTitle>
+                <CardTitle className="text-orange-600">Disposed Inventory ({filteredRecycledInventory.length})</CardTitle>
                 <CardDescription>View and restore recycled items for {selectedUser.name}</CardDescription>
               </div>
               <div className="sm:w-48">
@@ -1726,7 +1965,7 @@ export function AdminInventoryManagement({
             <div className="space-y-6">
               {/* Recycled Inventory Items */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">Recycled Inventory Items ({filteredRecycledInventory.length})</h3>
+                <h3 className="text-lg font-semibold mb-4">Disposed Inventory Items ({filteredRecycledInventory.length})</h3>
                 {recycledInventoryLoading ? (
                   <div className="space-y-4">
                     {[1, 2].map((i) => (
@@ -1763,9 +2002,9 @@ export function AdminInventoryManagement({
                 ) : (
                   <div className="text-center py-8">
                     <RotateCcw className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">No recycled inventory items</h3>
+                    <h3 className="text-lg font-semibold mb-2">No disposed inventory items</h3>
                     <p className="text-muted-foreground">
-                      {recycledInventory.length === 0 ? "No inventory items have been recycled yet." : "No recycled inventory items match your search or date filter."}
+                      {recycledInventory.length === 0 ? "No inventory items have been disposed yet." : "No disposed inventory items match your search or date filter."}
                     </p>
                   </div>
                 )}
@@ -1805,12 +2044,13 @@ export function AdminInventoryManagement({
         </Card>
       )}
 
-      {/* Delete Logs Section */}
+      {/* Deleted Logs Section */}
+      {activeSection === "delete-log" && (
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <CardTitle className="text-red-600">Delete Logs ({filteredDeleteLogs.length})</CardTitle>
+              <CardTitle className="text-red-600">Deleted Logs ({filteredDeleteLogs.length})</CardTitle>
               <CardDescription>View permanently deleted products for {selectedUser.name}</CardDescription>
             </div>
             <div className="sm:w-48">
@@ -1901,7 +2141,7 @@ export function AdminInventoryManagement({
             </div>
           )}
 
-          {/* Pagination Controls for Delete Logs */}
+          {/* Pagination Controls for Deleted Logs */}
           {filteredDeleteLogs.length > itemsPerPage && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
@@ -1932,13 +2172,15 @@ export function AdminInventoryManagement({
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Edit Logs Section */}
+      {/* Modification Logs Section */}
+      {activeSection === "edit-log" && (
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <CardTitle className="text-blue-600">Edit Logs ({filteredEditLogs.length})</CardTitle>
+              <CardTitle className="text-blue-600">Modification Logs ({filteredEditLogs.length})</CardTitle>
               <CardDescription>View product edit history for {selectedUser.name}</CardDescription>
             </div>
             <div className="sm:w-48">
@@ -2035,7 +2277,7 @@ export function AdminInventoryManagement({
             </div>
           )}
 
-          {/* Pagination Controls for Edit Logs */}
+          {/* Pagination Controls for Modification Logs */}
           {filteredEditLogs.length > itemsPerPage && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
@@ -2066,6 +2308,7 @@ export function AdminInventoryManagement({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Edit Product Dialog */}
       <Dialog open={!!editingProduct} onOpenChange={() => setEditingProduct(null)}>
@@ -2179,8 +2422,8 @@ export function AdminInventoryManagement({
       <Dialog open={!!recyclingProduct} onOpenChange={() => setRecyclingProduct(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Recycle Product</DialogTitle>
-            <DialogDescription>Move inventory to recycle bin for "{recyclingProduct?.productName}"</DialogDescription>
+            <DialogTitle>Dispose Product</DialogTitle>
+            <DialogDescription>Move inventory to disposed inventory for "{recyclingProduct?.productName}"</DialogDescription>
           </DialogHeader>
           <Form {...recycleForm}>
             <form onSubmit={recycleForm.handleSubmit(onRecycleSubmit)} className="space-y-4">

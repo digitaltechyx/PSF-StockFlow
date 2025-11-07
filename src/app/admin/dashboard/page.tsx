@@ -1,365 +1,287 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useCollection } from "@/hooks/use-collection";
-import type { UserProfile, InventoryItem, ShippedItem, UploadedPDF } from "@/types";
+import type { UserProfile, InventoryItem, ShippedItem, UploadedPDF, Invoice } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Users, Eye, UserPlus } from "lucide-react";
-import { MemberManagement } from "@/components/admin/member-management";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Users, Package, FileText, Shield, Receipt } from "lucide-react";
 import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
-import { CreateUserForm } from "@/components/admin/create-user-form";
-import { AddInventoryForm } from "@/components/admin/add-inventory-form";
-import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
-import { InvoiceManagement } from "@/components/admin/invoice-management";
-import { PDFManagement } from "@/components/admin/pdf-management";
 import { Skeleton } from "@/components/ui/skeleton";
+import { collection, getDocs, query } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
-// User Card Component
-function UserCard({ 
-  user, 
-  onSelectUser, 
-  selectedUser 
-}: { 
-  user: UserProfile; 
-  onSelectUser: (user: UserProfile) => void;
-  selectedUser: UserProfile | null;
-}) {
-  return (
-    <Card className={`cursor-pointer transition-all hover:shadow-md ${
-      selectedUser?.uid === user.uid ? 'ring-2 ring-primary' : ''
-    }`}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-lg">{user.name || 'Unnamed User'}</CardTitle>
-            <CardDescription>{user.email}</CardDescription>
-          </div>
-          <Badge variant="secondary">{user.role}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Phone: {user.phone || 'Not provided'}</span>
-          </div>
-          <div className="flex gap-2 pt-2">
-            <Button 
-              size="sm" 
-              onClick={() => onSelectUser(user)}
-              className="flex-1"
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              Manage
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// User Management Modal Component
-function UserManagementModal({ 
-  user, 
-  onClose 
-}: { 
-  user: UserProfile; 
-  onClose: () => void;
-}) {
-  const { data: inventory, loading: inventoryLoading } = useCollection<InventoryItem>(`users/${user.uid}/inventory`);
-  const { data: shipped, loading: shippedLoading } = useCollection<ShippedItem>(`users/${user.uid}/shipped`);
-
-  return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-full sm:max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto overflow-x-hidden px-2 sm:px-0">
-        <DialogHeader>
-          <DialogTitle className="text-sm sm:text-base truncate">Manage {user.name}'s Inventory</DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm break-words">
-            Add inventory items, track shipments, and manage products for {user.email}
-          </DialogDescription>
-        </DialogHeader>
-        
-        <Tabs defaultValue="manage" className="w-full">
-          <TabsList className="grid grid-cols-3 w-full gap-1 sm:gap-0">
-            <TabsTrigger value="manage" className="px-2 py-2 text-xs sm:text-sm">Manage Products</TabsTrigger>
-            <TabsTrigger value="add" className="px-2 py-2 text-xs sm:text-sm">Add Inventory</TabsTrigger>
-            <TabsTrigger value="ship" className="px-2 py-2 text-xs sm:text-sm">Ship Inventory</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="manage" className="space-y-4">
-            <AdminInventoryManagement 
-              selectedUser={user}
-              inventory={inventory}
-              shipped={shipped}
-              loading={inventoryLoading}
-            />
-          </TabsContent>
-          
-          <TabsContent value="add" className="space-y-4">
-            <AddInventoryForm userId={user.uid} />
-          </TabsContent>
-          
-          <TabsContent value="ship" className="space-y-4">
-            {inventoryLoading ? (
-              <div className="space-y-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            ) : (
-              <ShipInventoryForm userId={user.uid} inventory={inventory} />
-            )}
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export default function AdminDashboardPage() {
   const { userProfile: adminUser } = useAuth();
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [showCreateUser, setShowCreateUser] = useState(false);
-  const [mobileSection, setMobileSection] = useState<"users" | "members" | "invoices" | "pdfs">("users");
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
 
-  const filteredUsers = useMemo(() => {
+  // Filter approved users (excluding admin and deleted users)
+  const approvedUsers = useMemo(() => {
     return users
-      .filter((user) => user.uid !== adminUser?.uid) // Exclude admin from the list
-      .filter((user) => user.status !== "deleted") // Exclude deleted users
+      .filter((user) => user.uid !== adminUser?.uid)
+      .filter((user) => user.status !== "deleted")
       .filter((user) => {
-        // Show approved users OR users without status (existing users)
         return user.status === "approved" || !user.status;
-      })
-      .filter((user) => {
-        if (searchTerm === "") return true;
-        const name = user.name?.toLowerCase() || "";
-        const email = user.email?.toLowerCase() || "";
-        const phone = user.phone?.toLowerCase() || "";
-        const term = searchTerm.toLowerCase();
-        return name.includes(term) || email.includes(term) || phone.includes(term);
       });
-  }, [users, adminUser, searchTerm]);
+  }, [users, adminUser]);
 
-  const totalUsers = filteredUsers.length;
+  // Set default selected user if none selected
+  useEffect(() => {
+    if (!selectedUserId && approvedUsers.length > 0) {
+      setSelectedUserId(approvedUsers[0].uid);
+    }
+  }, [approvedUsers, selectedUserId]);
+
+  const selectedUser = approvedUsers.find(u => u.uid === selectedUserId) || null;
   
-  // Calculate pending users count for badge
+  // Get inventory and shipped data for selected user
+  const { data: inventory, loading: inventoryLoading } = useCollection<InventoryItem>(
+    selectedUser ? `users/${selectedUser.uid}/inventory` : ""
+  );
+  const { data: shipped, loading: shippedLoading } = useCollection<ShippedItem>(
+    selectedUser ? `users/${selectedUser.uid}/shipped` : ""
+  );
+  const activeUsersCount = users.filter((user) => 
+    user.uid !== adminUser?.uid && (user.status === "approved" || !user.status) && user.status !== "deleted"
+  ).length;
   const pendingUsersCount = users.filter((user) => 
     user.uid !== adminUser?.uid && user.status === "pending"
   ).length;
 
-  // Fetch all uploaded PDFs for admin
-  const {
-    data: allUploadedPDFs,
-    loading: pdfsLoading
-  } = useCollection<UploadedPDF>("uploadedPDFs");
+  // Get all inventory and shipped items for stats
+  const { data: allUploadedPDFs } = useCollection<UploadedPDF>("uploadedPDFs");
+  
+  // Track current date to update when date changes
+  const [currentDate, setCurrentDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
+
+  // Update current date every minute to catch date changes
+  useEffect(() => {
+    const updateDate = () => {
+      const today = new Date();
+      const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      setCurrentDate(todayString);
+    };
+
+    // Update immediately
+    updateDate();
+
+    // Update every minute to catch date changes
+    const interval = setInterval(updateDate, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filter labels by current date
+  const getTodayLabelsCount = useMemo(() => {
+    return allUploadedPDFs.filter((pdf) => {
+      // First try to use the date field if available
+      if (pdf.date) {
+        return pdf.date === currentDate;
+      }
+      
+      // Otherwise, parse uploadedAt
+      if (!pdf.uploadedAt) return false;
+      
+      let pdfDate: Date;
+      if (typeof pdf.uploadedAt === 'string') {
+        pdfDate = new Date(pdf.uploadedAt);
+      } else if (pdf.uploadedAt.seconds) {
+        pdfDate = new Date(pdf.uploadedAt.seconds * 1000);
+      } else {
+        return false;
+      }
+      
+      const pdfDateString = `${pdfDate.getFullYear()}-${String(pdfDate.getMonth() + 1).padStart(2, '0')}-${String(pdfDate.getDate()).padStart(2, '0')}`;
+      return pdfDateString === currentDate;
+    }).length;
+  }, [allUploadedPDFs, currentDate]);
+
+  // Get pending invoices count and amount
+  const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
+  const [pendingInvoicesAmount, setPendingInvoicesAmount] = useState(0);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPendingInvoices = async () => {
+      try {
+        setInvoicesLoading(true);
+        let totalPending = 0;
+        let totalPendingAmount = 0;
+        
+        for (const user of users) {
+          if (user.uid === adminUser?.uid) continue;
+          try {
+            const invoicesRef = collection(db, `users/${user.uid}/invoices`);
+            const invoicesSnapshot = await getDocs(invoicesRef);
+            const userInvoices = invoicesSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })) as Invoice[];
+            
+            const pending = userInvoices.filter(inv => inv.status === 'pending');
+            totalPending += pending.length;
+            totalPendingAmount += pending.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+          } catch (error) {
+            console.error(`Error fetching invoices for user ${user.uid}:`, error);
+          }
+        }
+        
+        setPendingInvoicesCount(totalPending);
+        setPendingInvoicesAmount(totalPendingAmount);
+      } catch (error) {
+        console.error('Error fetching pending invoices:', error);
+      } finally {
+        setInvoicesLoading(false);
+      }
+    };
+
+    if (users.length > 0) {
+      fetchPendingInvoices();
+    }
+  }, [users, adminUser]);
 
   return (
-    <div className="space-y-6 pb-6">{/* restored bottom padding since bottom tab bar is removed */}
-      {/* Header Section */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold font-headline">Admin Dashboard</h2>
-          <p className="text-muted-foreground">Manage users, members, and inventory</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2">
-          <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
-            <DialogTrigger asChild>
-              <Button className="flex items-center gap-2 w-full sm:w-auto">
-                <UserPlus className="h-4 w-4" />
-                <span className="">Create User</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Create New User</DialogTitle>
-                <DialogDescription>
-                  Add a new user to the inventory management system.
-                </DialogDescription>
-              </DialogHeader>
-              <CreateUserForm 
-                onSuccess={() => setShowCreateUser(false)}
-                onCancel={() => setShowCreateUser(false)}
-              />
-            </DialogContent>
-          </Dialog>
-          <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search users..."
-              className="pl-8 w-full sm:w-64"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Navigation (top buttons) */}
-      <div className="grid grid-cols-4 gap-2 sm:hidden">
-        <Button variant={mobileSection === "users" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("users")}>Inventory</Button>
-        <Button variant={mobileSection === "members" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("members")}>Users</Button>
-        <Button variant={mobileSection === "invoices" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("invoices")}>Invoices</Button>
-        <Button variant={mobileSection === "pdfs" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMobileSection("pdfs")}>Labels</Button>
-      </div>
-
-      {/* Desktop Tabs */}
-      <div className="hidden sm:block">
-        {/* Main Tabs */}
-        <Tabs defaultValue="users" className="w-full">
-          <TabsList className="flex w-full overflow-x-auto no-scrollbar gap-2 sm:grid sm:grid-cols-4 sm:gap-0">
-            <TabsTrigger value="users" className="whitespace-nowrap flex-1">
-              <span className="sm:hidden">Inventory</span>
-              <span className="hidden sm:inline">Inventory Management</span>
-            </TabsTrigger>
-            <TabsTrigger value="members" className="relative whitespace-nowrap flex-1">
-              <span className="sm:hidden">Users</span>
-              <span className="hidden sm:inline">User Management</span>
-              {pendingUsersCount > 0 && (
-                <Badge 
-                  variant="destructive" 
-                  className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                >
-                  {pendingUsersCount}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="invoices" className="whitespace-nowrap flex-1">
-              <span className="sm:hidden">Invoices</span>
-              <span className="hidden sm:inline">Invoice Management</span>
-            </TabsTrigger>
-            <TabsTrigger value="pdfs" className="whitespace-nowrap flex-1">
-              <span className="sm:hidden">Labels</span>
-              <span className="hidden sm:inline">Labels Management</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="users" className="space-y-4 mt-6">
-            {/* Users Grid */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold">Users ({totalUsers})</h3>
-              
-              {usersLoading ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 6 }, (_, i) => (
-                    <Card key={`skeleton-${i}`}>
-                      <CardHeader>
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                      </CardHeader>
-                      <CardContent>
-                        <Skeleton className="h-20 w-full" />
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : filteredUsers.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredUsers.map((user) => (
-                    <UserCard 
-                      key={`user-${user.uid}`} 
-                      user={user} 
-                      onSelectUser={setSelectedUser}
-                      selectedUser={selectedUser}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <Card key="no-users-card">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Users className="h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">No users found</h3>
-                    <p className="text-muted-foreground text-center">
-                      {searchTerm ? "Try adjusting your search terms" : "No users have registered yet"}
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-2 border-orange-200/50 bg-gradient-to-br from-orange-50 to-orange-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-orange-900">Pending Users</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-orange-500 flex items-center justify-center shadow-md">
+              <Shield className="h-5 w-5 text-white" />
             </div>
-          </TabsContent>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-orange-900">{pendingUsersCount}</div>
+            <p className="text-xs text-orange-700 mt-1">Awaiting approval</p>
+          </CardContent>
+        </Card>
 
-          <TabsContent value="members" className="space-y-4 mt-6">
-            <MemberManagement adminUser={adminUser} />
-          </TabsContent>
+        <Card className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-green-900">Active Users</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center shadow-md">
+              <Users className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-green-900">{activeUsersCount}</div>
+            <p className="text-xs text-green-700 mt-1">Approved users</p>
+          </CardContent>
+        </Card>
 
-          <TabsContent value="invoices" className="space-y-4 mt-6">
-            <InvoiceManagement users={users} />
-          </TabsContent>
-          <TabsContent value="pdfs" className="space-y-4 mt-6">
-            <PDFManagement pdfs={allUploadedPDFs} loading={pdfsLoading} />
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Mobile Content (single-column) */}
-      <div className="sm:hidden">
-        {mobileSection === "users" && (
-          <div className="space-y-4 mt-4">
-            <h3 className="text-lg font-semibold">Users ({totalUsers})</h3>
-            {usersLoading ? (
-              <div className="grid gap-3">
-                {Array.from({ length: 4 }, (_, i) => (
-                  <Card key={`skeleton-m-${i}`}>
-                    <CardHeader>
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-3 w-1/2" />
-                    </CardHeader>
-                    <CardContent>
-                      <Skeleton className="h-16 w-full" />
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+        <Card className="border-2 border-blue-200/50 bg-gradient-to-br from-blue-50 to-blue-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-blue-900">Number of Pending Invoices</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center shadow-md">
+              <Receipt className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {invoicesLoading ? (
+              <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="grid gap-3">
-                {filteredUsers.map((user) => (
-                  <UserCard 
-                    key={`user-m-${user.uid}`} 
-                    user={user} 
-                    onSelectUser={setSelectedUser}
-                    selectedUser={selectedUser}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="text-3xl font-bold text-blue-900">{pendingInvoicesCount}</div>
+                <p className="text-xs text-blue-700 mt-1">Pending Amount: ${pendingInvoicesAmount.toFixed(2)}</p>
+              </>
             )}
-          </div>
-        )}
+          </CardContent>
+        </Card>
 
-        {mobileSection === "members" && (
-          <div className="mt-4">
-            <MemberManagement adminUser={adminUser} />
-          </div>
-        )}
-
-        {mobileSection === "invoices" && (
-          <div className="mt-4">
-            <InvoiceManagement users={users} />
-          </div>
-        )}
-
-        {mobileSection === "pdfs" && (
-          <div className="mt-4">
-            <PDFManagement pdfs={allUploadedPDFs} loading={pdfsLoading} />
-          </div>
-        )}
+        <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50 to-purple-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-purple-900">Today's Labels</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-purple-500 flex items-center justify-center shadow-md">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-purple-900">{getTodayLabelsCount}</div>
+            <p className="text-xs text-purple-700 mt-1">Uploaded today</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* User Management Modal */}
-      {selectedUser && (
-        <UserManagementModal 
-          user={selectedUser} 
-          onClose={() => setSelectedUser(null)}
-        />
-      )}
+      {/* Main Content Card */}
+      <Card className="border-2 shadow-xl overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
+                <Package className="h-6 w-6" />
+                Inventory Management
+              </CardTitle>
+              <CardDescription className="text-purple-100 mt-2">
+                Manage inventory for users
+              </CardDescription>
+            </div>
+            <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <Package className="h-7 w-7 text-white" />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6">
+          {/* User Selector */}
+          <div className="mb-6 pb-6 border-b">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Select User:</span>
+              </div>
+              <div className="flex-1 w-full sm:w-auto">
+                {usersLoading ? (
+                  <Skeleton className="h-11 w-full sm:w-[300px]" />
+                ) : (
+                  <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                    <SelectTrigger className="w-full sm:w-[300px] h-11 shadow-sm">
+                      <SelectValue placeholder="Select a user to manage inventory">
+                        {selectedUser ? `${selectedUser.name} (${selectedUser.email})` : "Select a user"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvedUsers.map((user, index) => (
+                        <SelectItem key={`user-${user.uid}-${index}`} value={user.uid}>
+                          {user.name || 'Unnamed User'} ({user.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+          </div>
 
-      {/* Bottom Tab Bar (Mobile) removed */}
+          {/* Inventory Management */}
+          {!selectedUser ? (
+            <div className="text-center py-16">
+              <div className="mx-auto h-20 w-20 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                <Package className="h-10 w-10 text-purple-600" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">No user selected</h3>
+              <p className="text-muted-foreground">
+                Please select a user from the dropdown above to manage their inventory
+              </p>
+            </div>
+          ) : (
+            <AdminInventoryManagement 
+              selectedUser={selectedUser}
+              inventory={inventory}
+              shipped={shipped}
+              loading={inventoryLoading}
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

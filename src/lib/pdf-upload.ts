@@ -1,5 +1,4 @@
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { storage } from "./firebase";
+import { buildOneDrivePath, getFolderInfo } from "./onedrive";
 
 /**
  * Get month name from date
@@ -31,21 +30,7 @@ function buildStoragePath(
   clientName: string,
   date: Date
 ): string {
-  const year = date.getFullYear().toString();
-  const month = getMonthName(date);
-  const dateStr = formatDate(date);
-  
-  // Sanitize client name (remove special characters that might cause issues)
-  // Keep spaces, letters, numbers, hyphens, and underscores
-  const sanitizedClientName = clientName.replace(/[^a-zA-Z0-9-_ ]/g, "_").trim();
-  
-  // Sanitize file name - keep spaces and common characters but remove problematic ones
-  // Keep the original file name but ensure it's safe for Firebase Storage
-  const sanitizedFileName = fileName.trim();
-  
-  // Build path: Year/Month/Client Name/Date/FileName
-  // Firebase Storage handles URL encoding automatically, so we can use spaces
-  return `${year}/${month}/${sanitizedClientName}/${dateStr}/${sanitizedFileName}`;
+  return buildOneDrivePath(fileName, clientName, date);
 }
 
 export interface UploadProgress {
@@ -61,7 +46,7 @@ export interface UploadResult {
 }
 
 /**
- * Upload PDF to Firebase Storage with the specified folder structure
+ * Upload PDF to OneDrive with the specified folder structure
  * 
  * @param file - The PDF file to upload
  * @param clientName - Name of the client/user uploading the file
@@ -82,75 +67,72 @@ export async function uploadPDF(
       };
     }
 
-    // Note: File size validation is handled by compression function
-    // We'll allow larger files here since compression will handle the 1MB limit
-
     // Build storage path
     const currentDate = new Date();
     const storagePath = buildStoragePath(file.name, clientName, currentDate);
 
-    // Create storage reference
-    const storageRef = ref(storage, storagePath);
+    // Simulate progress for OneDrive upload
+    if (onProgress) {
+      onProgress({
+        progress: 10,
+        state: "running",
+      });
+    }
 
-    // Upload file with progress tracking
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('clientName', clientName);
+    formData.append('folderPath', storagePath);
 
-    return new Promise<UploadResult>((resolve) => {
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          // Track upload progress
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          
-          if (onProgress) {
-            onProgress({
-              progress: Math.round(progress),
-              state: snapshot.state === "running" ? "running" : 
-                     snapshot.state === "paused" ? "paused" : "success",
-            });
-          }
-        },
-        (error) => {
-          // Handle upload error
-          if (onProgress) {
-            onProgress({
-              progress: 0,
-              state: "error",
-            });
-          }
-          resolve({
-            success: false,
-            error: error.message || "Failed to upload PDF",
-          });
-        },
-        async () => {
-          // Upload completed successfully
-          try {
-            // Get download URL
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-
-            if (onProgress) {
-              onProgress({
-                progress: 100,
-                state: "success",
-              });
-            }
-
-            resolve({
-              success: true,
-              storagePath,
-              downloadURL,
-            });
-          } catch (error: any) {
-            resolve({
-              success: false,
-              error: error.message || "Failed to get download URL",
-            });
-          }
-        }
-      );
+    // Upload to OneDrive via API route
+    const response = await fetch('/api/onedrive/upload', {
+      method: 'POST',
+      body: formData,
     });
+
+    if (onProgress) {
+      onProgress({
+        progress: 50,
+        state: "running",
+      });
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      if (onProgress) {
+        onProgress({
+          progress: 0,
+          state: "error",
+        });
+      }
+      return {
+        success: false,
+        error: errorData.error || "Failed to upload PDF to OneDrive",
+      };
+    }
+
+    const result = await response.json();
+
+    if (onProgress) {
+      onProgress({
+        progress: 100,
+        state: "success",
+      });
+    }
+
+    return {
+      success: true,
+      storagePath: result.storagePath,
+      downloadURL: result.downloadURL || result.webUrl,
+    };
   } catch (error: any) {
+    if (onProgress) {
+      onProgress({
+        progress: 0,
+        state: "error",
+      });
+    }
     return {
       success: false,
       error: error.message || "Failed to upload PDF",
