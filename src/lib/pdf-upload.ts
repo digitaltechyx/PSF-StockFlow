@@ -1,4 +1,4 @@
-import { buildOneDrivePath, getFolderInfo } from "./onedrive";
+import { buildGoogleDrivePath, getFolderInfo } from "./google-drive";
 
 /**
  * Get month name from date
@@ -30,7 +30,7 @@ function buildStoragePath(
   clientName: string,
   date: Date
 ): string {
-  return buildOneDrivePath(fileName, clientName, date);
+  return buildGoogleDrivePath(fileName, clientName, date);
 }
 
 export interface UploadProgress {
@@ -46,7 +46,7 @@ export interface UploadResult {
 }
 
 /**
- * Upload PDF to OneDrive with the specified folder structure
+ * Upload PDF to Google Drive with the specified folder structure
  * 
  * @param file - The PDF file to upload
  * @param clientName - Name of the client/user uploading the file
@@ -71,7 +71,7 @@ export async function uploadPDF(
     const currentDate = new Date();
     const storagePath = buildStoragePath(file.name, clientName, currentDate);
 
-    // Simulate progress for OneDrive upload
+    // Simulate progress for Google Drive upload
     if (onProgress) {
       onProgress({
         progress: 10,
@@ -85,8 +85,8 @@ export async function uploadPDF(
     formData.append('clientName', clientName);
     formData.append('folderPath', storagePath);
 
-    // Upload to OneDrive via API route
-    const response = await fetch('/api/onedrive/upload', {
+    // Upload to Google Drive via API route
+    const response = await fetch('/api/drive/upload', {
       method: 'POST',
       body: formData,
     });
@@ -99,25 +99,42 @@ export async function uploadPDF(
     }
 
     if (!response.ok) {
-      let errorMessage = "Failed to upload PDF to OneDrive";
+      let errorMessage = "Failed to upload PDF to Google Drive";
+      let errorDetails = '';
       try {
         const errorData = await response.json();
         errorMessage = errorData.error || errorData.details || errorMessage;
+        errorDetails = errorData.details || '';
+        
+        // Combine error message with hint if available
+        if (errorData.hint) {
+          errorMessage = `${errorMessage}\n\n${errorData.hint}`;
+        }
+        
+        // Include details if available and different from error message
+        if (errorDetails && !errorMessage.includes(errorDetails)) {
+          errorDetails = `\n\nDetails: ${errorDetails}`;
+        } else {
+          errorDetails = '';
+        }
+        
         console.error('Upload error details:', errorData);
       } catch (e) {
         const errorText = await response.text();
         errorMessage = errorText || errorMessage;
         console.error('Upload error:', errorText);
       }
+      
       if (onProgress) {
         onProgress({
           progress: 0,
           state: "error",
         });
       }
+      
       return {
         success: false,
-        error: errorMessage,
+        error: errorMessage + errorDetails,
       };
     }
 

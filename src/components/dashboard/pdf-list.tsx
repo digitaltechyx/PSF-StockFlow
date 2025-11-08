@@ -10,7 +10,7 @@ import { Search, Download, ExternalLink, FileText, X, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
-// OneDrive integration - no Firebase Storage imports needed
+// Google Drive integration - no Firebase Storage imports needed
 
 interface PDFListProps {
   pdfs: UploadedPDF[];
@@ -127,44 +127,56 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
     try {
       console.log("Download button clicked for:", pdf.fileName);
       
-      // Use Firebase Storage SDK to get the file as blob (no CORS issues)
-      const storageRef = ref(storage, pdf.storagePath);
-      const blob = await getBlob(storageRef);
-      
-      // Create a blob URL from the fetched data
-      const blobURL = URL.createObjectURL(blob);
-      
-      // Create a download link
-      const link = document.createElement("a");
-      link.href = blobURL;
-      link.download = pdf.fileName;
-      link.style.position = "fixed";
-      link.style.top = "-9999px";
-      link.style.left = "-9999px";
-      
-      // Append to body
-      document.body.appendChild(link);
-      
-      // Force a click event
-      const clickEvent = new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      });
-      
-      link.dispatchEvent(clickEvent);
-      
-      // Cleanup after a delay
-      setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
+      // Use Google Drive download URL
+      if (pdf.downloadURL) {
+        // Try to download via Google Drive API if needed
+        try {
+          const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+          if (response.ok) {
+            const data = await response.json();
+            const downloadUrl = data.downloadURL || pdf.downloadURL;
+            
+            // Fetch the file
+            const fileResponse = await fetch(downloadUrl);
+            if (fileResponse.ok) {
+              const blob = await fileResponse.blob();
+              const blobURL = URL.createObjectURL(blob);
+              
+              // Create a download link
+              const link = document.createElement("a");
+              link.href = blobURL;
+              link.download = pdf.fileName;
+              link.style.position = "fixed";
+              link.style.top = "-9999px";
+              link.style.left = "-9999px";
+              
+              // Append to body
+              document.body.appendChild(link);
+              
+              // Force a click event
+              const clickEvent = new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+              });
+              
+              link.dispatchEvent(clickEvent);
+              
+              // Cleanup after a delay
+              setTimeout(() => {
+                if (document.body.contains(link)) {
+                  document.body.removeChild(link);
+                }
+                URL.revokeObjectURL(blobURL);
+              }, 200);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.error("API download error:", apiError);
         }
-        URL.revokeObjectURL(blobURL);
-      }, 200);
-    } catch (error) {
-      console.error("Download error:", error);
-      // Fallback: try using the download URL directly
-      try {
+        
+        // Fallback: use direct download URL
         const response = await fetch(pdf.downloadURL);
         if (response.ok) {
           const blob = await response.blob();
@@ -191,11 +203,14 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
             URL.revokeObjectURL(blobURL);
           }, 200);
         } else {
-          throw new Error("Fetch failed");
+          // Last resort: open in new tab
+          window.open(pdf.downloadURL, "_blank");
         }
-      } catch (fallbackError) {
-        console.error("Fallback error:", fallbackError);
-        // Last resort: open in new tab
+      }
+    } catch (error) {
+      console.error("Download error:", error);
+      // Final fallback: open in new tab
+      if (pdf.downloadURL) {
         window.open(pdf.downloadURL, "_blank");
       }
     }

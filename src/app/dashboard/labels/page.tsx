@@ -32,7 +32,7 @@ export default function LabelsPage() {
                 Upload Labels
               </CardTitle>
               <CardDescription className="text-indigo-100 mt-2">
-                Upload label files to OneDrive (No file size restrictions)
+                Upload label files to Google Drive (No file size restrictions)
               </CardDescription>
             </div>
             <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Search, Download, FileText, X, Eye, ExternalLink, Printer } from "lucide-react";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
-// OneDrive integration - no Firebase Storage imports needed
+// Google Drive integration - no Firebase Storage imports needed
 
 interface PDFManagementProps {
   pdfs: UploadedPDF[];
@@ -136,10 +136,10 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
     try {
       console.log("Download button clicked for:", pdf.fileName);
       
-      // Use OneDrive download URL
+      // Use Google Drive download URL
       if (pdf.downloadURL) {
-        // Get download URL from OneDrive API if needed
-        const response = await fetch(`/api/onedrive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+        // Get download URL from Google Drive API if needed
+        const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
         if (response.ok) {
           const data = await response.json();
           const downloadUrl = data.downloadUrl || pdf.downloadURL;
