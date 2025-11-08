@@ -5,37 +5,41 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { Readable } from 'stream';
 
 export async function POST(request: NextRequest) {
   try {
-    // Get service account credentials from environment
-    const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    // Get access token using OAuth refresh token
+    const tokenResponse = await fetch(`${request.nextUrl.origin}/api/drive/token`);
+    if (!tokenResponse.ok) {
+      const tokenError = await tokenResponse.json();
+      return NextResponse.json(
+        { 
+          error: tokenError.error || 'Failed to get access token',
+          details: tokenError.details,
+          hint: tokenError.hint || 'Please authenticate with Google Drive first by visiting /api/drive/auth'
+        },
+        { status: tokenResponse.status || 500 }
+      );
+    }
     
-    if (!serviceAccountKey) {
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.accessToken;
+
+    if (!accessToken) {
       return NextResponse.json(
-        { error: 'Google Drive credentials not configured. Please check GOOGLE_SERVICE_ACCOUNT_KEY environment variable.' },
+        { error: 'No access token received' },
         { status: 500 }
       );
     }
 
-    // Parse service account key
-    let serviceAccount;
-    try {
-      serviceAccount = JSON.parse(serviceAccountKey);
-    } catch (e) {
-      return NextResponse.json(
-        { error: 'Invalid GOOGLE_SERVICE_ACCOUNT_KEY format. Must be valid JSON.' },
-        { status: 500 }
-      );
-    }
-
-    // Authenticate with Google Drive
-    const auth = new google.auth.JWT(
-      serviceAccount.client_email,
-      undefined,
-      serviceAccount.private_key,
-      ['https://www.googleapis.com/auth/drive']
-    );
+    // Authenticate with Google Drive using OAuth access token
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${request.nextUrl.origin}/api/drive/callback`;
+    
+    const auth = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    auth.setCredentials({ access_token: accessToken });
 
     const drive = google.drive({ version: 'v3', auth });
 
@@ -60,9 +64,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to buffer
+    // Convert file to buffer and then to stream
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    
+    // Convert buffer to stream (Google Drive API requires a stream)
+    const stream = Readable.from(buffer);
 
     // Parse folder path: Year/Month/Client Name/Date/FileName
     const pathParts = folderPath.split('/');
@@ -70,7 +77,8 @@ export async function POST(request: NextRequest) {
     const folderParts = pathParts; // [Year, Month, Client Name, Date]
 
     // Create folder structure in Google Drive
-    let parentFolderId = 'root'; // Start from root
+    // Using OAuth, files will be uploaded to the authenticated user's Google Drive (uses their quota)
+    let parentFolderId = 'root'; // Start from user's root folder
 
     for (const folderName of folderParts) {
       // Check if folder exists
@@ -106,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     const media = {
       mimeType: 'application/pdf',
-      body: buffer,
+      body: stream,
     };
 
     const uploadedFile = await drive.files.create({
@@ -141,10 +149,23 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Google Drive upload error:', error);
+    
+    let errorMessage = error.message || 'Failed to upload file to Google Drive';
+    let errorDetails = error.toString();
+    
+    // Handle specific Google API errors
+    if (error.message?.includes('unregistered callers') || error.message?.includes('API consumer identity')) {
+      errorMessage = 'Google Drive API authentication failed. Please check: 1) GOOGLE_SERVICE_ACCOUNT_KEY is set correctly, 2) Google Drive API is enabled, 3) Service account has access to the shared folder.';
+      errorDetails = 'Authentication error: ' + error.message;
+    } else if (error.message?.includes('Permission denied') || error.message?.includes('insufficient')) {
+      errorMessage = 'Permission denied. Make sure you shared the Google Drive folder with the service account email and gave it Editor permissions.';
+      errorDetails = 'Permission error: ' + error.message;
+    }
+    
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to upload file to Google Drive',
-        details: error.toString()
+        error: errorMessage,
+        details: errorDetails
       },
       { status: 500 }
     );

@@ -121,9 +121,24 @@ Year/
 
 **Result**: Files will be uploaded to your **personal Google Drive** (2TB storage) in the folder you shared!
 
+**Important**: Service accounts don't have storage quota, so you MUST share a folder from your personal Google Drive. Files uploaded to the shared folder will count against your personal account's quota (2TB).
+
 ---
 
-### Step 7: Set Environment Variable
+### Step 6.5: Get the Folder ID
+
+1. After sharing the folder, open the folder in Google Drive
+2. Look at the URL in your browser - it will look like:
+   ```
+   https://drive.google.com/drive/folders/1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p
+   ```
+3. **Copy the folder ID** (the long string after `/folders/`)
+   - Example: `1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p`
+4. You'll need this for the next step
+
+---
+
+### Step 7: Set Environment Variables
 
 1. Open the downloaded JSON file again
 2. **Copy the ENTIRE content** (everything from `{` to `}`)
@@ -153,12 +168,14 @@ Year/
 
 ```env
 GOOGLE_SERVICE_ACCOUNT_KEY='{"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}'
+GOOGLE_DRIVE_FOLDER_ID=1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p
 ```
 
 **Important**: 
 - Replace the `...` with the actual JSON content you copied
+- Replace `1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p` with your actual folder ID from Step 6.5
 - Use **single quotes** around the JSON
-- Make sure it's all on **one line**
+- Make sure the JSON is all on **one line**
 
 **OR** if you prefer, you can format it like this (but it must be on one line):
 
@@ -172,10 +189,13 @@ GOOGLE_SERVICE_ACCOUNT_KEY="{\"type\":\"service_account\",\"project_id\":\"...\"
 2. Select your project
 3. Go to **Settings** → **Environment Variables**
 4. Click **Add New**
-5. Name: `GOOGLE_SERVICE_ACCOUNT_KEY`
-6. Value: Paste the entire JSON content (all of it)
-7. Select environments: **Production**, **Preview**, **Development** (all of them)
-8. Click **Save**
+5. Add two environment variables:
+   - **Name**: `GOOGLE_SERVICE_ACCOUNT_KEY`
+     - **Value**: Paste the entire JSON content (all of it)
+   - **Name**: `GOOGLE_DRIVE_FOLDER_ID`
+     - **Value**: Paste your folder ID from Step 6.5
+6. Select environments: **Production**, **Preview**, **Development** (all of them)
+7. Click **Save** for each variable
 
 ---
 
@@ -292,8 +312,11 @@ Your Google Drive/
 - [ ] Created service account (free)
 - [ ] Downloaded JSON key file
 - [ ] Shared personal Google Drive folder with service account email
+- [ ] Got the folder ID from Google Drive URL
 - [ ] Set `GOOGLE_SERVICE_ACCOUNT_KEY` in `.env.local`
+- [ ] Set `GOOGLE_DRIVE_FOLDER_ID` in `.env.local`
 - [ ] Set `GOOGLE_SERVICE_ACCOUNT_KEY` in Vercel
+- [ ] Set `GOOGLE_DRIVE_FOLDER_ID` in Vercel
 - [ ] Deployed to production
 - [ ] Tested upload functionality
 

@@ -37,6 +37,9 @@ export async function GET(request: NextRequest) {
       ['https://www.googleapis.com/auth/drive']
     );
 
+    // Ensure authentication is initialized
+    await auth.authorize();
+
     const drive = google.drive({ version: 'v3', auth });
 
     // Recursively get all PDF files
