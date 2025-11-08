@@ -11,19 +11,80 @@ export async function GET(request: NextRequest) {
   try {
     const code = request.nextUrl.searchParams.get('code');
     const error = request.nextUrl.searchParams.get('error');
+    const errorDescription = request.nextUrl.searchParams.get('error_description');
 
+    // Handle OAuth errors
     if (error) {
-      return NextResponse.json(
-        { error: `OAuth error: ${error}` },
-        { status: 400 }
-      );
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>OAuth Error</title>
+            <style>
+              body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+              .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+              h1 { color: #ea4335; }
+              .error { color: #ea4335; font-weight: bold; }
+              .info { background: #fce8e6; padding: 15px; border-radius: 4px; margin: 20px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>❌ OAuth Error</h1>
+              <p class="error">Error: ${error}</p>
+              ${errorDescription ? `<p>${errorDescription}</p>` : ''}
+              <div class="info">
+                <p><strong>Common issues:</strong></p>
+                <ul>
+                  <li>Redirect URI mismatch - Check Google Cloud Console</li>
+                  <li>Route not deployed - Make sure /api/drive/callback is deployed</li>
+                  <li>Invalid client credentials</li>
+                </ul>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html' },
+        status: 400,
+      });
     }
 
     if (!code) {
-      return NextResponse.json(
-        { error: 'No authorization code provided' },
-        { status: 400 }
-      );
+      // Show helpful message if accessed directly without code
+      const noCodeHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>OAuth Callback</title>
+            <style>
+              body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+              .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+              h1 { color: #4285f4; }
+              .info { background: #e8f0fe; padding: 15px; border-radius: 4px; margin: 20px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>OAuth Callback</h1>
+              <p>This page handles Google OAuth callbacks.</p>
+              <div class="info">
+                <p><strong>If you see this page directly:</strong></p>
+                <p>You should be redirected here automatically after signing in with Google.</p>
+                <p>If you're getting a 404 error, make sure:</p>
+                <ul>
+                  <li>The redirect URI in Google Cloud Console matches: <code>${request.nextUrl.origin}/api/drive/callback</code></li>
+                  <li>The route is deployed to production</li>
+                </ul>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      return new NextResponse(noCodeHtml, {
+        headers: { 'Content-Type': 'text/html' },
+      });
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
