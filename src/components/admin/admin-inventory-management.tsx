@@ -806,10 +806,10 @@ export function AdminInventoryManagement({
       date: format(today, 'dd/MM/yyyy'),
       orderNumber: `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`,
       soldTo: {
-        name: selectedUser.name,
-        email: selectedUser.email,
+        name: selectedUser.name || 'Unknown User',
+        email: selectedUser.email || '',
         phone: selectedUser.phone || '',
-        address: `${selectedUser.address || ''}`.trim(),
+        address: '',
       },
       fbm: 'Standard Shipping',
       items: todayShipments.map(shipped => ({
@@ -922,10 +922,10 @@ export function AdminInventoryManagement({
       date: invoiceDate,
       orderNumber: `ORD-${format(new Date(), 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`,
       soldTo: {
-        name: selectedUser.name,
-        email: selectedUser.email,
+        name: selectedUser.name || 'Unknown User',
+        email: selectedUser.email || '',
         phone: selectedUser.phone || '',
-        address: `${selectedUser.address || ''}`.trim(),
+        address: '',
       },
       fbm: 'Standard Shipping',
       items: rangeShipments.map(shipped => ({
@@ -981,11 +981,25 @@ export function AdminInventoryManagement({
           return a.productName.localeCompare(b.productName);
         case "name-desc":
           return b.productName.localeCompare(a.productName);
-        case "date-asc":
-          return new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
+        case "date-asc": {
+          const dateA = typeof a.dateAdded === 'string' 
+            ? new Date(a.dateAdded) 
+            : new Date((a.dateAdded as { seconds: number; nanoseconds: number }).seconds * 1000);
+          const dateB = typeof b.dateAdded === 'string' 
+            ? new Date(b.dateAdded) 
+            : new Date((b.dateAdded as { seconds: number; nanoseconds: number }).seconds * 1000);
+          return dateA.getTime() - dateB.getTime();
+        }
         case "date-desc":
-        default:
-          return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime();
+        default: {
+          const dateA = typeof a.dateAdded === 'string' 
+            ? new Date(a.dateAdded) 
+            : new Date((a.dateAdded as { seconds: number; nanoseconds: number }).seconds * 1000);
+          const dateB = typeof b.dateAdded === 'string' 
+            ? new Date(b.dateAdded) 
+            : new Date((b.dateAdded as { seconds: number; nanoseconds: number }).seconds * 1000);
+          return dateB.getTime() - dateA.getTime();
+        }
       }
     });
 
@@ -1249,7 +1263,7 @@ export function AdminInventoryManagement({
                 </div>
               </div>
 
-              {/* Edit Log Card */}
+              {/* Modification Logs Card */}
               <div
                 onClick={() => setActiveSection("edit-log")}
                 className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
@@ -1268,7 +1282,7 @@ export function AdminInventoryManagement({
                     <p className={`font-semibold text-xs ${
                       activeSection === "edit-log" ? "text-pink-900" : "text-gray-700"
                     }`}>
-                      Edit Log
+                      Modification Logs
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {editLogs.length} records
@@ -1277,7 +1291,7 @@ export function AdminInventoryManagement({
                 </div>
               </div>
 
-              {/* Delete Log Card */}
+              {/* Deleted Log Card */}
               <div
                 onClick={() => setActiveSection("delete-log")}
                 className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
@@ -1296,7 +1310,7 @@ export function AdminInventoryManagement({
                     <p className={`font-semibold text-xs ${
                       activeSection === "delete-log" ? "text-red-900" : "text-gray-700"
                     }`}>
-                      Delete Log
+                      Deleted Log
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {deleteLogs.length} records

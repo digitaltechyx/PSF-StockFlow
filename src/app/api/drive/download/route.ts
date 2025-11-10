@@ -1,6 +1,6 @@
 /**
- * API Route: Download file from Google Drive
- * Returns download URL for a given file ID or path
+ * API Route: Get viewable URL for file from Google Drive
+ * Returns viewable URL (for iframe) instead of download URL
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,37 +19,37 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get service account credentials from environment
-    const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    // Get access token using OAuth refresh token
+    const tokenResponse = await fetch(`${request.nextUrl.origin}/api/drive/token`);
+    if (!tokenResponse.ok) {
+      const tokenError = await tokenResponse.json();
+      return NextResponse.json(
+        { 
+          error: tokenError.error || 'Failed to get access token',
+          details: tokenError.details,
+          hint: tokenError.hint || 'Please authenticate with Google Drive first by visiting /api/drive/auth'
+        },
+        { status: tokenResponse.status || 500 }
+      );
+    }
     
-    if (!serviceAccountKey) {
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.accessToken;
+
+    if (!accessToken) {
       return NextResponse.json(
-        { error: 'Google Drive credentials not configured.' },
+        { error: 'No access token received' },
         { status: 500 }
       );
     }
 
-    // Parse service account key
-    let serviceAccount;
-    try {
-      serviceAccount = JSON.parse(serviceAccountKey);
-    } catch (e) {
-      return NextResponse.json(
-        { error: 'Invalid GOOGLE_SERVICE_ACCOUNT_KEY format.' },
-        { status: 500 }
-      );
-    }
-
-    // Authenticate with Google Drive
-    const auth = new google.auth.JWT(
-      serviceAccount.client_email,
-      undefined,
-      serviceAccount.private_key,
-      ['https://www.googleapis.com/auth/drive']
-    );
-
-    // Ensure authentication is initialized
-    await auth.authorize();
+    // Authenticate with Google Drive using OAuth access token
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${request.nextUrl.origin}/api/drive/callback`;
+    
+    const auth = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    auth.setCredentials({ access_token: accessToken });
 
     const drive = google.drive({ version: 'v3', auth });
 
@@ -59,13 +59,17 @@ export async function GET(request: NextRequest) {
     if (!targetFileId && filePath) {
       const pathParts = filePath.split('/');
       const fileName = pathParts.pop()!;
-      let currentFolderId = 'root';
+      
+      // Start from PSF Labels folder if provided, otherwise root
+      const psfLabelsFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      let currentFolderId = psfLabelsFolderId || 'root';
 
       // Navigate through folder structure
       for (const folderName of pathParts) {
         const folders = await drive.files.list({
           q: `'${currentFolderId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
           fields: 'files(id)',
+          spaces: 'drive',
         });
         
         if (!folders.data.files || folders.data.files.length === 0) {
@@ -82,6 +86,7 @@ export async function GET(request: NextRequest) {
       const files = await drive.files.list({
         q: `'${currentFolderId}' in parents and name='${fileName}' and mimeType='application/pdf' and trashed=false`,
         fields: 'files(id)',
+        spaces: 'drive',
       });
 
       if (!files.data.files || files.data.files.length === 0) {
@@ -94,28 +99,31 @@ export async function GET(request: NextRequest) {
       targetFileId = files.data.files[0].id!;
     }
 
-    // Get file info and download URL
+    // Get file info
     const fileInfo = await drive.files.get({
       fileId: targetFileId!,
       fields: 'id, name, webViewLink, webContentLink, size',
     });
 
-    // Generate a download URL (valid for a limited time)
-    const downloadUrl = `https://drive.google.com/uc?export=download&id=${targetFileId}`;
+    // Use embed URL for viewing in iframe (prevents download)
+    // Embed URL format: https://drive.google.com/file/d/{fileId}/preview
+    // This URL is specifically designed for iframe embedding and prevents downloads
+    const viewUrl = `https://drive.google.com/file/d/${targetFileId}/preview`;
 
     return NextResponse.json({
       success: true,
       fileId: fileInfo.data.id,
       fileName: fileInfo.data.name,
-      downloadURL: fileInfo.data.webContentLink || downloadUrl,
+      viewURL: viewUrl, // URL for viewing in iframe
+      downloadURL: fileInfo.data.webContentLink, // Keep download URL for reference
       webUrl: fileInfo.data.webViewLink,
       size: fileInfo.data.size,
     });
   } catch (error: any) {
-    console.error('Google Drive download error:', error);
+    console.error('Google Drive view error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get download URL from Google Drive',
+        error: error.message || 'Failed to get view URL from Google Drive',
         details: error.toString()
       },
       { status: 500 }

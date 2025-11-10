@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   // Filter users excluding admin and apply search
   const filteredUsers = useMemo(() => {
@@ -41,10 +43,45 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
     });
   }, [users, adminUser, searchQuery]);
 
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   // Separate users by status
   const pendingUsers = filteredUsers.filter((user) => user.status === "pending");
   const approvedUsers = filteredUsers.filter((user) => user.status === "approved" || !user.status);
   const deletedUsers = filteredUsers.filter((user) => user.status === "deleted");
+
+  // Get current tab users based on active tab
+  const [activeTab, setActiveTab] = useState<"pending" | "approved" | "deleted">("pending");
+  
+  const getCurrentTabUsers = () => {
+    switch (activeTab) {
+      case "pending":
+        return pendingUsers;
+      case "approved":
+        return approvedUsers;
+      case "deleted":
+        return deletedUsers;
+      default:
+        return [];
+    }
+  };
+
+  const currentTabUsers = getCurrentTabUsers();
+  
+  // Pagination logic
+  const totalPages = Math.ceil(currentTabUsers.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedUsers = currentTabUsers.slice(startIndex, endIndex);
+
+  // Reset to page 1 when tab changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "pending" | "approved" | "deleted");
+    setCurrentPage(1);
+  };
 
   const handleApproveUser = async (user: UserProfile) => {
     try {
@@ -151,68 +188,66 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   };
 
   const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          {/* Left: Avatar + Info */}
-          <div className="flex items-start gap-3 min-w-0">
-            <Avatar className="h-10 w-10 flex-shrink-0">
-              <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
-              <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <h3 className="font-semibold text-sm truncate">{user.name}</h3>
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-              <div className="flex items-center flex-wrap gap-2 mt-1">
-                <Badge 
-                  variant={
-                    user.status === "approved" || !user.status ? "default" : 
-                    user.status === "pending" ? "secondary" : "destructive"
-                  }
-                  className="text-[10px]"
-                >
-                  {user.status === "approved" || !user.status ? "Approved" : 
-                   user.status === "pending" ? "Pending" : "Deleted"}
-                </Badge>
-                {user.phone && (
-                  <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {user.phone}
-                  </span>
-                )}
-                {user.deletedAt && (
-                  <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    Deleted: {formatDate(user.deletedAt)}
-                  </span>
-                )}
-              </div>
-              {isAdmin && (user.status === "approved" || !user.status) && (
-                <div className="mt-2 p-2 bg-muted rounded-md">
-                  <div className="text-[10px] font-medium text-muted-foreground mb-1">Login Credentials:</div>
-                  <div className="text-[10px] flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
-                    <span className="font-mono break-all">{user.email}</span>
-                  </div>
-                  <div className="text-[10px] flex items-center gap-1 mt-1">
-                    <span className="text-muted-foreground">Password:</span>
-                    <span className="font-mono break-all">{user.password || "Not stored"}</span>
-                  </div>
-                </div>
-              )}
+    <Card className="hover:shadow-md transition-shadow h-full flex flex-col">
+      <CardContent className="p-4 flex flex-col h-full">
+        {/* Top: Avatar + Info */}
+        <div className="flex items-start gap-3 mb-3">
+          <Avatar className="h-12 w-12 flex-shrink-0">
+            <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
+            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-base truncate">{user.name}</h3>
+            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+          </div>
+        </div>
+
+        {/* Status and Phone */}
+        <div className="flex items-center flex-wrap gap-2 mb-3">
+          <Badge 
+            variant={
+              user.status === "approved" || !user.status ? "default" : 
+              user.status === "pending" ? "secondary" : "destructive"
+            }
+            className="text-xs"
+          >
+            {user.status === "approved" || !user.status ? "Approved" : 
+             user.status === "pending" ? "Pending" : "Deleted"}
+          </Badge>
+          {user.phone && (
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              <Phone className="h-3 w-3" />
+              {user.phone}
+            </span>
+          )}
+        </div>
+
+        {/* Login Credentials */}
+        {isAdmin && (user.status === "approved" || !user.status) && (
+          <div className="mt-auto mb-3 p-2 bg-muted rounded-md">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Login Credentials:</div>
+            <div className="text-xs flex items-center gap-1 mb-1">
+              <Mail className="h-3 w-3" />
+              <span className="font-mono break-all">{user.email}</span>
+            </div>
+            <div className="text-xs flex items-center gap-1">
+              <span className="text-muted-foreground">Password:</span>
+              <span className="font-mono break-all">{user.password || "Not stored"}</span>
             </div>
           </div>
+        )}
 
-          {/* Right: Actions */}
-          <div className="grid grid-cols-3 gap-2 w-full sm:w-auto sm:flex sm:grid-cols-1 sm:gap-2 sm:items-center sm:justify-end">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-full sm:w-8" onClick={() => setSelectedUser(user)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </DialogTrigger>
+        {/* Actions */}
+        <div className="flex items-center gap-2 mt-auto">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setSelectedUser(user)}>
+                    <Eye className="h-4 w-4 mr-1" />
+                    View
+                  </Button>
+                </DialogTrigger>
                   <DialogContent className="max-w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>User Details</DialogTitle>
@@ -264,54 +299,56 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               </TooltipContent>
             </Tooltip>
 
-            {showActions && (
-              <>
-                {user.status === "pending" && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleApproveUser(user)}
-                        className="w-full sm:w-8 bg-green-600 hover:bg-green-700"
-                      >
-                        <UserCheck className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Approve user account</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => handleDeleteUser(user)}
-                  className="w-full sm:w-8"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
-            )}
+          {showActions && (
+            <>
+              {user.status === "pending" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleApproveUser(user)}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <UserCheck className="h-4 w-4 mr-1" />
+                      Approve
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Approve user account</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => handleDeleteUser(user)}
+                className="flex-1"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            </>
+          )}
 
-            {showRestore && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRestoreUser(user)}
-                    className="w-full sm:w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Restore user account</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
+          {showRestore && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRestoreUser(user)}
+                  className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                >
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Restore
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Restore user account</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -325,9 +362,9 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
           <CardDescription>Loading members...</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-20 bg-muted animate-pulse rounded-lg" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+              <div key={i} className="h-48 bg-muted animate-pulse rounded-lg" />
             ))}
           </div>
         </CardContent>
@@ -371,7 +408,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
           </div>
         </div>
         
-        <Tabs defaultValue="pending" className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid grid-cols-3 w-full gap-1 sm:gap-0">
             <TabsTrigger value="pending" className="flex items-center justify-center gap-1 px-2 py-2 text-xs sm:text-sm">
               <XCircle className="h-4 w-4" />
@@ -390,13 +427,43 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="pending" className="space-y-4 mt-6">
+          <TabsContent value="pending" className="mt-6">
             {pendingUsers.length > 0 ? (
-              <div className="space-y-3">
-                {pendingUsers.map((user, index) => (
-                  <UserCard key={user.uid || `pending-user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedUsers.map((user, index) => (
+                    <UserCard key={user.uid || `pending-user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
+                  ))}
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {startIndex + 1} to {Math.min(endIndex, currentTabUsers.length)} of {currentTabUsers.length} users
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-8">
                 <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -408,13 +475,43 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
             )}
           </TabsContent>
           
-          <TabsContent value="approved" className="space-y-4 mt-6">
+          <TabsContent value="approved" className="mt-6">
             {approvedUsers.length > 0 ? (
-              <div className="space-y-3">
-                {approvedUsers.map((user, index) => (
-                  <UserCard key={user.uid || `user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedUsers.map((user, index) => (
+                    <UserCard key={user.uid || `user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
+                  ))}
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {startIndex + 1} to {Math.min(endIndex, currentTabUsers.length)} of {currentTabUsers.length} users
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-8">
                 <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -426,13 +523,43 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
             )}
           </TabsContent>
           
-          <TabsContent value="deleted" className="space-y-4 mt-6">
+          <TabsContent value="deleted" className="mt-6">
             {deletedUsers.length > 0 ? (
-              <div className="space-y-3">
-                {deletedUsers.map((user, index) => (
-                  <UserCard key={user.uid || `deleted-user-${index}`} user={user} showRestore={true} isAdmin={adminUser?.role === "admin"} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedUsers.map((user, index) => (
+                    <UserCard key={user.uid || `deleted-user-${index}`} user={user} showRestore={true} isAdmin={adminUser?.role === "admin"} />
+                  ))}
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {startIndex + 1} to {Math.min(endIndex, currentTabUsers.length)} of {currentTabUsers.length} users
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-8">
                 <Trash2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

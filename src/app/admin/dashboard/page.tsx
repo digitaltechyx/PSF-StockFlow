@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Users, Package, FileText, Shield, Receipt } from "lucide-react";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
+import { Search, Users, Package, FileText, Shield, Receipt, ChevronsUpDown, Check } from "lucide-react";
 import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
 import { Skeleton } from "@/components/ui/skeleton";
 import { collection, getDocs, query } from "firebase/firestore";
@@ -20,6 +20,8 @@ export default function AdminDashboardPage() {
   const { userProfile: adminUser } = useAuth();
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
 
   // Filter approved users (excluding admin and deleted users)
   const approvedUsers = useMemo(() => {
@@ -242,20 +244,85 @@ export default function AdminDashboardPage() {
                 {usersLoading ? (
                   <Skeleton className="h-11 w-full sm:w-[300px]" />
                 ) : (
-                  <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                    <SelectTrigger className="w-full sm:w-[300px] h-11 shadow-sm">
-                      <SelectValue placeholder="Select a user to manage inventory">
-                        {selectedUser ? `${selectedUser.name} (${selectedUser.email})` : "Select a user"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {approvedUsers.map((user, index) => (
-                        <SelectItem key={`user-${user.uid}-${index}`} value={user.uid}>
-                          {user.name || 'Unnamed User'} ({user.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={userDialogOpen}
+                        className="w-full sm:w-[300px] h-11 justify-between shadow-sm"
+                      >
+                        {selectedUser
+                          ? `${selectedUser.name || 'Unnamed User'} (${selectedUser.email})`
+                          : "Select a user to manage inventory"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="p-0">
+                      <DialogTitle className="sr-only">Select a user</DialogTitle>
+                      <div className="p-3 border-b">
+                        <Input
+                          autoFocus
+                          placeholder="Search users..."
+                          value={userSearchQuery}
+                          onChange={(e) => setUserSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const normalized = userSearchQuery.trim().toLowerCase();
+                              const matches = approvedUsers.filter(user =>
+                                user.name?.toLowerCase().includes(normalized) ||
+                                user.email?.toLowerCase().includes(normalized)
+                              );
+                              const first = matches[0] ?? approvedUsers[0];
+                              if (first) {
+                                setSelectedUserId(first.uid);
+                                setUserDialogOpen(false);
+                                setUserSearchQuery("");
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {approvedUsers
+                          .filter(user =>
+                            user.name?.toLowerCase().includes(userSearchQuery.trim().toLowerCase()) ||
+                            user.email?.toLowerCase().includes(userSearchQuery.trim().toLowerCase())
+                          )
+                          .map((user, index) => (
+                            <div
+                              key={user.uid || `user-${index}`}
+                              role="button"
+                              tabIndex={0}
+                              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                              onClick={() => {
+                                setSelectedUserId(user.uid);
+                                setUserDialogOpen(false);
+                                setUserSearchQuery("");
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setSelectedUserId(user.uid);
+                                  setUserDialogOpen(false);
+                                  setUserSearchQuery("");
+                                }
+                              }}
+                            >
+                              <Check className={`h-4 w-4 ${selectedUserId === user.uid ? 'opacity-100' : 'opacity-0'}`} />
+                              {user.name || 'Unnamed User'} ({user.email})
+                            </div>
+                          ))}
+                        {approvedUsers.filter(user =>
+                          user.name?.toLowerCase().includes(userSearchQuery.trim().toLowerCase()) ||
+                          user.email?.toLowerCase().includes(userSearchQuery.trim().toLowerCase())
+                        ).length === 0 && (
+                          <div key="no-users" className="px-3 py-4 text-sm text-muted-foreground">No users found.</div>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </div>
             </div>

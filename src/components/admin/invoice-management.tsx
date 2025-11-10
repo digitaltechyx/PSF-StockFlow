@@ -9,6 +9,7 @@ import { Search, Download, CheckCircle, Clock, X, Eye, Receipt, User, Users } fr
 import { generateInvoicePDF } from "@/lib/invoice-generator";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type Invoice, type UserProfile } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
@@ -38,9 +39,10 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [usersPage, setUsersPage] = useState(1);
-  const [pendingInvoicesPage, setPendingInvoicesPage] = useState(1);
-  const [paidInvoicesPage, setPaidInvoicesPage] = useState(1);
-  const itemsPerPage = 10;
+  const [userFilterTab, setUserFilterTab] = useState<"all" | "unpaid" | "paid">("all");
+  const [activeTab, setActiveTab] = useState<"pending" | "paid">("pending");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
   
   // Load all invoices from all users
   const loadInvoices = async () => {
@@ -95,19 +97,39 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     };
   });
 
-  // Filter users based on search
-  const filteredUsers = userSummaries.filter(({ user }) =>
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter users based on search and invoice status
+  const filteredUsers = userSummaries.filter(({ user, pendingCount, paidCount }) => {
+    // Search filter
+    const matchesSearch = 
+      user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    
+    // Invoice status filter
+    if (userFilterTab === "unpaid") {
+      return pendingCount > 0; // Users with unpaid (pending) invoices
+    } else if (userFilterTab === "paid") {
+      return paidCount > 0; // Users with paid invoices
+    }
+    
+    return true; // "all" - show all users
+  });
+
+  // Reset users page when filter or search changes
+  useEffect(() => {
+    setUsersPage(1);
+  }, [searchTerm, userFilterTab]);
 
   const handleViewUserInvoices = async (user: UserProfile) => {
     setSelectedUser(user);
     setSelectedUserInvoices(userInvoices[user.uid] || []);
     setIsDetailDialogOpen(true);
-    // Reset date filters when opening a new user's invoices
+    // Reset date filters and tab when opening a new user's invoices
     setStartDate("");
     setEndDate("");
+    setActiveTab("pending");
+    setCurrentPage(1);
   };
 
   // Filter invoices based on date range
@@ -133,23 +155,35 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const filteredPendingInvoices = getFilteredInvoices(selectedUserInvoices.filter(inv => inv.status === 'pending'));
   const filteredPaidInvoices = getFilteredInvoices(selectedUserInvoices.filter(inv => inv.status === 'paid'));
 
+  // Get current tab invoices
+  const getCurrentTabInvoices = () => {
+    return activeTab === "pending" ? filteredPendingInvoices : filteredPaidInvoices;
+  };
+
+  const currentTabInvoices = getCurrentTabInvoices();
+
   // Pagination for users list
   const totalUsersPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const usersStartIndex = (usersPage - 1) * itemsPerPage;
   const usersEndIndex = usersStartIndex + itemsPerPage;
   const paginatedUsers = filteredUsers.slice(usersStartIndex, usersEndIndex);
 
-  // Pagination for pending invoices
-  const totalPendingInvoicesPages = Math.ceil(filteredPendingInvoices.length / itemsPerPage);
-  const pendingStartIndex = (pendingInvoicesPage - 1) * itemsPerPage;
-  const pendingEndIndex = pendingStartIndex + itemsPerPage;
-  const paginatedPendingInvoices = filteredPendingInvoices.slice(pendingStartIndex, pendingEndIndex);
+  // Pagination for invoices
+  const totalPages = Math.ceil(currentTabInvoices.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedInvoices = currentTabInvoices.slice(startIndex, endIndex);
 
-  // Pagination for paid invoices
-  const totalPaidInvoicesPages = Math.ceil(filteredPaidInvoices.length / itemsPerPage);
-  const paidStartIndex = (paidInvoicesPage - 1) * itemsPerPage;
-  const paidEndIndex = paidStartIndex + itemsPerPage;
-  const paginatedPaidInvoices = filteredPaidInvoices.slice(paidStartIndex, paidEndIndex);
+  // Reset to page 1 when tab changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "pending" | "paid");
+    setCurrentPage(1);
+  };
+
+  // Reset pagination when date filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [startDate, endDate]);
 
   const handleViewInvoice = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -231,27 +265,60 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search users..."
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setUsersPage(1);
-              }}
-              className="pl-10"
-            />
-            {searchTerm && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                onClick={() => setSearchTerm("")}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
+          <div className="space-y-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search users..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setUsersPage(1);
+                }}
+                className="pl-10"
+              />
+              {searchTerm && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                  onClick={() => setSearchTerm("")}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+
+            {/* Filter Tabs */}
+            <Tabs value={userFilterTab} onValueChange={(value) => {
+              setUserFilterTab(value as "all" | "unpaid" | "paid");
+              setUsersPage(1);
+            }} className="w-full">
+              <TabsList className="grid grid-cols-3 w-full">
+                <TabsTrigger value="all" className="flex items-center justify-center gap-2">
+                  <Users className="h-4 w-4" />
+                  <span>All Users</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {userSummaries.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="unpaid" className="flex items-center justify-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span>Unpaid Invoices</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {userSummaries.filter(({ pendingCount }) => pendingCount > 0).length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="paid" className="flex items-center justify-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Paid Invoices</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {userSummaries.filter(({ paidCount }) => paidCount > 0).length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </CardContent>
       </Card>
@@ -424,175 +491,197 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                 )}
               </div>
 
-              {/* Pending Invoices */}
-              {filteredPendingInvoices.length > 0 && (
-                <div className="space-y-3 sm:space-y-4">
-                  <h3 className="font-semibold text-sm sm:text-lg flex items-center gap-2">
-                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-600" />
-                    Pending Invoices ({filteredPendingInvoices.length})
-                  </h3>
-                  <div className="space-y-2 sm:space-y-3">
-                    {paginatedPendingInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
-                              <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
-                              <Badge variant="secondary" className="text-[9px] sm:text-xs shrink-0">Pending</Badge>
-                            </div>
-                            <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
-                              <p>Date: {invoice.date}</p>
-                              <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 w-full">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleViewInvoice(invoice)}
-                            >
-                              <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">View</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleDownloadInvoice(invoice)}
-                            >
-                              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Download</span>
-                            </Button>
-                            <Button
-                              variant="default"
-                              size="sm"
-                              className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleMarkAsPaid(invoice.id, invoice)}
-                            >
-                              Mark as Paid
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
+              {/* Invoices with Tabs */}
+              {selectedUserInvoices.length > 0 ? (
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+                  <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="pending" className="flex items-center justify-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      <span>Pending</span>
+                      <Badge variant="secondary" className="text-xs">{filteredPendingInvoices.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="paid" className="flex items-center justify-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Paid</span>
+                      <Badge variant="secondary" className="text-xs">{filteredPaidInvoices.length}</Badge>
+                    </TabsTrigger>
+                  </TabsList>
 
-              {/* Paid Invoices */}
-              {filteredPaidInvoices.length > 0 && (
-                <div className="space-y-3 sm:space-y-4">
-                  <h3 className="font-semibold text-sm sm:text-lg flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
-                    Paid Invoices ({filteredPaidInvoices.length})
-                  </h3>
-                  <div className="space-y-2 sm:space-y-3">
-                    {paginatedPaidInvoices.map((invoice) => (
-                        <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}` } className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
-                              <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
-                              <Badge variant="default" className="bg-green-100 text-green-800 text-[9px] sm:text-xs shrink-0">Paid</Badge>
+                  <TabsContent value="pending" className="mt-6">
+                    {currentTabInvoices.length > 0 ? (
+                      <>
+                        <div className="space-y-2 sm:space-y-3">
+                          {paginatedInvoices.map((invoice) => (
+                            <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}`} className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-yellow-50">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                                  <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                                  <Badge variant="secondary" className="text-[9px] sm:text-xs shrink-0">Pending</Badge>
+                                </div>
+                                <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
+                                  <p>Date: {invoice.date}</p>
+                                  <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 w-full">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => handleViewInvoice(invoice)}
+                                >
+                                  <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  <span className="hidden sm:inline">View</span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => handleDownloadInvoice(invoice)}
+                                >
+                                  <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  <span className="hidden sm:inline">Download</span>
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => handleMarkAsPaid(invoice.id, invoice)}
+                                >
+                                  Mark as Paid
+                                </Button>
+                              </div>
                             </div>
-                            <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
-                              <p>Date: {invoice.date}</p>
-                              <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 w-full">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleViewInvoice(invoice)}
-                            >
-                              <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">View</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-xs sm:text-sm h-8 sm:h-9"
-                              onClick={() => handleDownloadInvoice(invoice)}
-                            >
-                              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Download</span>
-                            </Button>
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                  </div>
-                </div>
-              )}
+                        
+                        {/* Pagination */}
+                        {currentTabInvoices.length > itemsPerPage && (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-6 pt-4 border-t">
+                            <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                              Showing {startIndex + 1} to {Math.min(endIndex, currentTabInvoices.length)} of {currentTabInvoices.length} invoices
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs sm:text-sm h-8 sm:h-9"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                              >
+                                Previous
+                              </Button>
+                              <span className="text-xs sm:text-sm">
+                                Page {currentPage} of {totalPages}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs sm:text-sm h-8 sm:h-9"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center py-8 sm:py-12">
+                        <Clock className="h-12 w-12 sm:h-16 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+                        <h3 className="text-sm sm:text-lg font-semibold mb-1 sm:mb-2">No pending invoices</h3>
+                        <p className="text-xs sm:text-sm text-muted-foreground">This user has no pending invoices.</p>
+                      </div>
+                    )}
+                  </TabsContent>
 
-              {selectedUserInvoices.length === 0 && (
+                  <TabsContent value="paid" className="mt-6">
+                    {currentTabInvoices.length > 0 ? (
+                      <>
+                        <div className="space-y-2 sm:space-y-3">
+                          {paginatedInvoices.map((invoice) => (
+                            <div key={invoice.id || `${invoice.invoiceNumber}-${invoice.date}`} className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border rounded-lg bg-green-50">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                                  <h4 className="font-semibold text-xs sm:text-base truncate">{invoice.invoiceNumber}</h4>
+                                  <Badge variant="default" className="bg-green-100 text-green-800 text-[9px] sm:text-xs shrink-0">Paid</Badge>
+                                </div>
+                                <div className="text-xs sm:text-sm text-muted-foreground space-y-0.5 sm:space-y-1">
+                                  <p>Date: {invoice.date}</p>
+                                  <p className="font-semibold text-sm sm:text-lg">Total: ${invoice.grandTotal.toFixed(2)}</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 w-full">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => handleViewInvoice(invoice)}
+                                >
+                                  <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  <span className="hidden sm:inline">View</span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => handleDownloadInvoice(invoice)}
+                                >
+                                  <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  <span className="hidden sm:inline">Download</span>
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Pagination */}
+                        {currentTabInvoices.length > itemsPerPage && (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-6 pt-4 border-t">
+                            <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                              Showing {startIndex + 1} to {Math.min(endIndex, currentTabInvoices.length)} of {currentTabInvoices.length} invoices
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs sm:text-sm h-8 sm:h-9"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                              >
+                                Previous
+                              </Button>
+                              <span className="text-xs sm:text-sm">
+                                Page {currentPage} of {totalPages}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs sm:text-sm h-8 sm:h-9"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center py-8 sm:py-12">
+                        <CheckCircle className="h-12 w-12 sm:h-16 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+                        <h3 className="text-sm sm:text-lg font-semibold mb-1 sm:mb-2">No paid invoices</h3>
+                        <p className="text-xs sm:text-sm text-muted-foreground">This user has no paid invoices.</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              ) : (
                 <div className="text-center py-8 sm:py-12">
                   <Receipt className="h-12 w-12 sm:h-16 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4" />
                   <h3 className="text-sm sm:text-lg font-semibold mb-1 sm:mb-2">No invoices found</h3>
                   <p className="text-xs sm:text-sm text-muted-foreground">This user has no invoices yet.</p>
-                </div>
-              )}
-
-              {/* Pagination for Pending Invoices */}
-              {filteredPendingInvoices.length > itemsPerPage && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
-                  <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                    Showing {pendingStartIndex + 1} to {Math.min(pendingEndIndex, filteredPendingInvoices.length)} of {filteredPendingInvoices.length} pending invoices
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs sm:text-sm h-8 sm:h-9"
-                      onClick={() => setPendingInvoicesPage(p => Math.max(1, p - 1))}
-                      disabled={pendingInvoicesPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <span className="text-xs sm:text-sm">
-                      Page {pendingInvoicesPage} of {totalPendingInvoicesPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs sm:text-sm h-8 sm:h-9"
-                      onClick={() => setPendingInvoicesPage(p => Math.min(totalPendingInvoicesPages, p + 1))}
-                      disabled={pendingInvoicesPage === totalPendingInvoicesPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Pagination for Paid Invoices */}
-              {filteredPaidInvoices.length > itemsPerPage && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
-                  <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                    Showing {paidStartIndex + 1} to {Math.min(paidEndIndex, filteredPaidInvoices.length)} of {filteredPaidInvoices.length} paid invoices
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs sm:text-sm h-8 sm:h-9"
-                      onClick={() => setPaidInvoicesPage(p => Math.max(1, p - 1))}
-                      disabled={paidInvoicesPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <span className="text-xs sm:text-sm">
-                      Page {paidInvoicesPage} of {totalPaidInvoicesPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs sm:text-sm h-8 sm:h-9"
-                      onClick={() => setPaidInvoicesPage(p => Math.min(totalPaidInvoicesPages, p + 1))}
-                      disabled={paidInvoicesPage === totalPaidInvoicesPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>

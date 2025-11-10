@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, ExternalLink, FileText, X, Eye } from "lucide-react";
+import { Search, FileText, X, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import type { UploadedPDF } from "@/types";
@@ -24,6 +24,8 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPDF, setSelectedPDF] = useState<UploadedPDF | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [viewURL, setViewURL] = useState<string | null>(null);
+  const [loadingViewURL, setLoadingViewURL] = useState(false);
   const itemsPerPage = 10;
 
   // Filter PDFs
@@ -118,151 +120,31 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  const handleView = (pdf: UploadedPDF) => {
+  const handleView = async (pdf: UploadedPDF) => {
     setSelectedPDF(pdf);
     setIsViewDialogOpen(true);
-  };
-
-  const handleDownload = async (pdf: UploadedPDF) => {
+    setViewURL(null);
+    setLoadingViewURL(true);
+    
     try {
-      console.log("Download button clicked for:", pdf.fileName);
-      
-      // Use Google Drive download URL
-      if (pdf.downloadURL) {
-        // Try to download via Google Drive API if needed
-        try {
-          const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
-          if (response.ok) {
-            const data = await response.json();
-            const downloadUrl = data.downloadURL || pdf.downloadURL;
-            
-            // Fetch the file
-            const fileResponse = await fetch(downloadUrl);
-            if (fileResponse.ok) {
-              const blob = await fileResponse.blob();
-              const blobURL = URL.createObjectURL(blob);
-              
-              // Create a download link
-              const link = document.createElement("a");
-              link.href = blobURL;
-              link.download = pdf.fileName;
-              link.style.position = "fixed";
-              link.style.top = "-9999px";
-              link.style.left = "-9999px";
-              
-              // Append to body
-              document.body.appendChild(link);
-              
-              // Force a click event
-              const clickEvent = new MouseEvent("click", {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-              });
-              
-              link.dispatchEvent(clickEvent);
-              
-              // Cleanup after a delay
-              setTimeout(() => {
-                if (document.body.contains(link)) {
-                  document.body.removeChild(link);
-                }
-                URL.revokeObjectURL(blobURL);
-              }, 200);
-              return;
-            }
-          }
-        } catch (apiError) {
-          console.error("API download error:", apiError);
-        }
-        
-        // Fallback: use direct download URL
-        const response = await fetch(pdf.downloadURL);
-        if (response.ok) {
-          const blob = await response.blob();
-          const blobURL = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = blobURL;
-          link.download = pdf.fileName;
-          link.style.position = "fixed";
-          link.style.top = "-9999px";
-          link.style.left = "-9999px";
-          document.body.appendChild(link);
-          
-          const clickEvent = new MouseEvent("click", {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-          });
-          link.dispatchEvent(clickEvent);
-          
-          setTimeout(() => {
-            if (document.body.contains(link)) {
-              document.body.removeChild(link);
-            }
-            URL.revokeObjectURL(blobURL);
-          }, 200);
-        } else {
-          // Last resort: open in new tab
-          window.open(pdf.downloadURL, "_blank");
-        }
+      // Fetch viewable URL from API
+      const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setViewURL(data.viewURL || data.webUrl || pdf.downloadURL);
+      } else {
+        // Fallback to stored downloadURL if API fails
+        setViewURL(pdf.downloadURL);
       }
     } catch (error) {
-      console.error("Download error:", error);
-      // Final fallback: open in new tab
-      if (pdf.downloadURL) {
-        window.open(pdf.downloadURL, "_blank");
-      }
+      console.error('Error fetching view URL:', error);
+      // Fallback to stored downloadURL
+      setViewURL(pdf.downloadURL);
+    } finally {
+      setLoadingViewURL(false);
     }
   };
 
-  const handleViewInNewTab = (pdf: UploadedPDF) => {
-    // Open PDF in new tab with proper title and icon
-    const newWindow = window.open("", "_blank");
-    if (newWindow) {
-      // Create a data URL for a simple PDF icon (SVG)
-      const pdfIconSVG = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-          <polyline points="10 9 9 9 8 9"></polyline>
-        </svg>
-      `;
-      const pdfIconDataURL = `data:image/svg+xml,${encodeURIComponent(pdfIconSVG)}`;
-      
-      newWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <title>${pdf.fileName}</title>
-            <link rel="icon" type="image/svg+xml" href="${pdfIconDataURL}">
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-                overflow: hidden;
-              }
-              iframe {
-                width: 100%;
-                height: 100vh;
-                border: none;
-              }
-            </style>
-          </head>
-          <body>
-            <iframe src="${pdf.downloadURL}" title="${pdf.fileName}"></iframe>
-          </body>
-        </html>
-      `);
-      newWindow.document.close();
-    } else {
-      // Fallback: direct open
-      window.open(pdf.downloadURL, "_blank");
-    }
-  };
 
   return (
     <Card>
@@ -430,7 +312,16 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
       </CardContent>
 
       {/* View PDF Dialog */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+      <Dialog 
+        open={isViewDialogOpen} 
+        onOpenChange={(open) => {
+          setIsViewDialogOpen(open);
+          if (!open) {
+            setViewURL(null);
+            setSelectedPDF(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedPDF?.fileName}</DialogTitle>
@@ -471,18 +362,21 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
 
               {/* PDF Viewer */}
               <div className="border rounded-lg overflow-hidden">
-                <iframe
-                  src={selectedPDF.downloadURL}
-                  className="w-full h-[600px]"
-                  title={selectedPDF.fileName}
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button onClick={() => handleViewInNewTab(selectedPDF)} className="flex-1">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Open in New Tab
-                </Button>
+                {loadingViewURL ? (
+                  <div className="w-full h-[600px] flex items-center justify-center">
+                    <p className="text-muted-foreground">Loading PDF viewer...</p>
+                  </div>
+                ) : viewURL ? (
+                  <iframe
+                    src={viewURL}
+                    className="w-full h-[600px]"
+                    title={selectedPDF.fileName}
+                  />
+                ) : (
+                  <div className="w-full h-[600px] flex items-center justify-center">
+                    <p className="text-muted-foreground">Unable to load PDF viewer</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
