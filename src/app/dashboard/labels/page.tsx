@@ -21,26 +21,26 @@ export default function LabelsPage() {
     : allUploadedPDFs.filter((pdf) => pdf.uploadedBy === user?.uid);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Upload Section */}
-      <Card className="border-2 shadow-xl overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
-                <UploadIcon className="h-6 w-6" />
-                Upload Labels
+      <Card className="border-2 shadow-xl overflow-hidden w-full min-w-0">
+        <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white pb-3 sm:pb-4">
+          <div className="flex items-start sm:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2">
+                <UploadIcon className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
+                <span className="truncate">Upload Labels</span>
               </CardTitle>
-              <CardDescription className="text-indigo-100 mt-2">
-                Upload label files to Google Drive (No file size restrictions)
+              <CardDescription className="text-indigo-100 mt-1 sm:mt-2 text-xs sm:text-sm">
+                Upload your label files. Uploads allowed between 12:00 AM - 11:59 AM (New Jersey Time)
               </CardDescription>
             </div>
-            <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Package className="h-7 w-7 text-white" />
+            <div className="h-10 w-10 sm:h-14 sm:w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+              <Package className="h-5 w-5 sm:h-7 sm:w-7 text-white" />
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           {userProfile && user && (
             <PDFUpload
               userId={user.uid}
@@ -54,25 +54,25 @@ export default function LabelsPage() {
       </Card>
 
       {/* Labels List */}
-      <Card className="border-2 shadow-xl overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
-                <Package className="h-6 w-6" />
-                Labels Library
+      <Card className="border-2 shadow-xl overflow-hidden w-full min-w-0">
+        <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white pb-3 sm:pb-4">
+          <div className="flex items-start sm:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2">
+                <Package className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
+                <span className="truncate">Labels Library</span>
               </CardTitle>
-              <CardDescription className="text-purple-100 mt-2">
+              <CardDescription className="text-purple-100 mt-1 sm:mt-2 text-xs sm:text-sm">
                 View and manage all uploaded labels ({uploadedPDFs.length} files)
               </CardDescription>
             </div>
-            <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Package className="h-7 w-7 text-white" />
+            <div className="h-10 w-10 sm:h-14 sm:w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+              <Package className="h-5 w-5 sm:h-7 sm:w-7 text-white" />
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <PDFList
               pdfs={uploadedPDFs}
               loading={uploadedPDFsLoading}

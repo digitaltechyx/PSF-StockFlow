@@ -87,6 +87,14 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  #__next, [data-nextjs-scroll-focus-boundary] {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
 }
 
 /* Custom WhatsApp Button Animations */
@@ -128,4 +136,13 @@ body {
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* Hide default cursor globally for fluid cursor effect */
+body {
+  cursor: none;
+}
+
+body * {
+  cursor: none !important;
 }

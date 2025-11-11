@@ -9,6 +9,12 @@ export interface UserProfile {
   name: string | null;
   phone: string | null;
   password?: string | null;
+  companyName?: string | null;
+  ein?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
   role: UserRole;
   status?: UserStatus; // Optional for backward compatibility
   createdAt?: Date;

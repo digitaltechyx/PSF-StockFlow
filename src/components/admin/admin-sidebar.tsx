@@ -14,6 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuBadge,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
@@ -21,15 +22,18 @@ import {
   FileText,
   Shield,
   Package,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, UploadedPDF } from "@/types";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export function AdminSidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
+  const { setOpenMobile, isMobile } = useSidebar();
 
   // Get counts for badges
   const { data: users } = useCollection<UserProfile>("users");
@@ -118,14 +122,27 @@ export function AdminSidebar() {
   return (
     <Sidebar className="border-r border-border/40 bg-gradient-to-b from-background to-muted/20">
       <SidebarHeader className="border-b border-border/40 pb-4">
-        <div className="flex items-center gap-3 px-3 py-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
-            <Shield className="h-5 w-5 text-white" />
+        <div className="flex items-center justify-between gap-3 px-3 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
+              <Shield className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-lg tracking-tight">Admin Panel</span>
+              <span className="text-xs text-muted-foreground">PSF StockFlow Management</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-lg tracking-tight">Admin Panel</span>
-            <span className="text-xs text-muted-foreground">PSF StockFlow Management</span>
-          </div>
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 md:hidden"
+              onClick={() => setOpenMobile(false)}
+            >
+              <X className="h-5 w-5" />
+              <span className="sr-only">Close sidebar</span>
+            </Button>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="px-2 py-4">

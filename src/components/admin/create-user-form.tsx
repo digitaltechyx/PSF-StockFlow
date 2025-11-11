@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { auth, db } from "@/lib/firebase";
 import { Loader2, UserPlus } from "lucide-react";
@@ -20,6 +21,12 @@ const createUserSchema = z.object({
   email: z.string().email("Invalid email address"),
   phone: z.string().min(1, "Phone number is required"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  companyName: z.string().min(1, "Company name is required"),
+  ein: z.string().min(1, "EIN is required"),
+  address: z.string().min(1, "Address is required"),
+  city: z.string().min(1, "City is required"),
+  state: z.string().min(1, "State is required"),
+  zipCode: z.string().min(5, "Zip code must be at least 5 characters"),
   role: z.literal("user").default("user"),
 });
 
@@ -39,6 +46,12 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
       email: "",
       phone: "",
       password: "",
+      companyName: "",
+      ein: "",
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
       role: "user",
     },
   });
@@ -60,6 +73,12 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         email: values.email,
         phone: values.phone,
         password: values.password,
+        companyName: values.companyName,
+        ein: values.ein,
+        address: values.address,
+        city: values.city,
+        state: values.state,
+        zipCode: values.zipCode,
         role: values.role,
         status: "pending",
         createdAt: new Date(),
@@ -101,7 +120,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md border-0 shadow-none">
+    <Card className="w-full max-w-lg border-0 shadow-none">
       <CardContent className="p-0">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -149,6 +168,91 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
                       type="tel"
                       {...field} 
                     />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="companyName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Company Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="ABC Company Inc." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="ein"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>EIN</FormLabel>
+                  <FormControl>
+                    <Input placeholder="12-3456789" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Complete Address</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="123 Main Street, Suite 100" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="city"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>City</FormLabel>
+                    <FormControl>
+                      <Input placeholder="New York" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="state"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>State</FormLabel>
+                    <FormControl>
+                      <Input placeholder="NY" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="zipCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Zip Code</FormLabel>
+                  <FormControl>
+                    <Input placeholder="10001" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

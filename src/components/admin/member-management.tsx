@@ -38,7 +38,9 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
       const matchesSearch = searchQuery === "" || 
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.phone?.toLowerCase().includes(searchQuery.toLowerCase());
+        user.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.companyName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.ein?.toLowerCase().includes(searchQuery.toLowerCase());
       return isNotAdmin && matchesSearch;
     });
   }, [users, adminUser, searchQuery]);
@@ -222,6 +224,15 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
           )}
         </div>
 
+        {/* Company Name */}
+        {user.companyName && (
+          <div className="mb-3">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">Company:</span> {user.companyName}
+            </p>
+          </div>
+        )}
+
         {/* Login Credentials */}
         {isAdmin && (user.status === "approved" || !user.status) && (
           <div className="mt-auto mb-3 p-2 bg-muted rounded-md">
@@ -266,30 +277,91 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                           <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="font-medium">Role:</span>
-                          <p className="text-muted-foreground capitalize">{user.role}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Status:</span>
-                          <p className="text-muted-foreground capitalize">{user.status}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Phone:</span>
-                          <p className="text-muted-foreground">{user.phone || "N/A"}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Created:</span>
-                          <p className="text-muted-foreground">{formatDate(user.createdAt)}</p>
-                        </div>
-                        {user.approvedAt && (
+                      
+                      {/* Personal Information */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Personal Information</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <span className="font-medium">Approved:</span>
-                            <p className="text-muted-foreground">{formatDate(user.approvedAt)}</p>
+                            <span className="font-medium">Role:</span>
+                            <p className="text-muted-foreground capitalize">{user.role}</p>
                           </div>
-                        )}
+                          <div>
+                            <span className="font-medium">Status:</span>
+                            <p className="text-muted-foreground capitalize">{user.status || "N/A"}</p>
+                          </div>
+                          <div>
+                            <span className="font-medium">Phone:</span>
+                            <p className="text-muted-foreground">{user.phone || "N/A"}</p>
+                          </div>
+                          <div>
+                            <span className="font-medium">Created:</span>
+                            <p className="text-muted-foreground">{formatDate(user.createdAt)}</p>
+                          </div>
+                          {user.approvedAt && (
+                            <div>
+                              <span className="font-medium">Approved:</span>
+                              <p className="text-muted-foreground">{formatDate(user.approvedAt)}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Company Information */}
+                      {(user.companyName || user.ein) && (
+                        <div className="space-y-3">
+                          <h4 className="font-semibold text-sm border-b pb-1">Company Information</h4>
+                          <div className="grid grid-cols-1 gap-3 text-sm">
+                            {user.companyName && (
+                              <div>
+                                <span className="font-medium">Company Name:</span>
+                                <p className="text-muted-foreground">{user.companyName}</p>
+                              </div>
+                            )}
+                            {user.ein && (
+                              <div>
+                                <span className="font-medium">EIN:</span>
+                                <p className="text-muted-foreground font-mono">{user.ein}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Address Information */}
+                      {(user.address || user.city || user.state || user.zipCode) && (
+                        <div className="space-y-3">
+                          <h4 className="font-semibold text-sm border-b pb-1">Address Information</h4>
+                          <div className="grid grid-cols-1 gap-3 text-sm">
+                            {user.address && (
+                              <div>
+                                <span className="font-medium">Address:</span>
+                                <p className="text-muted-foreground">{user.address}</p>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-3 gap-3">
+                              {user.city && (
+                                <div>
+                                  <span className="font-medium">City:</span>
+                                  <p className="text-muted-foreground">{user.city}</p>
+                                </div>
+                              )}
+                              {user.state && (
+                                <div>
+                                  <span className="font-medium">State:</span>
+                                  <p className="text-muted-foreground">{user.state}</p>
+                                </div>
+                              )}
+                              {user.zipCode && (
+                                <div>
+                                  <span className="font-medium">Zip Code:</span>
+                                  <p className="text-muted-foreground font-mono">{user.zipCode}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </DialogContent>
                 </Dialog>

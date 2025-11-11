@@ -157,9 +157,9 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <Card className="w-full min-w-0">
+        <CardHeader className="w-full min-w-0">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full">
             <div>
               <CardTitle className="text-purple-600">Labels Management ({filteredPDFs.length} total)</CardTitle>
               <CardDescription>View and manage all uploaded labels from all users</CardDescription>
@@ -269,21 +269,21 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                       </Button>
                     </div>
                   </div>
-                  {/* Desktop/Tablet: full layout */}
-                  <div className="hidden sm:block">
+                  {/* Desktop: full layout */}
+                  <div className="hidden md:block">
                     <div className="flex items-center justify-between p-4 border rounded-lg bg-purple-50">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-purple-800 truncate">{pdf.fileName}</h3>
                         <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                           <span className="truncate">Client: {pdf.uploadedByName}</span>
                           <span>Uploaded: {formatDate(pdf.uploadedAt)}</span>
-                          <span>Path: {pdf.year}/{pdf.month}/{pdf.uploadedByName}/{pdf.date}</span>
+                          <span className="hidden lg:inline">Path: {pdf.year}/{pdf.month}/{pdf.uploadedByName}/{pdf.date}</span>
                           <Badge variant="secondary" className="text-xs">
                             {formatFileSize(pdf.size)}
                           </Badge>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex items-center gap-2 ml-4 flex-shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
@@ -294,6 +294,31 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                           View
                         </Button>
                       </div>
+                    </div>
+                  </div>
+                  {/* Tablet: medium layout */}
+                  <div className="hidden sm:block md:hidden">
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-purple-50">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm text-purple-800 truncate">{pdf.fileName}</h3>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                          <span className="truncate">{pdf.uploadedByName}</span>
+                          <span>•</span>
+                          <span>{formatDate(pdf.uploadedAt)}</span>
+                          <Badge variant="secondary" className="text-[10px] ml-auto">
+                            {formatFileSize(pdf.size)}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-1 ml-3 flex-shrink-0 text-xs"
+                        onClick={() => handleView(pdf)}
+                      >
+                        <Eye className="h-3 w-3" />
+                        View
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -313,8 +338,8 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
 
           {/* Pagination Controls */}
           {filteredPDFs.length > itemsPerPage && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="text-sm text-muted-foreground">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+              <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
                 Showing {startIndex + 1} to {Math.min(endIndex, filteredPDFs.length)} of {filteredPDFs.length} records
               </div>
               <div className="flex items-center gap-2">
@@ -323,17 +348,20 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
+                  className="text-xs sm:text-sm"
                 >
-                  Previous
+                  <span className="hidden sm:inline">Previous</span>
+                  <span className="sm:hidden">Prev</span>
                 </Button>
-                <span className="text-sm">
-                  Page {currentPage} of {totalPages}
+                <span className="text-xs sm:text-sm px-2">
+                  {currentPage} / {totalPages}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
+                  className="text-xs sm:text-sm"
                 >
                   Next
                 </Button>
@@ -354,19 +382,19 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
           }
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>{selectedPDF?.fileName}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-base sm:text-lg truncate">{selectedPDF?.fileName}</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
               View PDF uploaded by {selectedPDF?.uploadedByName} on {formatDate(selectedPDF?.uploadedAt)}
             </DialogDescription>
           </DialogHeader>
           {selectedPDF && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
                 <div>
                   <span className="font-semibold">File Name:</span>
-                  <p className="text-muted-foreground">{selectedPDF.fileName}</p>
+                  <p className="text-muted-foreground break-all">{selectedPDF.fileName}</p>
                 </div>
                 <div>
                   <span className="font-semibold">Client:</span>
@@ -380,9 +408,9 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                   <span className="font-semibold">Upload Date:</span>
                   <p className="text-muted-foreground">{formatDate(selectedPDF.uploadedAt)}</p>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <span className="font-semibold">Storage Path:</span>
-                  <p className="text-muted-foreground break-all">{selectedPDF.storagePath}</p>
+                  <p className="text-muted-foreground break-all text-xs">{selectedPDF.storagePath}</p>
                 </div>
                 <div>
                   <span className="font-semibold">Folder:</span>
@@ -395,18 +423,18 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
               {/* PDF Viewer */}
               <div className="border rounded-lg overflow-hidden">
                 {loadingViewURL ? (
-                  <div className="w-full h-[600px] flex items-center justify-center">
-                    <p className="text-muted-foreground">Loading PDF viewer...</p>
+                  <div className="w-full h-[400px] sm:h-[600px] flex items-center justify-center">
+                    <p className="text-muted-foreground text-sm">Loading PDF viewer...</p>
                   </div>
                 ) : viewURL ? (
                   <iframe
                     src={viewURL}
-                    className="w-full h-[600px]"
+                    className="w-full h-[400px] sm:h-[600px]"
                     title={selectedPDF.fileName}
                   />
                 ) : (
-                  <div className="w-full h-[600px] flex items-center justify-center">
-                    <p className="text-muted-foreground">Unable to load PDF viewer</p>
+                  <div className="w-full h-[400px] sm:h-[600px] flex items-center justify-center">
+                    <p className="text-muted-foreground text-sm">Unable to load PDF viewer</p>
                   </div>
                 )}
               </div>

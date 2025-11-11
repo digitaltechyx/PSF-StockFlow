@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -20,24 +19,34 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { auth, db } from "@/lib/firebase";
 import { Logo } from "@/components/logo";
-import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { Loader2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters." }),
   phone: z.string().min(10, { message: "Please enter a valid phone number." }),
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  companyName: z.string().min(1, { message: "Company name is required." }),
+  ein: z.string().min(1, { message: "EIN is required." }),
+  address: z.string().min(1, { message: "Address is required." }),
+  city: z.string().min(1, { message: "City is required." }),
+  state: z.string().min(1, { message: "State is required." }),
+  zipCode: z.string().min(5, { message: "Zip code must be at least 5 characters." }),
+  termsAccepted: z.boolean().refine((val) => val === true, {
+    message: "You must accept the terms and conditions.",
+  }),
 });
 
 export default function RegisterPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const authBg = PlaceHolderImages.find(p => p.id === 'auth-background');
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -46,6 +55,13 @@ export default function RegisterPage() {
       phone: "",
       email: "",
       password: "",
+      companyName: "",
+      ein: "",
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      termsAccepted: false,
     },
   });
 
@@ -61,7 +77,15 @@ export default function RegisterPage() {
         email: values.email,
         phone: values.phone,
         password: values.password,
+        companyName: values.companyName,
+        ein: values.ein,
+        address: values.address,
+        city: values.city,
+        state: values.state,
+        zipCode: values.zipCode,
         role: "user",
+        status: "pending",
+        createdAt: new Date(),
       });
 
       toast({
@@ -82,23 +106,16 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2">
-        <div className="hidden bg-muted lg:block relative overflow-hidden">
-          {authBg && (
-            <Image
-              src={authBg.imageUrl}
-              alt={authBg.description}
-              width="1200"
-              height="800"
-              data-ai-hint={authBg.imageHint}
-              className="h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-            />
-          )}
-          {/* Optional overlay for better text readability */}
-          <div className="absolute inset-0 bg-black/20"></div>
-        </div>
-      <div className="flex items-center justify-center py-12">
-        <div className="mx-auto grid w-[350px] gap-6">
+    <div className="w-full min-h-screen relative">
+      {/* Gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-950 dark:via-purple-950 dark:to-pink-950 -z-10">
+        {/* Animated gradient orbs */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-300/30 dark:bg-indigo-700/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-300/30 dark:bg-purple-700/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-pink-300/20 dark:bg-pink-700/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+      </div>
+      <div className="flex items-center justify-center py-12 min-h-screen">
+        <div className="mx-auto grid w-full max-w-[500px] gap-6 px-4">
           <div className="grid gap-2 text-center">
             <Logo />
             <h1 className="text-3xl font-bold font-headline mt-4">Create an account</h1>
@@ -149,6 +166,86 @@ export default function RegisterPage() {
               />
               <FormField
                 control={form.control}
+                name="companyName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Company Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="ABC Company Inc." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="ein"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>EIN</FormLabel>
+                    <FormControl>
+                      <Input placeholder="12-3456789" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Complete Address</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="123 Main Street, Suite 100" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input placeholder="New York" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input placeholder="NY" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="zipCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Zip Code</FormLabel>
+                    <FormControl>
+                      <Input placeholder="10001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
@@ -160,6 +257,50 @@ export default function RegisterPage() {
                   </FormItem>
                 )}
               />
+
+              {/* Terms and Conditions */}
+              <div className="space-y-3 border rounded-lg p-4 bg-muted/50">
+                <h3 className="text-sm font-semibold">Terms & Conditions</h3>
+                <ScrollArea className="h-[200px] w-full pr-4">
+                  <div className="text-xs text-muted-foreground space-y-2">
+                    <p>
+                      Please read and agree to the terms and conditions before submitting. By submitting this form, you agree that all information provided is accurate. Our services are governed by our service policy and liability terms as discussed with your assigned representative. Prep Services FBA is not responsible for any shipment delays caused by carriers.
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li>
+                        Always use authentic shipping labels. Fake/Forged labels lead to product confiscation, severe penalities ($5,000 - $10,000), and legal action.
+                      </li>
+                      <li>
+                        Payments are on daily basis unless you have paid in advance before the shipment. No Payment! No Shipment!
+                      </li>
+                      <li>
+                        If invoice didn't get processed in 24-48 hours, there will be $19 late payment fee will be applied.
+                      </li>
+                    </ul>
+                  </div>
+                </ScrollArea>
+                <FormField
+                  control={form.control}
+                  name="termsAccepted"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal cursor-pointer">
+                          I have read and agree to the terms and conditions.
+                        </FormLabel>
+                        <FormMessage />
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create account

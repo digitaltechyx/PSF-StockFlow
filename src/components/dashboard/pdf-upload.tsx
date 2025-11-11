@@ -1,16 +1,23 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Loader2, X, FileText, CheckCircle2 } from "lucide-react";
+import { Upload, Loader2, X, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { uploadPDF, type UploadProgress } from "@/lib/pdf-upload";
 import { compressPDF } from "@/lib/pdf-compression";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getFolderInfo } from "@/lib/pdf-upload";
 import type { UploadedPDF } from "@/types";
+import { 
+  isUploadTimeAllowed, 
+  getNewJerseyTimeString, 
+  getTimeUntilNextUploadWindow,
+  getUploadWindowDescription 
+} from "@/lib/time-utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface PDFUploadProps {
   userId: string;
@@ -30,7 +37,19 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
   const { toast } = useToast();
   const [fileUploads, setFileUploads] = useState<FileUploadState[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [currentTime, setCurrentTime] = useState<string>(getNewJerseyTimeString());
+  const [uploadAllowed, setUploadAllowed] = useState<boolean>(isUploadTimeAllowed());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Update time every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(getNewJerseyTimeString());
+      setUploadAllowed(isUploadTimeAllowed());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -52,6 +71,16 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
   };
 
   const handleUpload = async () => {
+    // Check if uploads are allowed at this time
+    if (!isUploadTimeAllowed()) {
+      toast({
+        variant: "destructive",
+        title: "Upload Not Allowed",
+        description: `Uploads are only allowed between 12:00 AM - 11:59 AM (New Jersey Time). ${getTimeUntilNextUploadWindow()}`,
+      });
+      return;
+    }
+
     if (fileUploads.length === 0) {
       toast({
         variant: "destructive",
@@ -77,17 +106,13 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
 
         const compressionResult = await compressPDF(fileState.originalFile);
 
-        if (!compressionResult.success || !compressionResult.file) {
-          setFileUploads((prev) => {
-            const updated = [...prev];
-            updated[index] = {
-              ...updated[index],
-              status: "error",
-              error: compressionResult.error || "Failed to compress PDF",
-            };
-            return updated;
-          });
-          return;
+        // Always proceed with upload, even if compression didn't reduce size significantly
+        // Compression is attempted but upload is allowed regardless of final size
+        if (!compressionResult.file) {
+          // If compression completely failed, use original file
+          compressionResult.file = fileState.originalFile;
+          compressionResult.compressedSize = fileState.originalFile.size;
+          compressionResult.compressionRatio = 0;
         }
 
         // Step 2: Upload to Firebase Storage
@@ -210,9 +235,41 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
   const errorFiles = fileUploads.filter((f) => f.status === "error");
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <label className="flex-1">
+    <div className="space-y-4 w-full min-w-0">
+      {/* Time Display and Upload Window Info */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
+          </div>
+          <div className={`flex items-center gap-2 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
+            {uploadAllowed ? (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                <span className="font-medium">Uploads Allowed</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-4 w-4" />
+                <span className="font-medium">Uploads Disabled</span>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {!uploadAllowed && (
+          <Alert variant="destructive" className="py-2">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs sm:text-sm">
+              {getUploadWindowDescription()}. {getTimeUntilNextUploadWindow()}
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full">
+        <label className="flex-1 min-w-0">
           <input
             ref={fileInputRef}
             type="file"
@@ -225,45 +282,54 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            className="w-full sm:w-auto"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || !uploadAllowed}
           >
-            <FileText className="h-4 w-4 mr-2" />
-                {fileUploads.length === 0 ? "Select Labels" : `Add More Labels (${fileUploads.length} selected)`}
+            <FileText className="h-4 w-4 mr-2 flex-shrink-0" />
+            <span className="truncate">
+              {fileUploads.length === 0 ? "Select Labels" : `Add More (${fileUploads.length})`}
+            </span>
           </Button>
         </label>
 
         {fileUploads.length > 0 && (
-          <>
+          <div className="flex items-center gap-2 sm:gap-3">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={handleClearAll}
               disabled={isUploading}
+              className="flex-1 sm:flex-initial"
             >
               Clear All
             </Button>
             <Button
               type="button"
               onClick={handleUpload}
-              disabled={isUploading || pendingFiles.length === 0}
-              className="flex items-center gap-2"
+              disabled={isUploading || pendingFiles.length === 0 || !uploadAllowed}
+              className="flex items-center gap-2 flex-1 sm:flex-initial"
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading...
+                  <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                  <span className="hidden sm:inline">Uploading...</span>
+                  <span className="sm:hidden">Upload...</span>
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4" />
-                  Upload {pendingFiles.length > 0 ? `${pendingFiles.length} ` : ""}Label{pendingFiles.length !== 1 ? "s" : ""}
+                  <Upload className="h-4 w-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">
+                    Upload {pendingFiles.length > 0 ? `${pendingFiles.length} ` : ""}Label{pendingFiles.length !== 1 ? "s" : ""}
+                  </span>
+                  <span className="sm:hidden">
+                    Upload {pendingFiles.length > 0 ? pendingFiles.length : ""}
+                  </span>
                 </>
               )}
             </Button>
-          </>
+          </div>
         )}
       </div>
 

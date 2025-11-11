@@ -60,11 +60,13 @@ export default function DashboardLayout({
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
         <DashboardSidebar />
-        <SidebarInset className="flex flex-col flex-1">
+        <SidebarInset className="flex flex-col flex-1 min-w-0 overflow-x-hidden">
           <DashboardHeader onProfileClick={handleProfileClick} />
           <ProfileDialog open={showProfile} onOpenChange={setShowProfile} />
-          <main className="flex flex-1 flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-8 overflow-auto">
-            {children}
+          <main className="flex flex-1 flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-8 overflow-auto overflow-x-hidden w-full min-w-0 max-w-full">
+            <div className="w-full min-w-0 max-w-full">
+              {children}
+            </div>
           </main>
         </SidebarInset>
       </div>
