@@ -32,7 +32,7 @@ export default function LabelsPage() {
                 <span className="truncate">Upload Labels</span>
               </CardTitle>
               <CardDescription className="text-indigo-100 mt-1 sm:mt-2 text-xs sm:text-sm">
-                Upload your label files. Uploads allowed between 12:00 AM - 11:59 AM (New Jersey Time)
+                Upload your labels between 12:00 AM - 11:00 AM (New Jersey Time) if you want same day fulfilment
               </CardDescription>
             </div>
             <div className="h-10 w-10 sm:h-14 sm:w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">

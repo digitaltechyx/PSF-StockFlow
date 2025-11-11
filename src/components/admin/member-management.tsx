@@ -15,7 +15,8 @@ import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X } from "lucide-react";
+import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X, ArrowUpDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import type { UserProfile } from "@/types";
 
@@ -29,31 +30,50 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState<"a-z" | "z-a">("a-z");
   const itemsPerPage = 12;
 
-  // Filter users excluding admin and apply search
+  // Filter users (include admin) and apply search
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const isNotAdmin = user.uid !== adminUser?.uid;
       const matchesSearch = searchQuery === "" || 
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.companyName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.ein?.toLowerCase().includes(searchQuery.toLowerCase());
-      return isNotAdmin && matchesSearch;
+      return matchesSearch;
     });
-  }, [users, adminUser, searchQuery]);
+  }, [users, searchQuery]);
 
-  // Reset to page 1 when search query changes
+  // Reset to page 1 when search query or sort order changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, sortOrder]);
 
-  // Separate users by status
-  const pendingUsers = filteredUsers.filter((user) => user.status === "pending");
-  const approvedUsers = filteredUsers.filter((user) => user.status === "approved" || !user.status);
-  const deletedUsers = filteredUsers.filter((user) => user.status === "deleted");
+  // Sort function for users - pin admin first, then sort others
+  const sortUsers = (users: UserProfile[]) => {
+    // Separate admin and other users
+    const admin = users.find((user) => user.uid === adminUser?.uid);
+    const others = users.filter((user) => user.uid !== adminUser?.uid);
+    
+    // Sort others
+    const sortedOthers = others.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return sortOrder === "a-z" 
+        ? nameA.localeCompare(nameB)
+        : nameB.localeCompare(nameA);
+    });
+    
+    // Pin admin first, then others
+    return admin ? [admin, ...sortedOthers] : sortedOthers;
+  };
+
+  // Separate users by status and sort
+  const pendingUsers = sortUsers(filteredUsers.filter((user) => user.status === "pending"));
+  const approvedUsers = sortUsers(filteredUsers.filter((user) => user.status === "approved" || !user.status));
+  const deletedUsers = sortUsers(filteredUsers.filter((user) => user.status === "deleted"));
 
   // Get current tab users based on active tab
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "deleted">("pending");
@@ -457,9 +477,9 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Search Bar */}
-        <div className="mb-6">
-          <div className="relative">
+        {/* Search Bar and Sort */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search members by name, email, or phone..."
@@ -478,6 +498,16 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               </Button>
             )}
           </div>
+          <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as "a-z" | "z-a")}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="a-z">Sort A-Z</SelectItem>
+              <SelectItem value="z-a">Sort Z-A</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">

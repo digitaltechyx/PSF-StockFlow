@@ -121,13 +121,13 @@ export function FluidCursor() {
         ref={cursorRef}
         className="fixed pointer-events-none z-[9999] transition-opacity duration-300"
         style={{
-          transform: "translate(-50%, -50%)",
+          transform: "translate(4px, 4px)",
           willChange: "transform",
         }}
       >
         <svg
-          width="24"
-          height="24"
+          width="36"
+          height="36"
           viewBox="0 0 24 24"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
@@ -138,7 +138,7 @@ export function FluidCursor() {
             fill="currentColor"
             className="text-primary"
             stroke="white"
-            strokeWidth="1.5"
+            strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />

@@ -23,22 +23,49 @@ export default function AdminDashboardPage() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
 
-  // Filter approved users (excluding admin and deleted users)
+  // Filter approved users (excluding deleted users), pin admin first, then sort A-Z
   const approvedUsers = useMemo(() => {
-    return users
-      .filter((user) => user.uid !== adminUser?.uid)
+    const filtered = users
       .filter((user) => user.status !== "deleted")
       .filter((user) => {
         return user.status === "approved" || !user.status;
       });
+    
+    // Separate admin and other users
+    const admin = filtered.find((user) => user.uid === adminUser?.uid);
+    const others = filtered.filter((user) => user.uid !== adminUser?.uid);
+    
+    // Sort others A-Z
+    const sortedOthers = others.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    
+    // Pin admin first, then others
+    return admin ? [admin, ...sortedOthers] : sortedOthers;
   }, [users, adminUser]);
 
-  // Set default selected user if none selected
+  // Set default selected user to admin on initial load
   useEffect(() => {
-    if (!selectedUserId && approvedUsers.length > 0) {
+    // Only set default if no user is currently selected
+    if (selectedUserId) return;
+    
+    if (adminUser?.uid && approvedUsers.length > 0) {
+      // Explicitly find and select admin user
+      const admin = approvedUsers.find(user => user.uid === adminUser.uid);
+      if (admin) {
+        setSelectedUserId(admin.uid);
+        return;
+      }
+    }
+    
+    // Fallback: select first user (which should be admin since it's pinned first)
+    if (approvedUsers.length > 0) {
       setSelectedUserId(approvedUsers[0].uid);
     }
-  }, [approvedUsers, selectedUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvedUsers, adminUser]);
 
   const selectedUser = approvedUsers.find(u => u.uid === selectedUserId) || null;
   
@@ -251,12 +278,14 @@ export default function AdminDashboardPage() {
                         variant="outline"
                         role="combobox"
                         aria-expanded={userDialogOpen}
-                        className="w-full sm:w-[300px] h-11 justify-between shadow-sm"
+                        className="w-full sm:w-[300px] h-11 justify-between shadow-sm min-w-0 px-3"
                       >
-                        {selectedUser
-                          ? `${selectedUser.name || 'Unnamed User'} (${selectedUser.email})`
-                          : "Select a user to manage inventory"}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        <span className="truncate text-left flex-1 min-w-0 mr-2">
+                          {selectedUser
+                            ? `${selectedUser.name || 'Unnamed User'} (${selectedUser.email})`
+                            : "Select a user to manage inventory"}
+                        </span>
+                        <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="p-0">
@@ -296,7 +325,7 @@ export default function AdminDashboardPage() {
                               key={user.uid || `user-${index}`}
                               role="button"
                               tabIndex={0}
-                              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer min-w-0"
                               onClick={() => {
                                 setSelectedUserId(user.uid);
                                 setUserDialogOpen(false);
@@ -310,8 +339,10 @@ export default function AdminDashboardPage() {
                                 }
                               }}
                             >
-                              <Check className={`h-4 w-4 ${selectedUserId === user.uid ? 'opacity-100' : 'opacity-0'}`} />
-                              {user.name || 'Unnamed User'} ({user.email})
+                              <Check className={`h-4 w-4 shrink-0 ${selectedUserId === user.uid ? 'opacity-100' : 'opacity-0'}`} />
+                              <span className="truncate min-w-0 flex-1">
+                                {user.name || 'Unnamed User'} ({user.email})
+                              </span>
                             </div>
                           ))}
                         {approvedUsers.filter(user =>

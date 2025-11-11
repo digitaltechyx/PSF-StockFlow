@@ -76,7 +76,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
       toast({
         variant: "destructive",
         title: "Upload Not Allowed",
-        description: `Uploads are only allowed between 12:00 AM - 11:59 AM (New Jersey Time). ${getTimeUntilNextUploadWindow()}`,
+        description: `Uploads are only allowed between 12:00 AM - 11:00 AM (New Jersey Time) for same day fulfilment. ${getTimeUntilNextUploadWindow()}`,
       });
       return;
     }
@@ -259,9 +259,9 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
         </div>
         
         {!uploadAllowed && (
-          <Alert variant="destructive" className="py-2">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-xs sm:text-sm">
+          <Alert variant="destructive" className="py-2 flex items-center gap-3 [&>svg]:relative [&>svg]:left-0 [&>svg]:top-0 [&>svg]:translate-y-0 [&>svg~*]:pl-0">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <AlertDescription className="text-xs sm:text-sm text-left flex-1">
               {getUploadWindowDescription()}. {getTimeUntilNextUploadWindow()}
             </AlertDescription>
           </Alert>

@@ -28,11 +28,49 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
   const [loadingViewURL, setLoadingViewURL] = useState(false);
   const itemsPerPage = 10;
 
-  // Get unique client names for filter
+  // Helper function to check if PDF matches date filter
+  const matchesDateFilter = (pdf: UploadedPDF, filter: string): boolean => {
+    if (filter === "all") return true;
+    
+    if (!pdf.uploadedAt) return false;
+    
+    const pdfDate =
+      typeof pdf.uploadedAt === "string"
+        ? new Date(pdf.uploadedAt)
+        : pdf.uploadedAt.seconds
+        ? new Date(pdf.uploadedAt.seconds * 1000)
+        : null;
+
+    if (!pdfDate) return false;
+
+    const now = new Date();
+    const daysDiff = Math.floor((now.getTime() - pdfDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    switch (filter) {
+      case "today":
+        return daysDiff === 0;
+      case "week":
+        return daysDiff <= 7;
+      case "month":
+        return daysDiff <= 30;
+      case "year":
+        return daysDiff <= 365;
+      default:
+        return true;
+    }
+  };
+
+  // Get unique client names for filter based on date filter
   const clientNames = useMemo(() => {
-    const names = new Set(pdfs.map((pdf) => pdf.uploadedByName).filter(Boolean));
+    // First filter PDFs by date if date filter is active
+    const dateFilteredPDFs = dateFilter === "all" 
+      ? pdfs 
+      : pdfs.filter((pdf) => matchesDateFilter(pdf, dateFilter));
+    
+    // Then get unique client names from filtered PDFs
+    const names = new Set(dateFilteredPDFs.map((pdf) => pdf.uploadedByName).filter(Boolean));
     return Array.from(names).sort();
-  }, [pdfs]);
+  }, [pdfs, dateFilter]);
 
   // Filter PDFs
   const filteredPDFs = useMemo(() => {
@@ -47,41 +85,7 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
       const matchesClient = clientFilter === "all" || pdf.uploadedByName === clientFilter;
 
       // Date filter
-      let matchesDate = true;
-      if (dateFilter !== "all") {
-        if (!pdf.uploadedAt) {
-          matchesDate = false;
-        } else {
-          const pdfDate =
-            typeof pdf.uploadedAt === "string"
-              ? new Date(pdf.uploadedAt)
-              : pdf.uploadedAt.seconds
-              ? new Date(pdf.uploadedAt.seconds * 1000)
-              : null;
-
-          if (!pdfDate) {
-            matchesDate = false;
-          } else {
-            const now = new Date();
-            const daysDiff = Math.floor((now.getTime() - pdfDate.getTime()) / (1000 * 60 * 60 * 24));
-
-            switch (dateFilter) {
-              case "today":
-                matchesDate = daysDiff === 0;
-                break;
-              case "week":
-                matchesDate = daysDiff <= 7;
-                break;
-              case "month":
-                matchesDate = daysDiff <= 30;
-                break;
-              case "year":
-                matchesDate = daysDiff <= 365;
-                break;
-            }
-          }
-        }
-      }
+      const matchesDate = matchesDateFilter(pdf, dateFilter);
 
       return matchesSearch && matchesClient && matchesDate;
     });
@@ -214,6 +218,18 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                 onValueChange={(value) => {
                   setDateFilter(value);
                   setCurrentPage(1);
+                  // Reset client filter if selected client doesn't have uploads in new date range
+                  if (clientFilter !== "all") {
+                    const dateFilteredPDFs = value === "all" 
+                      ? pdfs 
+                      : pdfs.filter((pdf) => matchesDateFilter(pdf, value));
+                    const hasClientInRange = dateFilteredPDFs.some(
+                      (pdf) => pdf.uploadedByName === clientFilter
+                    );
+                    if (!hasClientInRange) {
+                      setClientFilter("all");
+                    }
+                  }
                 }}
               >
                 <SelectTrigger className="w-full sm:w-[180px]">

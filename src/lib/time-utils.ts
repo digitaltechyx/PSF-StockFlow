@@ -68,15 +68,15 @@ function getNewJerseyHours(): number {
 }
 
 /**
- * Check if current New Jersey time is within upload window (12am - 11:59am)
+ * Check if current New Jersey time is within upload window (12am - 11am)
  * @returns true if uploads are allowed, false otherwise
  */
 export function isUploadTimeAllowed(): boolean {
   const hours = getNewJerseyHours();
   
-  // Allow uploads between 12am (0) and 11:59am (11)
-  // 0 <= hours < 12 means 12:00 AM to 11:59 AM
-  return hours >= 0 && hours < 12;
+  // Allow uploads between 12am (0) and 11am (11)
+  // 0 <= hours < 11 means 12:00 AM to 10:59 AM (uploads allowed until 11:00 AM)
+  return hours >= 0 && hours < 11;
 }
 
 /**
@@ -95,8 +95,8 @@ export function getTimeUntilNextUploadWindow(): string {
   
   const [hours, minutes] = njTimeString.split(":").map(Number);
   
-  // If it's 12pm or later, calculate time until midnight (next day)
-  if (hours >= 12) {
+  // If it's 11am or later, calculate time until midnight (next day)
+  if (hours >= 11) {
     const hoursUntilMidnight = 24 - hours;
     const minutesUntilMidnight = 60 - minutes;
     
@@ -123,6 +123,6 @@ export function getTimeUntilNextUploadWindow(): string {
  * Get upload window description
  */
 export function getUploadWindowDescription(): string {
-  return "Uploads are allowed between 12:00 AM - 11:59 AM (New Jersey Time)";
+  return "Uploads are allowed between 12:00 AM - 11:00 AM (New Jersey Time)";
 }
 

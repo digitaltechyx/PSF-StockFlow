@@ -14,6 +14,7 @@ import { type Invoice, type UserProfile } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
 import type { ShippedItem } from "@/types";
+import { useAuth } from "@/hooks/use-auth";
 
 interface InvoiceManagementProps {
   users: UserProfile[];
@@ -27,6 +28,7 @@ interface UserInvoiceSummary {
 }
 
 export function InvoiceManagement({ users }: InvoiceManagementProps) {
+  const { userProfile: adminUser } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -97,24 +99,40 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     };
   });
 
-  // Filter users based on search and invoice status
-  const filteredUsers = userSummaries.filter(({ user, pendingCount, paidCount }) => {
-    // Search filter
-    const matchesSearch = 
-      user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filter users based on search and invoice status, pin admin first, then sort A-Z
+  const filteredUsers = (() => {
+    const filtered = userSummaries.filter(({ user, pendingCount, paidCount }) => {
+      // Search filter
+      const matchesSearch = 
+        user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (!matchesSearch) return false;
+      
+      // Invoice status filter
+      if (userFilterTab === "unpaid") {
+        return pendingCount > 0; // Users with unpaid (pending) invoices
+      } else if (userFilterTab === "paid") {
+        return paidCount > 0; // Users with paid invoices
+      }
+      
+      return true; // "all" - show all users
+    });
     
-    if (!matchesSearch) return false;
+    // Separate admin and other users
+    const admin = filtered.find(({ user }) => user.uid === adminUser?.uid);
+    const others = filtered.filter(({ user }) => user.uid !== adminUser?.uid);
     
-    // Invoice status filter
-    if (userFilterTab === "unpaid") {
-      return pendingCount > 0; // Users with unpaid (pending) invoices
-    } else if (userFilterTab === "paid") {
-      return paidCount > 0; // Users with paid invoices
-    }
+    // Sort others A-Z by user name
+    const sortedOthers = others.sort((a, b) => {
+      const nameA = (a.user.name || '').toLowerCase();
+      const nameB = (b.user.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
     
-    return true; // "all" - show all users
-  });
+    // Pin admin first, then others
+    return admin ? [admin, ...sortedOthers] : sortedOthers;
+  })();
 
   // Reset users page when filter or search changes
   useEffect(() => {
