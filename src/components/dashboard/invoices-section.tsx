@@ -339,20 +339,20 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full sm:w-auto"
+                            className="w-full sm:w-auto text-xs sm:text-sm h-9 sm:h-9"
                             onClick={() => handleViewInvoice(invoice)}
                           >
-                            <Eye className="h-4 w-4 mr-2" />
-                            View
+                            <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                            <span>View</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full sm:w-auto"
+                            className="w-full sm:w-auto text-xs sm:text-sm h-9 sm:h-9"
                             onClick={() => handleDownloadInvoice(invoice)}
                           >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
+                            <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                            <span>Download</span>
                           </Button>
                         </div>
                       </div>
@@ -426,20 +426,20 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full sm:w-auto"
+                            className="w-full sm:w-auto text-xs sm:text-sm h-9 sm:h-9"
                             onClick={() => handleViewInvoice(invoice)}
                           >
-                            <Eye className="h-4 w-4 mr-2" />
-                            View
+                            <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                            <span>View</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full sm:w-auto"
+                            className="w-full sm:w-auto text-xs sm:text-sm h-9 sm:h-9"
                             onClick={() => handleDownloadInvoice(invoice)}
                           >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
+                            <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                            <span>Download</span>
                           </Button>
                         </div>
                       </div>
