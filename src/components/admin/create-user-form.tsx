@@ -26,6 +26,7 @@ const createUserSchema = z.object({
   address: z.string().min(1, "Address is required"),
   city: z.string().min(1, "City is required"),
   state: z.string().min(1, "State is required"),
+  country: z.string().min(1, "Country is required"),
   zipCode: z.string().min(5, "Zip code must be at least 5 characters"),
   role: z.literal("user").default("user"),
 });
@@ -51,6 +52,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
       address: "",
       city: "",
       state: "",
+      country: "",
       zipCode: "",
       role: "user",
     },
@@ -78,6 +80,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         address: values.address,
         city: values.city,
         state: values.state,
+        country: values.country,
         zipCode: values.zipCode,
         role: values.role,
         status: "pending",
@@ -244,6 +247,20 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="country"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Country</FormLabel>
+                  <FormControl>
+                    <Input placeholder="United States" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}

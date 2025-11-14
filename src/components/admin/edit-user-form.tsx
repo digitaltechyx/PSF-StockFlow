@@ -24,6 +24,7 @@ const editUserSchema = z.object({
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  country: z.string().optional(),
   zipCode: z.string().optional(),
   role: z.enum(["admin", "user"]),
   status: z.enum(["pending", "approved", "deleted"]).optional(),
@@ -52,6 +53,7 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
       address: user.address || "",
       city: user.city || "",
       state: user.state || "",
+      country: user.country || "",
       zipCode: user.zipCode || "",
       role: user.role || "user",
       status: user.status || "approved",
@@ -70,6 +72,7 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
         address: values.address || null,
         city: values.city || null,
         state: values.state || null,
+        country: values.country || null,
         zipCode: values.zipCode || null,
         role: values.role,
         status: values.status || "approved",
@@ -243,7 +246,7 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
             )}
           />
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="city"
@@ -265,27 +268,41 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
                 <FormItem>
                   <FormLabel>State</FormLabel>
                   <FormControl>
-                    <Input placeholder="NY" maxLength={2} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="zipCode"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Zip Code</FormLabel>
-                  <FormControl>
-                    <Input placeholder="10001" {...field} />
+                    <Input placeholder="NY" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name="country"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Country</FormLabel>
+                <FormControl>
+                  <Input placeholder="United States" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="zipCode"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Zip Code</FormLabel>
+                <FormControl>
+                  <Input placeholder="10001" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Action Buttons */}

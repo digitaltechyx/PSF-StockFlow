@@ -11,8 +11,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { reauthenticateWithCredential, updatePassword, EmailAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { User, Lock, Phone } from "lucide-react";
-import { AlertCircle, CheckCircle } from "lucide-react";
+import { User, Lock, Phone, Building2, Hash, MapPin, Mail, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function ProfileSection() {
@@ -164,10 +163,13 @@ export function ProfileSection() {
         <CardDescription>Manage your account information</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Profile Information */}
+        {/* Profile Information - Read Only */}
         <div className="space-y-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <div className="flex items-center gap-2 mb-2">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <Label htmlFor="email">Email</Label>
+            </div>
             <Input
               id="email"
               type="email"
@@ -178,11 +180,101 @@ export function ProfileSection() {
           </div>
 
           <div>
-            <Label htmlFor="name">Full Name</Label>
+            <div className="flex items-center gap-2 mb-2">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <Label htmlFor="name">Full Name</Label>
+            </div>
             <Input
               id="name"
               type="text"
               value={userProfile?.name || "N/A"}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Label htmlFor="companyName">Company Name</Label>
+            </div>
+            <Input
+              id="companyName"
+              type="text"
+              value={userProfile?.companyName || "N/A"}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Hash className="h-4 w-4 text-muted-foreground" />
+              <Label htmlFor="ein">EIN</Label>
+            </div>
+            <Input
+              id="ein"
+              type="text"
+              value={userProfile?.ein || "N/A"}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <Label htmlFor="address">Address</Label>
+            </div>
+            <Input
+              id="address"
+              type="text"
+              value={userProfile?.address || "N/A"}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="city">City</Label>
+              <Input
+                id="city"
+                type="text"
+                value={userProfile?.city || "N/A"}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+            <div>
+              <Label htmlFor="state">State</Label>
+              <Input
+                id="state"
+                type="text"
+                value={userProfile?.state || "N/A"}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="country">Country</Label>
+            <Input
+              id="country"
+              type="text"
+              value={userProfile?.country || "N/A"}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="zipCode">Zip Code</Label>
+            <Input
+              id="zipCode"
+              type="text"
+              value={userProfile?.zipCode || "N/A"}
               disabled
               className="bg-muted"
             />

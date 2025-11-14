@@ -37,6 +37,7 @@ const formSchema = z.object({
   address: z.string().min(1, { message: "Address is required." }),
   city: z.string().min(1, { message: "City is required." }),
   state: z.string().min(1, { message: "State is required." }),
+  country: z.string().min(1, { message: "Country is required." }),
   zipCode: z.string().min(5, { message: "Zip code must be at least 5 characters." }),
   termsAccepted: z.boolean().refine((val) => val === true, {
     message: "You must accept the terms and conditions.",
@@ -60,6 +61,7 @@ export default function RegisterPage() {
       address: "",
       city: "",
       state: "",
+      country: "",
       zipCode: "",
       termsAccepted: false,
     },
@@ -82,6 +84,7 @@ export default function RegisterPage() {
         address: values.address,
         city: values.city,
         state: values.state,
+        country: values.country,
         zipCode: values.zipCode,
         role: "user",
         status: "pending",
@@ -231,6 +234,19 @@ export default function RegisterPage() {
                   )}
                 />
               </div>
+              <FormField
+                control={form.control}
+                name="country"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Country</FormLabel>
+                    <FormControl>
+                      <Input placeholder="United States" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="zipCode"

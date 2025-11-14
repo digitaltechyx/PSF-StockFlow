@@ -13,8 +13,8 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-full sm:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Profile</DialogTitle>
-          <DialogDescription>Update your phone number or change your password.</DialogDescription>
+          <DialogTitle>Profile Settings</DialogTitle>
+          <DialogDescription>View your account information. You can update your phone number or change your password.</DialogDescription>
         </DialogHeader>
         <div className="mt-2">
           <ProfileSection />

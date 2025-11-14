@@ -14,6 +14,7 @@ export interface UserProfile {
   address?: string | null;
   city?: string | null;
   state?: string | null;
+  country?: string | null;
   zipCode?: string | null;
   role: UserRole;
   status?: UserStatus; // Optional for backward compatibility
