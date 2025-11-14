@@ -15,10 +15,11 @@ import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X, ArrowUpDown } from "lucide-react";
+import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X, ArrowUpDown, Edit } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import type { UserProfile } from "@/types";
+import { EditUserForm } from "./edit-user-form";
 
 interface MemberManagementProps {
   adminUser: UserProfile | null;
@@ -28,6 +29,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const { data: users, loading } = useCollection<UserProfile>("users");
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState<"a-z" | "z-a">("a-z");
@@ -272,20 +274,62 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
         <div className="flex items-center gap-2 mt-auto">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Dialog>
+              <Dialog 
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setIsEditMode(false);
+                    setSelectedUser(null);
+                  } else {
+                    setSelectedUser(user);
+                  }
+                }}
+              >
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setSelectedUser(user)}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1" 
+                    onClick={() => {
+                      setSelectedUser(user);
+                      setIsEditMode(false);
+                    }}
+                  >
                     <Eye className="h-4 w-4 mr-1" />
                     View
                   </Button>
                 </DialogTrigger>
                   <DialogContent className="max-w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>User Details</DialogTitle>
-                      <DialogDescription>
-                        Complete information about this user.
-                      </DialogDescription>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <DialogTitle>{isEditMode ? "Edit User" : "User Details"}</DialogTitle>
+                          <DialogDescription>
+                            {isEditMode ? "Update user information." : "Complete information about this user."}
+                          </DialogDescription>
+                        </div>
+                        {!isEditMode && isAdmin && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditMode(true)}
+                            className="ml-auto"
+                          >
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                        )}
+                      </div>
                     </DialogHeader>
+                    {isEditMode && isAdmin ? (
+                      <EditUserForm
+                        user={user}
+                        onSuccess={() => {
+                          setIsEditMode(false);
+                          setSelectedUser(null);
+                        }}
+                        onCancel={() => setIsEditMode(false)}
+                      />
+                    ) : (
                     <div className="space-y-4">
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-12 w-12">
@@ -383,6 +427,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                         </div>
                       )}
                     </div>
+                    )}
                   </DialogContent>
                 </Dialog>
               </TooltipTrigger>
