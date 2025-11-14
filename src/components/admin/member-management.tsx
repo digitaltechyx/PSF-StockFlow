@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -28,8 +28,6 @@ interface MemberManagementProps {
 export function MemberManagement({ adminUser }: MemberManagementProps) {
   const { data: users, loading } = useCollection<UserProfile>("users");
   const { toast } = useToast();
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState<"a-z" | "z-a">("a-z");
@@ -211,108 +209,116 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
     }
   };
 
-  const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => (
-    <Card className="hover:shadow-md transition-shadow h-full flex flex-col">
-      <CardContent className="p-4 flex flex-col h-full">
-        {/* Top: Avatar + Info */}
-        <div className="flex items-start gap-3 mb-3">
-          <Avatar className="h-12 w-12 flex-shrink-0">
-            <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
-            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-base truncate">{user.name}</h3>
-            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+  const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => {
+    const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+    const [isUserEditMode, setIsUserEditMode] = useState(false);
+    
+    return (
+      <Card className="hover:shadow-md transition-shadow h-full flex flex-col">
+        <CardContent className="p-4 flex flex-col h-full">
+          {/* Top: Avatar + Info */}
+          <div className="flex items-start gap-3 mb-3">
+            <Avatar className="h-12 w-12 flex-shrink-0">
+              <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
+              <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-semibold text-base truncate">{user.name}</h3>
+              <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+            </div>
           </div>
-        </div>
 
-        {/* Status and Phone */}
-        <div className="flex items-center flex-wrap gap-2 mb-3">
-          <Badge 
-            variant={
-              user.status === "approved" || !user.status ? "default" : 
-              user.status === "pending" ? "secondary" : "destructive"
-            }
-            className="text-xs"
-          >
-            {user.status === "approved" || !user.status ? "Approved" : 
-             user.status === "pending" ? "Pending" : "Deleted"}
-          </Badge>
-          {user.phone && (
-            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-              <Phone className="h-3 w-3" />
-              {user.phone}
-            </span>
+          {/* Status and Phone */}
+          <div className="flex items-center flex-wrap gap-2 mb-3">
+            <Badge 
+              variant={
+                user.status === "approved" || !user.status ? "default" : 
+                user.status === "pending" ? "secondary" : "destructive"
+              }
+              className="text-xs"
+            >
+              {user.status === "approved" || !user.status ? "Approved" : 
+               user.status === "pending" ? "Pending" : "Deleted"}
+            </Badge>
+            {user.phone && (
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                <Phone className="h-3 w-3" />
+                {user.phone}
+              </span>
+            )}
+          </div>
+
+          {/* Company Name */}
+          {user.companyName && (
+            <div className="mb-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Company:</span> {user.companyName}
+              </p>
+            </div>
           )}
-        </div>
 
-        {/* Company Name */}
-        {user.companyName && (
-          <div className="mb-3">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium">Company:</span> {user.companyName}
-            </p>
-          </div>
-        )}
-
-        {/* Login Credentials */}
-        {isAdmin && (user.status === "approved" || !user.status) && (
-          <div className="mt-auto mb-3 p-2 bg-muted rounded-md">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Login Credentials:</div>
-            <div className="text-xs flex items-center gap-1 mb-1">
-              <Mail className="h-3 w-3" />
-              <span className="font-mono break-all">{user.email}</span>
+          {/* Login Credentials */}
+          {isAdmin && (user.status === "approved" || !user.status) && (
+            <div className="mt-auto mb-3 p-2 bg-muted rounded-md">
+              <div className="text-xs font-medium text-muted-foreground mb-1">Login Credentials:</div>
+              <div className="text-xs flex items-center gap-1 mb-1">
+                <Mail className="h-3 w-3" />
+                <span className="font-mono break-all">{user.email}</span>
+              </div>
+              <div className="text-xs flex items-center gap-1">
+                <span className="text-muted-foreground">Password:</span>
+                <span className="font-mono break-all">{user.password || "Not stored"}</span>
+              </div>
             </div>
-            <div className="text-xs flex items-center gap-1">
-              <span className="text-muted-foreground">Password:</span>
-              <span className="font-mono break-all">{user.password || "Not stored"}</span>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 mt-auto">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Dialog 
-                onOpenChange={(open) => {
-                  if (!open) {
-                    setIsEditMode(false);
-                    setSelectedUser(null);
-                  } else {
-                    setSelectedUser(user);
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1" 
-                    onClick={() => {
-                      setSelectedUser(user);
-                      setIsEditMode(false);
-                    }}
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-                </DialogTrigger>
+          {/* Actions */}
+          <div className="flex items-center gap-2 mt-auto">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Dialog
+                  open={isUserDialogOpen}
+                  onOpenChange={(open) => {
+                    setIsUserDialogOpen(open);
+                    if (!open) {
+                      setIsUserEditMode(false);
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1" 
+                      onClick={() => {
+                        setIsUserDialogOpen(true);
+                        setIsUserEditMode(false);
+                      }}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
+                  </DialogTrigger>
                   <DialogContent className="max-w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                       <div className="flex items-center justify-between">
                         <div>
-                          <DialogTitle>{isEditMode ? "Edit User" : "User Details"}</DialogTitle>
+                          <DialogTitle>{isUserEditMode ? "Edit User" : "User Details"}</DialogTitle>
                           <DialogDescription>
-                            {isEditMode ? "Update user information." : "Complete information about this user."}
+                            {isUserEditMode ? "Update user information." : "Complete information about this user."}
                           </DialogDescription>
                         </div>
-                        {!isEditMode && isAdmin && (
+                        {!isUserEditMode && isAdmin && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsEditMode(true)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsUserEditMode(true);
+                            }}
                             className="ml-auto"
+                            type="button"
                           >
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
@@ -320,56 +326,56 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                         )}
                       </div>
                     </DialogHeader>
-                    {isEditMode && isAdmin ? (
+                    {isUserEditMode && isAdmin ? (
                       <EditUserForm
                         user={user}
                         onSuccess={() => {
-                          setIsEditMode(false);
-                          setSelectedUser(null);
+                          setIsUserEditMode(false);
+                          setIsUserDialogOpen(false);
                         }}
-                        onCancel={() => setIsEditMode(false)}
+                        onCancel={() => setIsUserEditMode(false)}
                       />
                     ) : (
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
-                          <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h3 className="font-semibold">{user.name}</h3>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                      <div className="space-y-4">
+                        <div className="flex items-center space-x-3">
+                          <Avatar className="h-12 w-12">
+                            <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
+                            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <h3 className="font-semibold">{user.name}</h3>
+                            <p className="text-sm text-muted-foreground">{user.email}</p>
+                          </div>
                         </div>
-                      </div>
-                      
-                      {/* Personal Information */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Personal Information</h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium">Role:</span>
-                            <p className="text-muted-foreground capitalize">{user.role}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium">Status:</span>
-                            <p className="text-muted-foreground capitalize">{user.status || "N/A"}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium">Phone:</span>
-                            <p className="text-muted-foreground">{user.phone || "N/A"}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium">Created:</span>
-                            <p className="text-muted-foreground">{formatDate(user.createdAt)}</p>
-                          </div>
-                          {user.approvedAt && (
+                        
+                        {/* Personal Information */}
+                        <div className="space-y-3">
+                          <h4 className="font-semibold text-sm border-b pb-1">Personal Information</h4>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
-                              <span className="font-medium">Approved:</span>
-                              <p className="text-muted-foreground">{formatDate(user.approvedAt)}</p>
+                              <span className="font-medium">Role:</span>
+                              <p className="text-muted-foreground capitalize">{user.role}</p>
                             </div>
-                          )}
+                            <div>
+                              <span className="font-medium">Status:</span>
+                              <p className="text-muted-foreground capitalize">{user.status || "N/A"}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium">Phone:</span>
+                              <p className="text-muted-foreground">{user.phone || "N/A"}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium">Created:</span>
+                              <p className="text-muted-foreground">{formatDate(user.createdAt)}</p>
+                            </div>
+                            {user.approvedAt && (
+                              <div>
+                                <span className="font-medium">Approved:</span>
+                                <p className="text-muted-foreground">{formatDate(user.approvedAt)}</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
                       {/* Company Information */}
                       {(user.companyName || user.ein) && (
@@ -426,7 +432,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                           </div>
                         </div>
                       )}
-                    </div>
+                      </div>
                     )}
                   </DialogContent>
                 </Dialog>
@@ -436,60 +442,61 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               </TooltipContent>
             </Tooltip>
 
-          {showActions && (
-            <>
-              {user.status === "pending" && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => handleApproveUser(user)}
-                      className="flex-1 bg-green-600 hover:bg-green-700"
-                    >
-                      <UserCheck className="h-4 w-4 mr-1" />
-                      Approve
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Approve user account</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={() => handleDeleteUser(user)}
-                className="flex-1"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </>
-          )}
-
-          {showRestore && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
+            {showActions && (
+              <>
+                {user.status === "pending" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleApproveUser(user)}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        <UserCheck className="h-4 w-4 mr-1" />
+                        Approve
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Approve user account</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                <Button 
+                  variant="destructive" 
                   size="sm"
-                  onClick={() => handleRestoreUser(user)}
-                  className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                  onClick={() => handleDeleteUser(user)}
+                  className="flex-1"
                 >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  Restore
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Restore user account</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+              </>
+            )}
+
+            {showRestore && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRestoreUser(user)}
+                    className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Restore
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Restore user account</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   if (loading) {
     return (

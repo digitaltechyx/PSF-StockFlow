@@ -32,15 +32,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (user) {
-      const unsubProfile = onSnapshot(doc(db, "users", user.uid), (doc) => {
-        if (doc.exists()) {
-          setUserProfile({ uid: user.uid, ...doc.data() } as UserProfile);
-        } else {
+      setLoading(true); // Set loading to true while fetching profile
+      const unsubProfile = onSnapshot(
+        doc(db, "users", user.uid),
+        (doc) => {
+          if (doc.exists()) {
+            setUserProfile({ uid: user.uid, ...doc.data() } as UserProfile);
+          } else {
+            setUserProfile(null);
+          }
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Error fetching user profile:", error);
           setUserProfile(null);
+          setLoading(false);
         }
-        setLoading(false);
-      });
+      );
       return () => unsubProfile();
+    } else {
+      // If user is null, ensure loading is false
+      setLoading(false);
     }
   }, [user]);
 
