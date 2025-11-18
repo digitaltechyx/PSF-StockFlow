@@ -113,9 +113,9 @@ export async function POST(request: NextRequest) {
     } else if (error.message?.includes('STRIPE_SECRET_KEY')) {
       errorMessage = 'Stripe configuration error';
       errorDetails = 'Stripe API key is not configured correctly';
-    } else if (error.message?.includes('Firebase admin')) {
+    } else if (error.message?.includes('Firebase admin') || error.message?.includes('FIREBASE_ADMIN') || error.message?.includes('Firebase Admin')) {
       errorMessage = 'Firebase configuration error';
-      errorDetails = 'Firebase Admin SDK is not configured correctly';
+      errorDetails = error.message || 'Firebase Admin SDK is not configured correctly. Please check your environment variables.';
     }
     
     return NextResponse.json(
