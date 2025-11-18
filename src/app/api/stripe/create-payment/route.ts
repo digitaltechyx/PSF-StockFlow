@@ -70,11 +70,11 @@ export async function POST(request: NextRequest) {
       ...(shippedItemId && { shippedItemId }),
     };
 
-    const docRef = await adminDb
+    const docRef = await adminDb()
       .collection(`users/${userId}/labelPurchases`)
       .add({
         ...labelPurchaseData,
-        createdAt: adminFieldValue.serverTimestamp(),
+        createdAt: adminFieldValue().serverTimestamp(),
       });
 
     return NextResponse.json({

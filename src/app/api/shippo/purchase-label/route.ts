@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       console.error('Shippo label purchase error:', errorData);
       
       // Update label purchase record with error
-      const labelPurchaseRef = adminDb
+      const labelPurchaseRef = adminDb()
         .collection(`users/${userId}/labelPurchases`)
         .doc(labelPurchaseId);
       await labelPurchaseRef.update({
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const transaction = await transactionResponse.json();
 
     // Update label purchase record with Shippo transaction details
-    const labelPurchaseRef = adminDb
+    const labelPurchaseRef = adminDb()
       .collection(`users/${userId}/labelPurchases`)
       .doc(labelPurchaseId);
     await labelPurchaseRef.update({
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       shippoTransactionId: transaction.object_id,
       trackingNumber: transaction.tracking_number || null,
       labelUrl: transaction.label_url || null,
-      labelPurchasedAt: adminFieldValue.serverTimestamp(),
+      labelPurchasedAt: adminFieldValue().serverTimestamp(),
     });
 
     return NextResponse.json({
