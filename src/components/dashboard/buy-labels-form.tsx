@@ -202,8 +202,11 @@ export function BuyLabelsForm() {
       });
 
       if (!paymentResponse.ok) {
-        const error = await paymentResponse.json();
-        throw new Error(error.error || "Failed to create payment");
+        const errorData = await paymentResponse.json();
+        const errorMessage = errorData.details 
+          ? `${errorData.error}: ${errorData.details}`
+          : errorData.error || "Failed to create payment";
+        throw new Error(errorMessage);
       }
 
       const { clientSecret, paymentIntentId, labelPurchaseId } = await paymentResponse.json();
