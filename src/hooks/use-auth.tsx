@@ -36,12 +36,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const unsubProfile = onSnapshot(
         doc(db, "users", user.uid),
         (doc) => {
-          if (doc.exists()) {
-            setUserProfile({ uid: user.uid, ...doc.data() } as UserProfile);
-          } else {
-            setUserProfile(null);
-          }
-          setLoading(false);
+        if (doc.exists()) {
+          setUserProfile({ uid: user.uid, ...doc.data() } as UserProfile);
+        } else {
+          setUserProfile(null);
+        }
+        setLoading(false);
         },
         (error) => {
           console.error("Error fetching user profile:", error);

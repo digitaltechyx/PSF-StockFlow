@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import type { LabelPurchase } from '@/types';
@@ -34,6 +34,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get Stripe instance (lazy initialization)
+    const stripe = getStripe();
+
     // Create payment intent in Stripe
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount), // Ensure it's an integer (cents)
@@ -44,6 +47,7 @@ export async function POST(request: NextRequest) {
         toAddress: JSON.stringify(toAddress),
         parcel: JSON.stringify(parcel),
         selectedRate: JSON.stringify(selectedRate),
+        shipmentId: selectedRate.shipmentId || '',
         shippedItemId: shippedItemId || '',
       },
       automatic_payment_methods: {

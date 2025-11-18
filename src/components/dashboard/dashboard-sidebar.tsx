@@ -24,6 +24,7 @@ import {
   FileText,
   Package,
   X,
+  ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -60,6 +61,13 @@ export function DashboardSidebar() {
       url: "/dashboard/labels",
       icon: Package,
       color: "text-indigo-600",
+      badge: null,
+    },
+    {
+      title: "Buy Labels",
+      url: "/dashboard/buy-labels",
+      icon: ShoppingBag,
+      color: "text-blue-600",
       badge: null,
     },
     {

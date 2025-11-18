@@ -215,3 +215,69 @@ export interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
 }
+
+// Stripe & Shippo Integration Types
+export interface ShippingAddress {
+  name: string;
+  street1: string;
+  street2?: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface ParcelDetails {
+  length: number;
+  width: number;
+  height: number;
+  weight: number;
+  weightUnit: 'lb' | 'oz' | 'kg' | 'g';
+  distanceUnit: 'in' | 'ft' | 'cm' | 'm';
+}
+
+export interface ShippingRate {
+  object_id: string;
+  amount: string;
+  currency: string;
+  provider: string;
+  servicelevel: {
+    name: string;
+    token: string;
+  };
+  estimated_days?: number;
+  shipment?: string; // Shipment ID from Shippo
+}
+
+export interface LabelPurchase {
+  id: string;
+  userId: string;
+  purchasedBy: string;
+  fromAddress: ShippingAddress;
+  toAddress: ShippingAddress;
+  parcel: ParcelDetails;
+  selectedRate: {
+    objectId: string;
+    amount: string;
+    currency: string;
+    provider: string;
+    serviceLevel: string;
+    shipmentId?: string;
+  };
+  stripePaymentIntentId: string;
+  stripeChargeId?: string;
+  paymentStatus: 'pending' | 'succeeded' | 'failed' | 'canceled';
+  paymentAmount: number;
+  paymentCurrency: string;
+  status: 'payment_pending' | 'payment_succeeded' | 'label_purchased' | 'label_failed' | 'completed';
+  shippoTransactionId?: string;
+  trackingNumber?: string;
+  labelUrl?: string;
+  errorMessage?: string;
+  createdAt: any;
+  paymentCompletedAt?: Date;
+  labelPurchasedAt?: Date;
+  shippedItemId?: string;
+}

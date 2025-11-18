@@ -1,19 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 import Stripe from 'stripe';
 
+const SHIPPO_API_BASE = 'https://api.goshippo.com';
+
+async function purchaseLabelFromShippo({
+  rateId,
+  shipmentId,
+  labelPurchaseId,
+  userId,
+}: {
+  rateId: string;
+  shipmentId: string;
+  labelPurchaseId: string;
+  userId: string;
+}) {
+  try {
+    if (!process.env.SHIPPO_API_KEY) {
+      throw new Error('Shippo API key not configured');
+    }
+
+    // Purchase label from Shippo
+    const transactionResponse = await fetch(`${SHIPPO_API_BASE}/transactions/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `ShippoToken ${process.env.SHIPPO_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rate: rateId,
+        async: false,
+      }),
+    });
+
+    if (!transactionResponse.ok) {
+      const errorData = await transactionResponse.json();
+      console.error('Shippo label purchase error:', errorData);
+      
+      // Update label purchase record with error
+      const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
+      await updateDoc(labelPurchaseRef, {
+        status: 'label_failed',
+        errorMessage: errorData.detail || errorData.message || 'Failed to purchase label',
+      });
+      return;
+    }
+
+    const transaction = await transactionResponse.json();
+
+    // Update label purchase record with Shippo transaction details
+    const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
+    await updateDoc(labelPurchaseRef, {
+      status: 'label_purchased',
+      shippoTransactionId: transaction.object_id,
+      trackingNumber: transaction.tracking_number || null,
+      labelUrl: transaction.label_url || null,
+      labelPurchasedAt: new Date(),
+    });
+
+    console.log(`Label purchased successfully: ${transaction.object_id}`);
+  } catch (error: any) {
+    console.error('Error purchasing label:', error);
+    const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
+    await updateDoc(labelPurchaseRef, {
+      status: 'label_failed',
+      errorMessage: error.message || 'Error purchasing label',
+    });
+  }
+}
+
 // Disable body parsing, need raw body for webhook signature verification
 export const runtime = 'nodejs';
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-if (!webhookSecret) {
-  throw new Error('STRIPE_WEBHOOK_SECRET is not set in environment variables');
-}
-
 export async function POST(request: NextRequest) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('STRIPE_WEBHOOK_SECRET is not set in environment variables');
+    return NextResponse.json(
+      { error: 'Webhook secret not configured' },
+      { status: 500 }
+    );
+  }
+
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
 
@@ -23,6 +94,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Get Stripe instance (lazy initialization)
+  const stripe = getStripe();
 
   let event: Stripe.Event;
 
@@ -117,13 +191,45 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
     paymentCompletedAt: new Date(),
   });
 
-  // TODO: After Shippo integration, trigger label purchase here
-  // For now, we'll mark it as ready for label purchase
-  console.log(`Payment succeeded for label purchase: ${labelPurchaseDoc.id}`);
-  console.log('Ready to purchase label from Shippo');
-  
-  // Note: We'll add Shippo label purchase logic after Shippo setup
-  // This will be called from the webhook or a separate API endpoint
+  const labelPurchaseData = labelPurchaseDoc.data();
+  const selectedRate = labelPurchaseData.selectedRate;
+
+  // Purchase label from Shippo
+  if (selectedRate?.objectId) {
+    try {
+      // Get shipment ID from metadata or from the rate
+      const shipmentId = paymentIntent.metadata?.shipmentId || selectedRate.shipmentId;
+      
+      if (!shipmentId) {
+        console.error('No shipment ID found for label purchase');
+        await updateDoc(labelPurchaseRef, {
+          status: 'label_failed',
+          errorMessage: 'Shipment ID not found',
+        });
+        return;
+      }
+
+      // Purchase label from Shippo directly
+      await purchaseLabelFromShippo({
+        rateId: selectedRate.objectId,
+        shipmentId: shipmentId,
+        labelPurchaseId: labelPurchaseDoc.id,
+        userId: userId,
+      });
+    } catch (error: any) {
+      console.error('Error purchasing label:', error);
+      await updateDoc(labelPurchaseRef, {
+        status: 'label_failed',
+        errorMessage: error.message || 'Error purchasing label',
+      });
+    }
+  } else {
+    console.error('No rate ID found in label purchase data');
+    await updateDoc(labelPurchaseRef, {
+      status: 'label_failed',
+      errorMessage: 'Rate ID not found',
+    });
+  }
 }
 
 async function handlePaymentFailure(paymentIntent: Stripe.PaymentIntent) {
