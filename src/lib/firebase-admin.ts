@@ -1,11 +1,27 @@
-import admin from 'firebase-admin';
+// Only import firebase-admin on the server side
+let admin: typeof import('firebase-admin') | null = null;
 
 // Lazy initialization to avoid build-time errors
-let adminDbInstance: admin.firestore.Firestore | null = null;
-let adminFieldValueInstance: typeof admin.firestore.FieldValue | null = null;
+let adminDbInstance: any = null;
+let adminFieldValueInstance: any = null;
+
+function getAdmin() {
+  if (typeof window !== 'undefined') {
+    throw new Error('Firebase Admin SDK can only be used on the server side');
+  }
+  
+  if (!admin) {
+    // Dynamic import to ensure it's only loaded on the server
+    admin = require('firebase-admin');
+  }
+  
+  return admin;
+}
 
 function initializeAdmin() {
-  if (!admin.apps.length) {
+  const adminModule = getAdmin();
+  
+  if (!adminModule.apps.length) {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -16,8 +32,8 @@ function initializeAdmin() {
       );
     }
 
-    admin.initializeApp({
-      credential: admin.credential.cert({
+    adminModule.initializeApp({
+      credential: adminModule.credential.cert({
         projectId,
         clientEmail,
         privateKey,
@@ -26,23 +42,23 @@ function initializeAdmin() {
   }
 
   if (!adminDbInstance) {
-    adminDbInstance = admin.firestore();
-    adminFieldValueInstance = admin.firestore.FieldValue;
+    adminDbInstance = adminModule.firestore();
+    adminFieldValueInstance = adminModule.firestore.FieldValue;
   }
 }
 
-export function getAdminDb(): admin.firestore.Firestore {
+export function getAdminDb() {
   if (!adminDbInstance) {
     initializeAdmin();
   }
-  return adminDbInstance!;
+  return adminDbInstance;
 }
 
-export function getAdminFieldValue(): typeof admin.firestore.FieldValue {
+export function getAdminFieldValue() {
   if (!adminFieldValueInstance) {
     initializeAdmin();
   }
-  return adminFieldValueInstance!;
+  return adminFieldValueInstance;
 }
 
 // Export getters for lazy initialization (only called when API routes run)
