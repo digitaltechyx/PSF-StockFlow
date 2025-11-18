@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { adminDb, adminFieldValue } from '@/lib/firebase-admin';
 import type { LabelPurchase } from '@/types';
 
 export async function POST(request: NextRequest) {
@@ -56,7 +55,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Create label purchase record in Firestore
-    const labelPurchaseData: Omit<LabelPurchase, 'id'> = {
+    const labelPurchaseData: Omit<LabelPurchase, 'id' | 'createdAt'> = {
       userId,
       purchasedBy: userId,
       fromAddress,
@@ -68,14 +67,15 @@ export async function POST(request: NextRequest) {
       paymentAmount: amount,
       paymentCurrency: currency,
       status: 'payment_pending',
-      createdAt: serverTimestamp() as any,
       ...(shippedItemId && { shippedItemId }),
     };
 
-    const docRef = await addDoc(
-      collection(db, `users/${userId}/labelPurchases`),
-      labelPurchaseData
-    );
+    const docRef = await adminDb
+      .collection(`users/${userId}/labelPurchases`)
+      .add({
+        ...labelPurchaseData,
+        createdAt: adminFieldValue.serverTimestamp(),
+      });
 
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,

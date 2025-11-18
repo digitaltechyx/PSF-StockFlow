@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { adminDb, adminFieldValue } from '@/lib/firebase-admin';
 import Stripe from 'stripe';
 
 const SHIPPO_API_BASE = 'https://api.goshippo.com';
@@ -40,8 +39,10 @@ async function purchaseLabelFromShippo({
       console.error('Shippo label purchase error:', errorData);
       
       // Update label purchase record with error
-      const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
-      await updateDoc(labelPurchaseRef, {
+      const labelPurchaseRef = adminDb
+        .collection(`users/${userId}/labelPurchases`)
+        .doc(labelPurchaseId);
+      await labelPurchaseRef.update({
         status: 'label_failed',
         errorMessage: errorData.detail || errorData.message || 'Failed to purchase label',
       });
@@ -51,20 +52,24 @@ async function purchaseLabelFromShippo({
     const transaction = await transactionResponse.json();
 
     // Update label purchase record with Shippo transaction details
-    const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
-    await updateDoc(labelPurchaseRef, {
+    const labelPurchaseRef = adminDb
+      .collection(`users/${userId}/labelPurchases`)
+      .doc(labelPurchaseId);
+    await labelPurchaseRef.update({
       status: 'label_purchased',
       shippoTransactionId: transaction.object_id,
       trackingNumber: transaction.tracking_number || null,
       labelUrl: transaction.label_url || null,
-      labelPurchasedAt: new Date(),
+      labelPurchasedAt: adminFieldValue.serverTimestamp(),
     });
 
     console.log(`Label purchased successfully: ${transaction.object_id}`);
   } catch (error: any) {
     console.error('Error purchasing label:', error);
-    const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
-    await updateDoc(labelPurchaseRef, {
+    const labelPurchaseRef = adminDb
+      .collection(`users/${userId}/labelPurchases`)
+      .doc(labelPurchaseId);
+    await labelPurchaseRef.update({
       status: 'label_failed',
       errorMessage: error.message || 'Error purchasing label',
     });
@@ -168,12 +173,10 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
   }
 
   // Find the label purchase record
-  const labelPurchasesRef = collection(db, `users/${userId}/labelPurchases`);
-  const q = query(
-    labelPurchasesRef,
-    where('stripePaymentIntentId', '==', paymentIntentId)
-  );
-  const snapshot = await getDocs(q);
+  const labelPurchasesRef = adminDb.collection(`users/${userId}/labelPurchases`);
+  const snapshot = await labelPurchasesRef
+    .where('stripePaymentIntentId', '==', paymentIntentId)
+    .get();
 
   if (snapshot.empty) {
     console.error(`No label purchase found for payment intent: ${paymentIntentId}`);
@@ -181,10 +184,10 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
   }
 
   const labelPurchaseDoc = snapshot.docs[0];
-  const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseDoc.id);
+  const labelPurchaseRef = labelPurchaseDoc.ref;
 
   // Update label purchase with payment success
-  await updateDoc(labelPurchaseRef, {
+  await labelPurchaseRef.update({
     paymentStatus: 'succeeded',
     status: 'payment_succeeded',
     stripeChargeId: paymentIntent.latest_charge as string,
@@ -202,7 +205,7 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
       
       if (!shipmentId) {
         console.error('No shipment ID found for label purchase');
-        await updateDoc(labelPurchaseRef, {
+        await labelPurchaseRef.update({
           status: 'label_failed',
           errorMessage: 'Shipment ID not found',
         });
@@ -218,14 +221,14 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
       });
     } catch (error: any) {
       console.error('Error purchasing label:', error);
-      await updateDoc(labelPurchaseRef, {
+      await labelPurchaseRef.update({
         status: 'label_failed',
         errorMessage: error.message || 'Error purchasing label',
       });
     }
   } else {
     console.error('No rate ID found in label purchase data');
-    await updateDoc(labelPurchaseRef, {
+    await labelPurchaseRef.update({
       status: 'label_failed',
       errorMessage: 'Rate ID not found',
     });
@@ -242,12 +245,10 @@ async function handlePaymentFailure(paymentIntent: Stripe.PaymentIntent) {
   }
 
   // Find the label purchase record
-  const labelPurchasesRef = collection(db, `users/${userId}/labelPurchases`);
-  const q = query(
-    labelPurchasesRef,
-    where('stripePaymentIntentId', '==', paymentIntentId)
-  );
-  const snapshot = await getDocs(q);
+  const labelPurchasesRef = adminDb.collection(`users/${userId}/labelPurchases`);
+  const snapshot = await labelPurchasesRef
+    .where('stripePaymentIntentId', '==', paymentIntentId)
+    .get();
 
   if (snapshot.empty) {
     console.error(`No label purchase found for payment intent: ${paymentIntentId}`);
@@ -255,10 +256,10 @@ async function handlePaymentFailure(paymentIntent: Stripe.PaymentIntent) {
   }
 
   const labelPurchaseDoc = snapshot.docs[0];
-  const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseDoc.id);
+  const labelPurchaseRef = labelPurchaseDoc.ref;
 
   // Update label purchase with payment failure
-  await updateDoc(labelPurchaseRef, {
+  await labelPurchaseRef.update({
     paymentStatus: 'failed',
     status: 'payment_pending', // Keep as pending so user can retry
     errorMessage: paymentIntent.last_payment_error?.message || 'Payment failed',
@@ -277,12 +278,10 @@ async function handlePaymentCanceled(paymentIntent: Stripe.PaymentIntent) {
   }
 
   // Find the label purchase record
-  const labelPurchasesRef = collection(db, `users/${userId}/labelPurchases`);
-  const q = query(
-    labelPurchasesRef,
-    where('stripePaymentIntentId', '==', paymentIntentId)
-  );
-  const snapshot = await getDocs(q);
+  const labelPurchasesRef = adminDb.collection(`users/${userId}/labelPurchases`);
+  const snapshot = await labelPurchasesRef
+    .where('stripePaymentIntentId', '==', paymentIntentId)
+    .get();
 
   if (snapshot.empty) {
     console.error(`No label purchase found for payment intent: ${paymentIntentId}`);
@@ -290,10 +289,10 @@ async function handlePaymentCanceled(paymentIntent: Stripe.PaymentIntent) {
   }
 
   const labelPurchaseDoc = snapshot.docs[0];
-  const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseDoc.id);
+  const labelPurchaseRef = labelPurchaseDoc.ref;
 
   // Update label purchase with payment canceled
-  await updateDoc(labelPurchaseRef, {
+  await labelPurchaseRef.update({
     paymentStatus: 'canceled',
     status: 'payment_pending', // Keep as pending so user can retry
     errorMessage: 'Payment was canceled',

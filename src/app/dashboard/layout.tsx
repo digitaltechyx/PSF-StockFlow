@@ -31,24 +31,61 @@ export default function DashboardLayout({
   };
 
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        router.replace("/login");
-      } else if (userProfile?.role !== "user") {
+    // Wait for both auth and profile to finish loading
+    if (!loading && user) {
+      // If userProfile is still null but user exists, wait a bit more
+      if (userProfile === null) {
+        // User exists but profile not loaded yet - wait
+        return;
+      }
+      
+      // Now we have both user and userProfile
+      if (userProfile.role !== "user") {
         // Redirect if not a regular user, e.g., an admin trying to access user dash
         router.replace("/admin/dashboard");
-      } else if (userProfile?.status === "pending") {
+      } else if (userProfile.status === "pending") {
         // Redirect pending users to a waiting page
         router.replace("/pending-approval");
-      } else if (userProfile?.status === "deleted") {
+      } else if (userProfile.status === "deleted") {
         // Sign out deleted users
         signOut();
         router.replace("/login");
       }
+    } else if (!loading && !user) {
+      // No user and not loading - redirect to login
+      router.replace("/login");
     }
-  }, [user, userProfile, loading, router]);
+  }, [user, userProfile, loading, router, signOut]);
 
-  if (loading || !user || userProfile?.role !== "user" || userProfile?.status === "pending" || userProfile?.status === "deleted") {
+  // Show loading while auth state is being determined
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // If no user, show loading (redirect will happen in useEffect)
+  if (!user) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // If user exists but profile not loaded yet, wait
+  if (user && userProfile === null) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // If profile loaded but user is not a regular user or has invalid status, show loading (redirect will happen)
+  if (userProfile && (userProfile.role !== "user" || userProfile.status === "pending" || userProfile.status === "deleted")) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

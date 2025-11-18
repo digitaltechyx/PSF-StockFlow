@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { adminDb, adminFieldValue } from '@/lib/firebase-admin';
 
 const SHIPPO_API_BASE = 'https://api.goshippo.com';
 
@@ -45,8 +44,10 @@ export async function POST(request: NextRequest) {
       console.error('Shippo label purchase error:', errorData);
       
       // Update label purchase record with error
-      const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
-      await updateDoc(labelPurchaseRef, {
+      const labelPurchaseRef = adminDb
+        .collection(`users/${userId}/labelPurchases`)
+        .doc(labelPurchaseId);
+      await labelPurchaseRef.update({
         status: 'label_failed',
         errorMessage: errorData.detail || errorData.message || 'Failed to purchase label',
       });
@@ -63,13 +64,15 @@ export async function POST(request: NextRequest) {
     const transaction = await transactionResponse.json();
 
     // Update label purchase record with Shippo transaction details
-    const labelPurchaseRef = doc(db, `users/${userId}/labelPurchases`, labelPurchaseId);
-    await updateDoc(labelPurchaseRef, {
+    const labelPurchaseRef = adminDb
+      .collection(`users/${userId}/labelPurchases`)
+      .doc(labelPurchaseId);
+    await labelPurchaseRef.update({
       status: 'label_purchased',
       shippoTransactionId: transaction.object_id,
       trackingNumber: transaction.tracking_number || null,
       labelUrl: transaction.label_url || null,
-      labelPurchasedAt: new Date(),
+      labelPurchasedAt: adminFieldValue.serverTimestamp(),
     });
 
     return NextResponse.json({

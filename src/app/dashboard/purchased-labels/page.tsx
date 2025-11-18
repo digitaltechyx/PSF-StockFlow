@@ -12,10 +12,14 @@ import { format } from "date-fns";
 export default function PurchasedLabelsPage() {
   const { user, userProfile } = useAuth();
   const { data: labels, loading } = useCollection<LabelPurchase>(
-    userProfile ? `users/${userProfile.uid}/labelPurchases` : ""
+    userProfile?.uid ? `users/${userProfile.uid}/labelPurchases` : ""
   );
+  
+  // Ensure labels is always an array
+  const safeLabels = labels || [];
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | undefined) => {
+    if (!status) return <Badge variant="outline">Unknown</Badge>;
     switch (status) {
       case "completed":
       case "label_purchased":
@@ -81,7 +85,7 @@ export default function PurchasedLabelsPage() {
         </p>
       </div>
 
-      {!labels || labels.length === 0 ? (
+      {!safeLabels || safeLabels.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Package className="h-12 w-12 text-muted-foreground mb-4" />
@@ -93,15 +97,15 @@ export default function PurchasedLabelsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {labels.map((label) => (
-            <Card key={label.id} className="hover:shadow-md transition-shadow">
+          {safeLabels.map((label, index) => (
+            <Card key={label.id || `label-${index}`} className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-start justify-between">
-                  <CardTitle className="text-lg">Label #{label.id.slice(0, 8)}</CardTitle>
+                  <CardTitle className="text-lg">Label #{label.id ? label.id.slice(0, 8) : 'N/A'}</CardTitle>
                   {getStatusBadge(label.status)}
                 </div>
                 <CardDescription>
-                  {label.selectedRate.provider} - {label.selectedRate.serviceLevel}
+                  {label.selectedRate?.provider || 'Unknown'} - {label.selectedRate?.serviceLevel || 'Standard'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -110,7 +114,7 @@ export default function PurchasedLabelsPage() {
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium">To:</span>
                     <span className="text-muted-foreground">
-                      {label.toAddress.city}, {label.toAddress.state}
+                      {label.toAddress?.city || 'N/A'}, {label.toAddress?.state || 'N/A'}
                     </span>
                   </div>
                   {label.trackingNumber && (
@@ -126,22 +130,26 @@ export default function PurchasedLabelsPage() {
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">
-                        {format(
-                          new Date(
-                            typeof label.createdAt === "string"
-                              ? label.createdAt
-                              : label.createdAt.seconds * 1000
-                          ),
-                          "MMM d, yyyy"
-                        )}
+                        {(() => {
+                          try {
+                            const date = typeof label.createdAt === "string"
+                              ? new Date(label.createdAt)
+                              : label.createdAt?.seconds
+                                ? new Date(label.createdAt.seconds * 1000)
+                                : new Date();
+                            return format(date, "MMM d, yyyy");
+                          } catch (e) {
+                            return "Invalid date";
+                          }
+                        })()}
                       </span>
                     </div>
                   )}
                   <div className="pt-2 border-t">
                     <span className="font-medium">Amount: </span>
                     <span className="text-lg font-bold">
-                      {label.paymentCurrency.toUpperCase()} $
-                      {(label.paymentAmount / 100).toFixed(2)}
+                      {label.paymentCurrency?.toUpperCase() || 'USD'} $
+                      {label.paymentAmount ? (label.paymentAmount / 100).toFixed(2) : '0.00'}
                     </span>
                   </div>
                 </div>
@@ -162,7 +170,7 @@ export default function PurchasedLabelsPage() {
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        handleTrackShipment(label.trackingNumber!, label.selectedRate.provider)
+                        handleTrackShipment(label.trackingNumber!, label.selectedRate?.provider || '')
                       }
                       className="flex-1"
                     >

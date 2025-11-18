@@ -18,30 +18,50 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
-      setUser(fbUser);
-      if (!fbUser) {
+    // Set up auth state listener
+    // onAuthStateChanged fires immediately with the current user if authenticated
+    const unsubscribeAuth = onAuthStateChanged(
+      auth,
+      async (fbUser) => {
+        setUser(fbUser);
+        setAuthInitialized(true);
+        if (!fbUser) {
+          setUserProfile(null);
+          setLoading(false);
+        }
+        // If user exists, profile will be loaded in the next useEffect
+      },
+      (error) => {
+        console.error("Auth state error:", error);
+        setUser(null);
         setUserProfile(null);
+        setAuthInitialized(true);
         setLoading(false);
       }
-    });
+    );
     return () => unsubscribeAuth();
   }, []);
 
   useEffect(() => {
+    // Only proceed if auth has been initialized
+    if (!authInitialized) {
+      return;
+    }
+
     if (user) {
       setLoading(true); // Set loading to true while fetching profile
       const unsubProfile = onSnapshot(
         doc(db, "users", user.uid),
-        (doc) => {
-        if (doc.exists()) {
-          setUserProfile({ uid: user.uid, ...doc.data() } as UserProfile);
-        } else {
-          setUserProfile(null);
-        }
-        setLoading(false);
+        (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            setUserProfile({ uid: user.uid, ...docSnapshot.data() } as UserProfile);
+          } else {
+            setUserProfile(null);
+          }
+          setLoading(false);
         },
         (error) => {
           console.error("Error fetching user profile:", error);
@@ -52,9 +72,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return () => unsubProfile();
     } else {
       // If user is null, ensure loading is false
+      setUserProfile(null);
       setLoading(false);
     }
-  }, [user]);
+  }, [user, authInitialized]);
 
   const signOut = async () => {
     await firebaseSignOut(auth);
