@@ -26,6 +26,7 @@ import { Logo } from "@/components/logo";
 import { Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -121,9 +122,9 @@ export default function RegisterPage() {
         <div className="mx-auto grid w-full max-w-[500px] gap-6 px-4">
           <div className="grid gap-2 text-center">
             <Logo />
-            <h1 className="text-3xl font-bold font-headline mt-4">Create an account</h1>
+            <h1 className="text-3xl font-bold font-headline mt-4">Onboarding form</h1>
             <p className="text-balance text-muted-foreground">
-              Enter your information to create an account
+              Enter your information to complete the onboarding form
             </p>
           </div>
           <Form {...form}>
@@ -148,7 +149,11 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel>Phone Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="123-456-7890" {...field} />
+                      <PhoneInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Enter your phone number"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

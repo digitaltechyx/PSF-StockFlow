@@ -15,7 +15,10 @@ import {
   isUploadTimeAllowed, 
   getNewJerseyTimeString, 
   getTimeUntilNextUploadWindow,
-  getUploadWindowDescription 
+  getUploadWindowDescription,
+  getTimeUntilUploadWindowCloses,
+  getTimeUntilUploadWindowOpens,
+  formatTimeRemaining
 } from "@/lib/time-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -39,13 +42,18 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
   const [isUploading, setIsUploading] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>(getNewJerseyTimeString());
   const [uploadAllowed, setUploadAllowed] = useState<boolean>(isUploadTimeAllowed());
+  const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number }>(
+    uploadAllowed ? getTimeUntilUploadWindowCloses() : getTimeUntilUploadWindowOpens()
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Update time every second
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(getNewJerseyTimeString());
-      setUploadAllowed(isUploadTimeAllowed());
+      const allowed = isUploadTimeAllowed();
+      setUploadAllowed(allowed);
+      setTimeRemaining(allowed ? getTimeUntilUploadWindowCloses() : getTimeUntilUploadWindowOpens());
     }, 1000);
 
     return () => clearInterval(interval);
@@ -248,11 +256,17 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
               <>
                 <CheckCircle2 className="h-4 w-4" />
                 <span className="font-medium">Uploads Allowed</span>
+                <span className="text-xs font-mono">
+                  ({formatTimeRemaining(timeRemaining)} remaining)
+                </span>
               </>
             ) : (
               <>
                 <AlertCircle className="h-4 w-4" />
                 <span className="font-medium">Uploads Disabled</span>
+                <span className="text-xs font-mono">
+                  ({formatTimeRemaining(timeRemaining)} until available)
+                </span>
               </>
             )}
           </div>
@@ -262,14 +276,25 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
           <Alert variant="destructive" className="py-2 flex items-center gap-3 [&>svg]:relative [&>svg]:left-0 [&>svg]:top-0 [&>svg]:translate-y-0 [&>svg~*]:pl-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <AlertDescription className="text-xs sm:text-sm text-left flex-1">
-              {getUploadWindowDescription()}. {getTimeUntilNextUploadWindow()}
+              {getUploadWindowDescription()}. Uploads will be available in{" "}
+              <span className="font-mono font-semibold">{formatTimeRemaining(timeRemaining)}</span>
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {uploadAllowed && (
+          <Alert className="py-2 flex items-center gap-3 bg-green-50 border-green-200 [&>svg]:relative [&>svg]:left-0 [&>svg]:top-0 [&>svg]:translate-y-0 [&>svg~*]:pl-0">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+            <AlertDescription className="text-xs sm:text-sm text-left flex-1 text-green-800">
+              Uploads are currently allowed. Window closes in{" "}
+              <span className="font-mono font-semibold">{formatTimeRemaining(timeRemaining)}</span>
             </AlertDescription>
           </Alert>
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full">
-        <label className="flex-1 min-w-0">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 w-full">
+        <label className="w-full flex justify-center">
           <input
             ref={fileInputRef}
             type="file"
@@ -282,7 +307,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
           <Button
             type="button"
             variant="outline"
-            className="w-full sm:w-auto"
+            className="w-auto min-w-[180px] justify-center"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading || !uploadAllowed}
           >

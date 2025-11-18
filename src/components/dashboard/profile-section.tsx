@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,11 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { reauthenticateWithCredential, updatePassword, EmailAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { User, Lock, Phone, Building2, Hash, MapPin, Mail, AlertCircle } from "lucide-react";
+import { User, Lock, Phone, Building2, Hash, MapPin, Mail, AlertCircle, Upload, Image as ImageIcon, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PhoneInput } from "@/components/ui/phone-input";
+import imageCompression from "browser-image-compression";
 
 export function ProfileSection() {
   const { userProfile, user } = useAuth();
@@ -25,6 +28,8 @@ export function ProfileSection() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpdatePhone = async () => {
     if (!phone.trim()) {
@@ -153,6 +158,185 @@ export function ProfileSection() {
     }
   };
 
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1, // Maximum file size in MB
+      maxWidthOrHeight: 1920, // Maximum width or height
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!userProfile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "User profile not found.",
+      });
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File",
+        description: "Please select an image file.",
+      });
+      return;
+    }
+
+    // Check initial file size (before compression)
+    const maxSizeBytes = 10 * 1024 * 1024; // 10 MB initial limit
+    if (file.size > maxSizeBytes) {
+      toast({
+        variant: "destructive",
+        title: "File Too Large",
+        description: "Please select an image smaller than 10 MB. It will be compressed automatically.",
+      });
+      return;
+    }
+
+    try {
+      setIsUploadingPicture(true);
+
+      // Compress the image
+      const compressedFile = await compressImage(file);
+
+      // Check if compressed file is still over 1 MB
+      if (compressedFile.size > 1024 * 1024) {
+        toast({
+          variant: "destructive",
+          title: "Compression Failed",
+          description: "Unable to compress image below 1 MB. Please try a different image.",
+        });
+        return;
+      }
+
+      // Upload to Firebase Storage
+      const storagePath = `profile-pictures/${userProfile.uid}/${Date.now()}_${compressedFile.name}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, compressedFile);
+
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // Delete old profile picture if it exists
+      if (userProfile.profilePictureUrl) {
+        try {
+          // Extract storage path from the old URL or use it directly if it's a path
+          let oldPath = userProfile.profilePictureUrl;
+          // If it's a full URL, try to extract the path
+          if (oldPath.startsWith('http')) {
+            // Extract path from Firebase Storage URL
+            const urlParts = oldPath.split('/o/');
+            if (urlParts.length > 1) {
+              const pathPart = urlParts[1].split('?')[0];
+              oldPath = decodeURIComponent(pathPart);
+            }
+          }
+          const oldImageRef = ref(storage, oldPath);
+          await deleteObject(oldImageRef);
+        } catch (error) {
+          console.error("Error deleting old profile picture:", error);
+          // Continue even if deletion fails
+        }
+      }
+
+      // Update user profile in Firestore with download URL
+      await updateDoc(doc(db, "users", userProfile.uid), {
+        profilePictureUrl: downloadURL,
+      });
+
+      toast({
+        title: "Success",
+        description: "Profile picture uploaded successfully!",
+      });
+
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (error: any) {
+      console.error("Error uploading profile picture:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload profile picture. Please try again.",
+      });
+    } finally {
+      setIsUploadingPicture(false);
+    }
+  };
+
+  const handleRemoveProfilePicture = async () => {
+    if (!userProfile) return;
+
+    if (!userProfile.profilePictureUrl) {
+      toast({
+        variant: "destructive",
+        title: "No Picture",
+        description: "No profile picture to remove.",
+      });
+      return;
+    }
+
+    try {
+      setIsUploadingPicture(true);
+
+      // Delete from Firebase Storage
+      try {
+        // Extract storage path from the URL or use it directly if it's a path
+        let imagePath = userProfile.profilePictureUrl;
+        // If it's a full URL, try to extract the path
+        if (imagePath.startsWith('http')) {
+          // Extract path from Firebase Storage URL
+          const urlParts = imagePath.split('/o/');
+          if (urlParts.length > 1) {
+            const pathPart = urlParts[1].split('?')[0];
+            imagePath = decodeURIComponent(pathPart);
+          }
+        }
+        const imageRef = ref(storage, imagePath);
+        await deleteObject(imageRef);
+      } catch (error) {
+        console.error("Error deleting profile picture from storage:", error);
+        // Continue even if deletion fails
+      }
+
+      // Update user profile in Firestore
+      await updateDoc(doc(db, "users", userProfile.uid), {
+        profilePictureUrl: null,
+      });
+
+      toast({
+        title: "Success",
+        description: "Profile picture removed successfully!",
+      });
+    } catch (error: any) {
+      console.error("Error removing profile picture:", error);
+      toast({
+        variant: "destructive",
+        title: "Remove Failed",
+        description: error.message || "Failed to remove profile picture. Please try again.",
+      });
+    } finally {
+      setIsUploadingPicture(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -163,6 +347,78 @@ export function ProfileSection() {
         <CardDescription>Manage your account information</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Profile Picture Section */}
+        <div className="space-y-3 border-b pb-6">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+            <Label>Profile Picture</Label>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              {userProfile?.profilePictureUrl ? (
+                <img
+                  src={userProfile.profilePictureUrl}
+                  alt="Profile"
+                  className="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-gray-300">
+                  <User className="h-12 w-12 text-gray-400" />
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProfilePictureUpload}
+                  className="hidden"
+                  id="profile-picture-upload"
+                  disabled={isUploadingPicture}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingPicture}
+                  className="flex items-center gap-2"
+                >
+                  {isUploadingPicture ? (
+                    <>
+                      <Upload className="h-4 w-4 animate-pulse" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      Upload Picture
+                    </>
+                  )}
+                </Button>
+                {userProfile?.profilePictureUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRemoveProfilePicture}
+                    disabled={isUploadingPicture}
+                    className="flex items-center gap-2 text-red-600 hover:text-red-700"
+                  >
+                    <X className="h-4 w-4" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Maximum file size: 1 MB. Image will be compressed automatically.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Profile Information - Read Only */}
         <div className="space-y-4">
           <div>
@@ -303,11 +559,10 @@ export function ProfileSection() {
             </div>
           ) : (
             <div className="space-y-3">
-              <Input
-                type="tel"
-                placeholder="Enter your phone number"
+              <PhoneInput
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(value) => setPhone(value || "")}
+                placeholder="Enter your phone number"
               />
               <div className="flex gap-2">
                 <Button

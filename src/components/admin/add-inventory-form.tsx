@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { addDoc, collection } from "firebase/firestore";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,20 +15,21 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
+import type { InventoryItem } from "@/types";
 
-const formSchema = z.object({
+const baseFormSchema = z.object({
   productName: z.string().min(1, "Product name is required."),
   quantity: z.coerce.number().int().positive("Quantity must be a positive number."),
   dateAdded: z.date({ required_error: "A date is required." }),
   status: z.enum(["In Stock", "Out of Stock"], { required_error: "You need to select a status." }),
 });
 
-export function AddInventoryForm({ userId }: { userId: string }) {
+export function AddInventoryForm({ userId, inventory = [] }: { userId: string; inventory?: InventoryItem[] }) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.infer<typeof baseFormSchema>>({
+    resolver: zodResolver(baseFormSchema),
     defaultValues: {
       productName: "",
       quantity: 1,
@@ -36,7 +37,41 @@ export function AddInventoryForm({ userId }: { userId: string }) {
     },
   });
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  // Custom validation function for duplicate product names
+  const validateProductName = (name: string): boolean => {
+    if (!name || !name.trim()) return true; // Let base schema handle empty validation
+    const normalizedName = name.trim().toLowerCase();
+    return !inventory.some(
+      (item) => item.productName.trim().toLowerCase() === normalizedName
+    );
+  };
+
+  // Re-validate product name when inventory changes
+  useEffect(() => {
+    const productName = form.getValues("productName");
+    if (productName) {
+      const isValid = validateProductName(productName);
+      if (!isValid) {
+        form.setError("productName", {
+          type: "manual",
+          message: "This product name already exists in the inventory. Please use a different name.",
+        });
+      } else {
+        form.clearErrors("productName");
+      }
+    }
+  }, [inventory, form]);
+
+  async function onSubmit(values: z.infer<typeof baseFormSchema>) {
+    // Check for duplicate product name before submitting
+    if (!validateProductName(values.productName)) {
+      form.setError("productName", {
+        type: "manual",
+        message: "This product name already exists in the inventory. Please use a different name.",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       await addDoc(collection(db, `users/${userId}/inventory`), {
@@ -78,7 +113,23 @@ export function AddInventoryForm({ userId }: { userId: string }) {
                   <FormItem>
                     <FormLabel>Product Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., T-Shirt" {...field} />
+                      <Input 
+                        placeholder="e.g., T-Shirt" 
+                        {...field}
+                        onBlur={(e) => {
+                          field.onBlur();
+                          // Validate on blur
+                          const value = e.target.value;
+                          if (value && !validateProductName(value)) {
+                            form.setError("productName", {
+                              type: "manual",
+                              message: "This product name already exists in the inventory. Please use a different name.",
+                            });
+                          } else {
+                            form.clearErrors("productName");
+                          }
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

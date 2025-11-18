@@ -98,6 +98,8 @@ export function AdminInventoryManagement({
   const [editLogsPage, setEditLogsPage] = useState(1);
   const [recyclePage, setRecyclePage] = useState(1);
   const itemsPerPage = 10;
+  const inventoryItemsPerPage = 12; // 3 cards per row × 4 rows = 12 items per page for current inventory card view
+  const shippedItemsPerPage = 12; // 3 cards per row × 4 rows = 12 items per page for shipped inventory card view
 
   // Invoice range selection for generating invoice over specific dates
   const [invoiceFromDate, setInvoiceFromDate] = useState<Date | undefined>();
@@ -974,8 +976,16 @@ export function AdminInventoryManagement({
       return matchesSearch && matchesStatus && matchesDate && matchesDatePicker;
     });
 
-    // Apply sorting
+    // Apply sorting - prioritize items with quantity < 5 at the top
     filtered.sort((a, b) => {
+      const aLowStock = a.quantity < 5;
+      const bLowStock = b.quantity < 5;
+      
+      // If one is low stock and the other isn't, low stock comes first
+      if (aLowStock && !bLowStock) return -1;
+      if (!aLowStock && bLowStock) return 1;
+      
+      // If both are low stock or both are not, apply the selected sort
       switch (inventorySortBy) {
         case "name-asc":
           return a.productName.localeCompare(b.productName);
@@ -1006,10 +1016,10 @@ export function AdminInventoryManagement({
     return filtered;
   }, [inventory, inventorySearch, inventoryStatusFilter, inventoryDateFilter, inventoryFromDate, inventoryToDate, inventorySortBy]);
 
-  // Pagination for inventory
-  const inventoryTotalPages = Math.ceil(filteredInventory.length / itemsPerPage);
-  const inventoryStartIndex = (inventoryPage - 1) * itemsPerPage;
-  const inventoryEndIndex = inventoryStartIndex + itemsPerPage;
+  // Pagination for inventory (4 items per page for card view)
+  const inventoryTotalPages = Math.ceil(filteredInventory.length / inventoryItemsPerPage);
+  const inventoryStartIndex = (inventoryPage - 1) * inventoryItemsPerPage;
+  const inventoryEndIndex = inventoryStartIndex + inventoryItemsPerPage;
   const paginatedInventory = filteredInventory.slice(inventoryStartIndex, inventoryEndIndex);
   const resetInventoryPagination = () => setInventoryPage(1);
 
@@ -1033,10 +1043,10 @@ export function AdminInventoryManagement({
     });
   }, [shipped, shippedSearch, shippedDateFilter]);
 
-  // Pagination for shipped
-  const shippedTotalPages = Math.ceil(filteredShipped.length / itemsPerPage);
-  const shippedStartIndex = (shippedPage - 1) * itemsPerPage;
-  const shippedEndIndex = shippedStartIndex + itemsPerPage;
+  // Pagination for shipped (12 items per page for card view)
+  const shippedTotalPages = Math.ceil(filteredShipped.length / shippedItemsPerPage);
+  const shippedStartIndex = (shippedPage - 1) * shippedItemsPerPage;
+  const shippedEndIndex = shippedStartIndex + shippedItemsPerPage;
   const paginatedShipped = filteredShipped.slice(shippedStartIndex, shippedEndIndex);
   const resetShippedPagination = () => setShippedPage(1);
 
@@ -1439,91 +1449,98 @@ export function AdminInventoryManagement({
               ))}
             </div>
           ) : filteredInventory.length > 0 ? (
-            <div className="space-y-3">
-              {paginatedInventory.map((item) => (
-                <div key={item.id} className="p-3 sm:p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm sm:text-base truncate">{item.productName}</h3>
-                      <div className="mt-1 text-xs sm:text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-                        <span>Qty: {item.quantity}</span>
-                        <span>Added: {formatDate(item.dateAdded)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:justify-end">
-                      <Badge variant={item.status === "In Stock" ? "default" : "destructive"}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {paginatedInventory.map((item) => {
+                const isLowStock = item.quantity < 5;
+                return (
+                <Card key={item.id} className={`hover:shadow-md transition-shadow flex flex-col h-full ${isLowStock ? 'border-red-500 border-2 bg-red-50 dark:bg-red-950/20' : ''}`}>
+                  <CardContent className="p-4 flex flex-col flex-1">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <h3 className={`font-semibold text-base leading-tight flex-1 min-w-0 ${isLowStock ? 'text-red-700 dark:text-red-400' : ''}`}>{item.productName}</h3>
+                      <Badge variant={item.status === "In Stock" ? "default" : "destructive"} className="text-xs shrink-0">
                         {item.status}
                       </Badge>
                     </div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 sm:flex sm:justify-end gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditProductWithLog(item)}
-                          className="w-full sm:w-auto"
-                        >
-                          <Edit className="h-4 w-4 mr-2" />
-                          <span className="sm:hidden">Edit</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Edit product details</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRestockProduct(item)}
-                          className="w-full sm:w-auto text-green-600 hover:text-green-700"
-                        >
-                          <Package className="h-4 w-4 mr-2" />
-                          <span className="sm:hidden">Restock</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Restock product</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleRecycleProduct(item)}
-                          className="w-full sm:w-auto text-orange-600 hover:text-orange-700"
-                        >
-                          <RotateCcw className="h-4 w-4 mr-2" />
-                          <span className="sm:hidden">Recycle</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Move to Recycle Bin</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleDeleteProduct(item)}
-                          className="w-full sm:w-auto text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          <span className="sm:hidden">Delete</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Permanently delete product</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              ))}
+                    <div className="space-y-2 mb-4 flex-1">
+                      <div className={`flex items-center gap-2 text-sm ${isLowStock ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>
+                        <Package className={`h-4 w-4 shrink-0 ${isLowStock ? 'text-red-600 dark:text-red-400' : ''}`} />
+                        <span>Qty: <span className={`font-semibold ${isLowStock ? 'text-red-800 dark:text-red-300' : 'text-foreground'}`}>{item.quantity}</span></span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4 shrink-0" />
+                        <span className="truncate">Added: {formatDate(item.dateAdded)}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditProductWithLog(item)}
+                            className="w-full"
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Edit</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Edit product details</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestockProduct(item)}
+                            className="w-full text-green-600 hover:text-green-700"
+                          >
+                            <Package className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Restock</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Restock product</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleRecycleProduct(item)}
+                            className="w-full text-orange-600 hover:text-orange-700"
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Recycle</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Move to Recycle Bin</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleDeleteProduct(item)}
+                            className="w-full text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Delete</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Permanently delete product</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </CardContent>
+                </Card>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-8">
@@ -1534,7 +1551,7 @@ export function AdminInventoryManagement({
           )}
 
           {/* Pagination Controls */}
-          {filteredInventory.length > itemsPerPage && (
+          {filteredInventory.length > inventoryItemsPerPage && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
                 Showing {inventoryStartIndex + 1} to {Math.min(inventoryEndIndex, filteredInventory.length)} of {filteredInventory.length} items
@@ -1580,7 +1597,7 @@ export function AdminInventoryManagement({
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
-            <AddInventoryForm userId={selectedUser.uid} />
+            <AddInventoryForm userId={selectedUser.uid} inventory={inventory} />
           </CardContent>
         </Card>
       )}
@@ -1699,35 +1716,15 @@ export function AdminInventoryManagement({
             </div>
             
             {filteredShipped.length > 0 ? (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {paginatedShipped.map((item) => (
-                  <div key={item.id} className="p-3 sm:p-4 border rounded-lg">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm sm:text-base truncate">{item.productName}</h3>
-                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:text-sm text-muted-foreground">
-                          <span className="col-span-1">Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
-                          <span className="col-span-1">Remaining: {item.remainingQty}</span>
-                          <span className="col-span-1">Pack: {item.packOf}</span>
-                          <span className="col-span-1 truncate" title={item.shipTo}>Ship To: {item.shipTo}</span>
-                          <span className="col-span-1">Date: {formatDate(item.date)}</span>
-                        </div>
-                        {item.remarks && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto p-0 text-left justify-start text-xs sm:text-sm text-muted-foreground mt-2"
-                            onClick={() => handleRemarksClick(item.remarks || "")}
-                          >
-                            <span className="truncate max-w-[180px] sm:max-w-none">Remarks: {item.remarks}</span>
-                            <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
-                          </Button>
-                        )}
-                      </div>
-                      <div className="w-full sm:w-auto grid grid-cols-1 sm:flex gap-2 sm:items-center sm:justify-end">
+                  <Card key={item.id} className="hover:shadow-md transition-shadow flex flex-col h-full">
+                    <CardContent className="p-4 flex flex-col flex-1">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <h3 className="font-semibold text-base leading-tight flex-1 min-w-0">{item.productName}</h3>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm" className="w-full sm:w-auto">
+                            <Button variant="destructive" size="sm" className="shrink-0">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -1751,8 +1748,43 @@ export function AdminInventoryManagement({
                           </AlertDialogContent>
                         </AlertDialog>
                       </div>
-                    </div>
-                  </div>
+                      <div className="space-y-2 mb-4 flex-1">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Truck className="h-4 w-4 shrink-0" />
+                          <span>Shipped: <span className="font-semibold text-foreground">{(item as any).boxesShipped ?? item.shippedQty}</span></span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Package className="h-4 w-4 shrink-0" />
+                          <span>Remaining: <span className="font-semibold text-foreground">{item.remainingQty}</span></span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Package className="h-4 w-4 shrink-0" />
+                          <span>Pack: <span className="font-semibold text-foreground">{item.packOf}</span></span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Truck className="h-4 w-4 shrink-0" />
+                          <span className="truncate" title={item.shipTo}>To: {item.shipTo}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4 shrink-0" />
+                          <span className="truncate">Date: {formatDate(item.date)}</span>
+                        </div>
+                        {item.remarks && (
+                          <div className="mt-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-0 text-left justify-start text-xs text-muted-foreground w-full"
+                              onClick={() => handleRemarksClick(item.remarks || "")}
+                            >
+                              <span className="truncate">Remarks: {item.remarks}</span>
+                              <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             ) : (
@@ -1764,7 +1796,7 @@ export function AdminInventoryManagement({
             )}
 
             {/* Pagination Controls for Shipped Orders */}
-            {filteredShipped.length > itemsPerPage && (
+            {filteredShipped.length > shippedItemsPerPage && (
               <div className="flex items-center justify-between mt-4 pt-4 border-t">
                 <div className="text-sm text-muted-foreground">
                   Showing {shippedStartIndex + 1} to {Math.min(shippedEndIndex, filteredShipped.length)} of {filteredShipped.length} items

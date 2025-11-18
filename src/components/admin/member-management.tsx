@@ -212,6 +212,16 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => {
     const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
     const [isUserEditMode, setIsUserEditMode] = useState(false);
+
+    const getAvatarSrc = () => {
+      if (user.profilePictureUrl) {
+        return user.profilePictureUrl;
+      }
+      if (user.email) {
+        return `https://avatar.vercel.sh/${encodeURIComponent(user.email)}.png`;
+      }
+      return undefined;
+    };
     
     return (
     <Card className="hover:shadow-md transition-shadow h-full flex flex-col">
@@ -219,7 +229,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
         {/* Top: Avatar + Info */}
         <div className="flex items-start gap-3 mb-3">
           <Avatar className="h-12 w-12 flex-shrink-0">
-            <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
+            <AvatarImage src={getAvatarSrc()} />
             <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">

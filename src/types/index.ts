@@ -16,6 +16,7 @@ export interface UserProfile {
   state?: string | null;
   country?: string | null;
   zipCode?: string | null;
+  profilePictureUrl?: string | null;
   role: UserRole;
   status?: UserStatus; // Optional for backward compatibility
   createdAt?: Date;

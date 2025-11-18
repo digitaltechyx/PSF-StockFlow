@@ -161,11 +161,12 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
-          <div className="mt-4 text-center text-sm">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="underline text-primary">
-              Sign up
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            If you don&apos;t have an account, please{" "}
+            <Link href="/register" className="underline text-primary font-medium">
+              fill out the onboarding form
             </Link>
+            {" "}to complete your registration.
           </div>
         </div>
       </div>

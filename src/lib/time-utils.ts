@@ -126,3 +126,89 @@ export function getUploadWindowDescription(): string {
   return "Uploads are allowed between 12:00 AM - 11:00 AM (New Jersey Time)";
 }
 
+/**
+ * Get remaining time until upload window closes (11:00 AM)
+ * @returns object with hours, minutes, seconds remaining
+ */
+export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: number; seconds: number } {
+  const now = new Date();
+  const njTimeString = now.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  
+  const [hours, minutes, seconds] = njTimeString.split(":").map(Number);
+  
+  // Calculate time until 11:00 AM
+  const targetHour = 11;
+  const targetMinute = 0;
+  const targetSecond = 0;
+  
+  let totalSecondsRemaining = (targetHour * 3600 + targetMinute * 60 + targetSecond) - (hours * 3600 + minutes * 60 + seconds);
+  
+  // If we're past 11 AM, return 0
+  if (totalSecondsRemaining <= 0) {
+    return { hours: 0, minutes: 0, seconds: 0 };
+  }
+  
+  const hoursRemaining = Math.floor(totalSecondsRemaining / 3600);
+  const minutesRemaining = Math.floor((totalSecondsRemaining % 3600) / 60);
+  const secondsRemaining = totalSecondsRemaining % 60;
+  
+  return { hours: hoursRemaining, minutes: minutesRemaining, seconds: secondsRemaining };
+}
+
+/**
+ * Get remaining time until upload window opens (12:00 AM next day)
+ * @returns object with hours, minutes, seconds remaining
+ */
+export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: number; seconds: number } {
+  const now = new Date();
+  const njTimeString = now.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  
+  const [hours, minutes, seconds] = njTimeString.split(":").map(Number);
+  
+  // Calculate time until midnight (12:00 AM next day)
+  const targetHour = 24; // Midnight
+  const targetMinute = 0;
+  const targetSecond = 0;
+  
+  const currentTotalSeconds = hours * 3600 + minutes * 60 + seconds;
+  const targetTotalSeconds = targetHour * 3600 + targetMinute * 60 + targetSecond;
+  
+  let totalSecondsRemaining = targetTotalSeconds - currentTotalSeconds;
+  
+  // If we're at or past midnight, return 0
+  if (totalSecondsRemaining <= 0) {
+    return { hours: 0, minutes: 0, seconds: 0 };
+  }
+  
+  const hoursRemaining = Math.floor(totalSecondsRemaining / 3600);
+  const minutesRemaining = Math.floor((totalSecondsRemaining % 3600) / 60);
+  const secondsRemaining = totalSecondsRemaining % 60;
+  
+  return { hours: hoursRemaining, minutes: minutesRemaining, seconds: secondsRemaining };
+}
+
+/**
+ * Format time remaining as a readable string
+ */
+export function formatTimeRemaining(time: { hours: number; minutes: number; seconds: number }): string {
+  if (time.hours > 0) {
+    return `${time.hours}h ${time.minutes}m ${time.seconds}s`;
+  } else if (time.minutes > 0) {
+    return `${time.minutes}m ${time.seconds}s`;
+  } else {
+    return `${time.seconds}s`;
+  }
+}
+

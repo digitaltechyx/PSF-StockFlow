@@ -43,6 +43,20 @@ export function DashboardHeader({ onProfileClick }: DashboardHeaderProps) {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   }
 
+  const getAvatarSrc = () => {
+    if (userProfile?.profilePictureUrl) {
+      return userProfile.profilePictureUrl;
+    }
+
+    if (userProfile?.email) {
+      return `https://avatar.vercel.sh/${encodeURIComponent(
+        userProfile.email
+      )}.png`;
+    }
+
+    return undefined;
+  };
+
   return (
     <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-4 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
       <SidebarTrigger className="-ml-1" />
@@ -59,7 +73,7 @@ export function DashboardHeader({ onProfileClick }: DashboardHeaderProps) {
               <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                 <Avatar className="h-10 w-10 border-2 border-border">
                   <AvatarImage 
-                    src={`https://avatar.vercel.sh/${userProfile?.email}.png`} 
+                    src={getAvatarSrc()}
                     alt={userProfile?.name || 'User'} 
                   />
                   <AvatarFallback className="text-sm font-semibold bg-gradient-to-br from-blue-500 to-purple-600 text-white">
