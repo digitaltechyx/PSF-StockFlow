@@ -16,8 +16,8 @@ export default function BuyLabelsPage() {
           </p>
         </div>
         <Link href="/dashboard/purchased-labels">
-          <Button variant="outline">
-            <Package className="h-4 w-4 mr-2" />
+          <Button variant="default" size="lg" className="shadow-md hover:shadow-lg transition-shadow">
+            <Package className="h-5 w-5 mr-2" />
             View Purchased Labels
           </Button>
         </Link>

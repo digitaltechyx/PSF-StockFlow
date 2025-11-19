@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -20,6 +21,78 @@ import { getStripePublishableKey } from "@/lib/stripe";
 import { PaymentDialog } from "./payment-dialog";
 import type { ShippingAddress, ParcelDetails, ShippingRate } from "@/types";
 
+// US States list
+const US_STATES = [
+  { value: "AL", label: "Alabama" },
+  { value: "AK", label: "Alaska" },
+  { value: "AZ", label: "Arizona" },
+  { value: "AR", label: "Arkansas" },
+  { value: "CA", label: "California" },
+  { value: "CO", label: "Colorado" },
+  { value: "CT", label: "Connecticut" },
+  { value: "DE", label: "Delaware" },
+  { value: "FL", label: "Florida" },
+  { value: "GA", label: "Georgia" },
+  { value: "HI", label: "Hawaii" },
+  { value: "ID", label: "Idaho" },
+  { value: "IL", label: "Illinois" },
+  { value: "IN", label: "Indiana" },
+  { value: "IA", label: "Iowa" },
+  { value: "KS", label: "Kansas" },
+  { value: "KY", label: "Kentucky" },
+  { value: "LA", label: "Louisiana" },
+  { value: "ME", label: "Maine" },
+  { value: "MD", label: "Maryland" },
+  { value: "MA", label: "Massachusetts" },
+  { value: "MI", label: "Michigan" },
+  { value: "MN", label: "Minnesota" },
+  { value: "MS", label: "Mississippi" },
+  { value: "MO", label: "Missouri" },
+  { value: "MT", label: "Montana" },
+  { value: "NE", label: "Nebraska" },
+  { value: "NV", label: "Nevada" },
+  { value: "NH", label: "New Hampshire" },
+  { value: "NJ", label: "New Jersey" },
+  { value: "NM", label: "New Mexico" },
+  { value: "NY", label: "New York" },
+  { value: "NC", label: "North Carolina" },
+  { value: "ND", label: "North Dakota" },
+  { value: "OH", label: "Ohio" },
+  { value: "OK", label: "Oklahoma" },
+  { value: "OR", label: "Oregon" },
+  { value: "PA", label: "Pennsylvania" },
+  { value: "RI", label: "Rhode Island" },
+  { value: "SC", label: "South Carolina" },
+  { value: "SD", label: "South Dakota" },
+  { value: "TN", label: "Tennessee" },
+  { value: "TX", label: "Texas" },
+  { value: "UT", label: "Utah" },
+  { value: "VT", label: "Vermont" },
+  { value: "VA", label: "Virginia" },
+  { value: "WA", label: "Washington" },
+  { value: "WV", label: "West Virginia" },
+  { value: "WI", label: "Wisconsin" },
+  { value: "WY", label: "Wyoming" },
+  { value: "DC", label: "District of Columbia" },
+];
+
+// Canadian Provinces and Territories
+const CANADIAN_PROVINCES = [
+  { value: "AB", label: "Alberta" },
+  { value: "BC", label: "British Columbia" },
+  { value: "MB", label: "Manitoba" },
+  { value: "NB", label: "New Brunswick" },
+  { value: "NL", label: "Newfoundland and Labrador" },
+  { value: "NS", label: "Nova Scotia" },
+  { value: "ON", label: "Ontario" },
+  { value: "PE", label: "Prince Edward Island" },
+  { value: "QC", label: "Quebec" },
+  { value: "SK", label: "Saskatchewan" },
+  { value: "NT", label: "Northwest Territories" },
+  { value: "NU", label: "Nunavut" },
+  { value: "YT", label: "Yukon" },
+];
+
 const addressSchema = z.object({
   name: z.string().min(1, "Name is required"),
   street1: z.string().min(1, "Street address is required"),
@@ -36,9 +109,16 @@ const parcelSchema = z.object({
   length: z.coerce.number().positive("Length must be positive"),
   width: z.coerce.number().positive("Width must be positive"),
   height: z.coerce.number().positive("Height must be positive"),
-  weight: z.coerce.number().positive("Weight must be positive"),
-  weightUnit: z.enum(["lb", "oz", "kg", "g"]),
+  weightPounds: z.coerce.number().min(0, "Pounds must be 0 or greater").max(70, "Max: 70lbs"),
+  weightOunces: z.coerce.number().min(0, "Ounces must be 0 or greater").max(15.999, "Max: 15.999 ozs"),
   distanceUnit: z.enum(["in", "ft", "cm", "m"]),
+}).refine((data) => {
+  // Total weight must be greater than 0
+  const totalWeightOunces = (data.weightPounds * 16) + data.weightOunces;
+  return totalWeightOunces > 0;
+}, {
+  message: "Total weight must be greater than 0",
+  path: ["weightPounds"],
 });
 
 const formSchema = z.object({
@@ -52,6 +132,7 @@ type FormValues = z.infer<typeof formSchema>;
 export function BuyLabelsForm() {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [loadingRates, setLoadingRates] = useState(false);
   const [rates, setRates] = useState<ShippingRate[]>([]);
@@ -94,11 +175,11 @@ export function BuyLabelsForm() {
         email: "",
       },
       parcel: {
-        length: 10,
-        width: 8,
-        height: 6,
-        weight: 1,
-        weightUnit: "lb",
+        length: 15,
+        width: 4,
+        height: 4,
+        weightPounds: 0,
+        weightOunces: 13,
         distanceUnit: "in",
       },
     },
@@ -116,8 +197,17 @@ export function BuyLabelsForm() {
 
     setLoadingRates(true);
     try {
-      // TODO: Call Shippo API to get rates
-      // For now, we'll create a placeholder
+      // Convert pounds and ounces to total weight in ounces
+      const totalWeightOunces = (data.parcel.weightPounds * 16) + data.parcel.weightOunces;
+      const totalWeightPounds = totalWeightOunces / 16;
+      
+      // Prepare parcel data for API (convert to pounds for Shippo)
+      const parcelData = {
+        ...data.parcel,
+        weight: totalWeightPounds,
+        weightUnit: "lb" as const,
+      };
+
       const response = await fetch("/api/shippo/rates", {
         method: "POST",
         headers: {
@@ -126,7 +216,7 @@ export function BuyLabelsForm() {
         body: JSON.stringify({
           fromAddress: data.fromAddress,
           toAddress: data.toAddress,
-          parcel: data.parcel,
+          parcel: parcelData,
         }),
       });
 
@@ -177,6 +267,17 @@ export function BuyLabelsForm() {
     setLoading(true);
 
     try {
+      // Convert pounds and ounces to total weight in ounces, then to pounds
+      const totalWeightOunces = (formData.parcel.weightPounds * 16) + formData.parcel.weightOunces;
+      const totalWeightPounds = totalWeightOunces / 16;
+      
+      // Prepare parcel data for API
+      const parcelData = {
+        ...formData.parcel,
+        weight: totalWeightPounds,
+        weightUnit: "lb" as const,
+      };
+
       // Create payment intent
       const paymentResponse = await fetch("/api/stripe/create-payment", {
         method: "POST",
@@ -189,7 +290,7 @@ export function BuyLabelsForm() {
           currency: selectedRate.currency.toLowerCase(),
           fromAddress: formData.fromAddress,
           toAddress: formData.toAddress,
-          parcel: formData.parcel,
+          parcel: parcelData,
           selectedRate: {
             objectId: selectedRate.object_id,
             amount: selectedRate.amount,
@@ -233,6 +334,9 @@ export function BuyLabelsForm() {
     setSelectedRate(null);
     setShipmentId(null);
     setClientSecret(null);
+    
+    // Redirect to purchased labels page
+    router.push("/dashboard/purchased-labels");
   };
 
   return (
@@ -323,13 +427,25 @@ export function BuyLabelsForm() {
                   />
                   <FormField
                     control={form.control}
-                    name="fromAddress.city"
+                    name="fromAddress.country"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="New York" {...field} />
-                        </FormControl>
+                        <FormLabel>Country *</FormLabel>
+                        <Select onValueChange={(value) => {
+                          field.onChange(value);
+                          // Reset state when country changes
+                          form.setValue("fromAddress.state", "");
+                        }} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select country" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="US">United States</SelectItem>
+                            <SelectItem value="CA">Canada</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -337,11 +453,40 @@ export function BuyLabelsForm() {
                   <FormField
                     control={form.control}
                     name="fromAddress.state"
+                    render={({ field }) => {
+                      const selectedCountry = form.watch("fromAddress.country");
+                      const stateOptions = selectedCountry === "CA" ? CANADIAN_PROVINCES : US_STATES;
+                      
+                      return (
+                        <FormItem>
+                          <FormLabel>{selectedCountry === "CA" ? "Province" : "State"} *</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={`Select ${selectedCountry === "CA" ? "province" : "state"}`} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {stateOptions.map((state) => (
+                                <SelectItem key={state.value} value={state.value}>
+                                  {state.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fromAddress.city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>State *</FormLabel>
+                        <FormLabel>City *</FormLabel>
                         <FormControl>
-                          <Input placeholder="NY" maxLength={2} {...field} />
+                          <Input placeholder="New York" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -356,28 +501,6 @@ export function BuyLabelsForm() {
                         <FormControl>
                           <Input placeholder="10001" {...field} />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="fromAddress.country"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Country *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select country" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="US">United States</SelectItem>
-                            <SelectItem value="CA">Canada</SelectItem>
-                            <SelectItem value="MX">Mexico</SelectItem>
-                          </SelectContent>
-                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -446,13 +569,25 @@ export function BuyLabelsForm() {
                   />
                   <FormField
                     control={form.control}
-                    name="toAddress.city"
+                    name="toAddress.country"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Los Angeles" {...field} />
-                        </FormControl>
+                        <FormLabel>Country *</FormLabel>
+                        <Select onValueChange={(value) => {
+                          field.onChange(value);
+                          // Reset state when country changes
+                          form.setValue("toAddress.state", "");
+                        }} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select country" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="US">United States</SelectItem>
+                            <SelectItem value="CA">Canada</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -460,11 +595,40 @@ export function BuyLabelsForm() {
                   <FormField
                     control={form.control}
                     name="toAddress.state"
+                    render={({ field }) => {
+                      const selectedCountry = form.watch("toAddress.country");
+                      const stateOptions = selectedCountry === "CA" ? CANADIAN_PROVINCES : US_STATES;
+                      
+                      return (
+                        <FormItem>
+                          <FormLabel>{selectedCountry === "CA" ? "Province" : "State"} *</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={`Select ${selectedCountry === "CA" ? "province" : "state"}`} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {stateOptions.map((state) => (
+                                <SelectItem key={state.value} value={state.value}>
+                                  {state.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="toAddress.city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>State *</FormLabel>
+                        <FormLabel>City *</FormLabel>
                         <FormControl>
-                          <Input placeholder="CA" maxLength={2} {...field} />
+                          <Input placeholder="Los Angeles" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -483,137 +647,238 @@ export function BuyLabelsForm() {
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="toAddress.country"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Country *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select country" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="US">United States</SelectItem>
-                            <SelectItem value="CA">Canada</SelectItem>
-                            <SelectItem value="MX">Mexico</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
               </div>
 
               {/* Parcel Details */}
-              <div className="space-y-4 pt-4 border-t">
+              <div className="space-y-6 pt-4 border-t">
                 <div className="flex items-center gap-2 mb-4">
                   <Package className="h-5 w-5 text-orange-600" />
-                  <h3 className="text-lg font-semibold">Parcel Details</h3>
+                  <h3 className="text-lg font-semibold">Packaging Details</h3>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="parcel.length"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Length *</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" placeholder="10" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parcel.width"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Width *</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" placeholder="8" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parcel.height"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Height *</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" placeholder="6" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parcel.weight"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Weight *</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" placeholder="1" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parcel.distanceUnit"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Dimension Unit *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="in">Inches</SelectItem>
-                            <SelectItem value="ft">Feet</SelectItem>
-                            <SelectItem value="cm">Centimeters</SelectItem>
-                            <SelectItem value="m">Meters</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parcel.weightUnit"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Weight Unit *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="lb">Pounds</SelectItem>
-                            <SelectItem value="oz">Ounces</SelectItem>
-                            <SelectItem value="kg">Kilograms</SelectItem>
-                            <SelectItem value="g">Grams</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                {/* Weight Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold">Weight (includes packaging)</h3>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <FormField
+                            control={form.control}
+                            name="parcel.weightPounds"
+                            render={({ field }) => (
+                              <FormItem className="flex-1">
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="1" 
+                                    min="0"
+                                    max="70"
+                                    placeholder="0" 
+                                    className="rounded-r-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => {
+                                      const value = parseFloat(e.target.value) || 0;
+                                      if (value <= 70) {
+                                        field.onChange(value);
+                                      }
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <div className="flex items-center px-3 border border-l-0 border-input bg-muted rounded-r-md text-sm font-medium">
+                            lbs
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Max: 70lbs</p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <FormField
+                            control={form.control}
+                            name="parcel.weightOunces"
+                            render={({ field }) => (
+                              <FormItem className="flex-1">
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.001" 
+                                    min="0"
+                                    max="15.999"
+                                    placeholder="13" 
+                                    className="rounded-r-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => {
+                                      const value = parseFloat(e.target.value) || 0;
+                                      if (value <= 15.999) {
+                                        field.onChange(value);
+                                      }
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <div className="flex items-center px-3 border border-l-0 border-input bg-muted rounded-r-md text-sm font-medium">
+                            ozs
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Enter Package weight in ounces (1 pound = 16 ozs).</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dimensions Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold">Dimensions</h3>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Length</Label>
+                        <div className="flex gap-2">
+                          <FormField
+                            control={form.control}
+                            name="parcel.length"
+                            render={({ field }) => (
+                              <FormItem className="flex-1">
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.01" 
+                                    placeholder="15" 
+                                    className="rounded-r-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="parcel.distanceUnit"
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="w-[70px] rounded-l-none border-l-0">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="in">in</SelectItem>
+                                    <SelectItem value="ft">ft</SelectItem>
+                                    <SelectItem value="cm">cm</SelectItem>
+                                    <SelectItem value="m">m</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Width</Label>
+                        <div className="flex gap-2">
+                          <FormField
+                            control={form.control}
+                            name="parcel.width"
+                            render={({ field }) => (
+                              <FormItem className="flex-1">
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.01" 
+                                    placeholder="4" 
+                                    className="rounded-r-none"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="parcel.distanceUnit"
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="w-[70px] rounded-l-none border-l-0">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="in">in</SelectItem>
+                                    <SelectItem value="ft">ft</SelectItem>
+                                    <SelectItem value="cm">cm</SelectItem>
+                                    <SelectItem value="m">m</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Height</Label>
+                        <div className="flex gap-2">
+                          <FormField
+                            control={form.control}
+                            name="parcel.height"
+                            render={({ field }) => (
+                              <FormItem className="flex-1">
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.01" 
+                                    placeholder="4" 
+                                    className="rounded-r-none"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="parcel.distanceUnit"
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="w-[70px] rounded-l-none border-l-0">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="in">in</SelectItem>
+                                    <SelectItem value="ft">ft</SelectItem>
+                                    <SelectItem value="cm">cm</SelectItem>
+                                    <SelectItem value="m">m</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
               </div>
 
               <Button type="submit" disabled={loadingRates} className="w-full">

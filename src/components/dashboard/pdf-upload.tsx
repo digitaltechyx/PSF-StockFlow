@@ -84,7 +84,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
       toast({
         variant: "destructive",
         title: "Upload Not Allowed",
-        description: `Uploads are only allowed between 12:00 AM - 11:00 AM (New Jersey Time) for same day fulfilment. ${getTimeUntilNextUploadWindow()}`,
+        description: `Uploads are only allowed between 5:00 PM - 11:00 AM (New Jersey Time) for same day fulfilment. ${getTimeUntilNextUploadWindow()}`,
       });
       return;
     }

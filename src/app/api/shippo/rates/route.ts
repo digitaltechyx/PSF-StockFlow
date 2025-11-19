@@ -113,19 +113,26 @@ export async function POST(request: NextRequest) {
     const ratesData = await ratesResponse.json();
     const rates = Array.isArray(ratesData.results) ? ratesData.results : ratesData;
 
-    // Format rates for frontend
-    const formattedRates = rates.map((rate: any) => ({
-      object_id: rate.object_id,
-      amount: rate.amount,
-      currency: rate.currency,
-      provider: rate.provider,
-      servicelevel: {
-        name: rate.servicelevel?.name || rate.servicelevel_name || 'Standard',
-        token: rate.servicelevel?.token || rate.servicelevel_token || '',
-      },
-      estimated_days: rate.estimated_days,
-      shipment: shipment.object_id, // Store shipment ID for label purchase
-    }));
+    // Format rates for frontend and add 10 cents admin markup
+    const ADMIN_MARKUP = 0.10; // 10 cents admin profit
+    const formattedRates = rates.map((rate: any) => {
+      const baseAmount = parseFloat(rate.amount) || 0;
+      const markedUpAmount = (baseAmount + ADMIN_MARKUP).toFixed(2);
+      
+      return {
+        object_id: rate.object_id,
+        amount: markedUpAmount, // Amount with 10 cents markup
+        originalAmount: rate.amount, // Store original amount for Shippo purchase
+        currency: rate.currency,
+        provider: rate.provider,
+        servicelevel: {
+          name: rate.servicelevel?.name || rate.servicelevel_name || 'Standard',
+          token: rate.servicelevel?.token || rate.servicelevel_token || '',
+        },
+        estimated_days: rate.estimated_days,
+        shipment: shipment.object_id, // Store shipment ID for label purchase
+      };
+    });
 
     return NextResponse.json({
       rates: formattedRates,

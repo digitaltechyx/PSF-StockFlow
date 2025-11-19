@@ -68,15 +68,16 @@ function getNewJerseyHours(): number {
 }
 
 /**
- * Check if current New Jersey time is within upload window (12am - 11am)
+ * Check if current New Jersey time is within upload window (5pm - 11am)
  * @returns true if uploads are allowed, false otherwise
  */
 export function isUploadTimeAllowed(): boolean {
   const hours = getNewJerseyHours();
   
-  // Allow uploads between 12am (0) and 11am (11)
-  // 0 <= hours < 11 means 12:00 AM to 10:59 AM (uploads allowed until 11:00 AM)
-  return hours >= 0 && hours < 11;
+  // Allow uploads between 5pm (17) and 11am (11) next day
+  // hours >= 17 means 5:00 PM to 11:59 PM
+  // hours < 11 means 12:00 AM to 10:59 AM (uploads allowed until 11:00 AM)
+  return hours >= 17 || hours < 11;
 }
 
 /**
@@ -95,27 +96,27 @@ export function getTimeUntilNextUploadWindow(): string {
   
   const [hours, minutes] = njTimeString.split(":").map(Number);
   
-  // If it's 11am or later, calculate time until midnight (next day)
-  if (hours >= 11) {
-    const hoursUntilMidnight = 24 - hours;
-    const minutesUntilMidnight = 60 - minutes;
+  // If it's between 11am and 5pm, calculate time until 5pm (17:00)
+  if (hours >= 11 && hours < 17) {
+    const hoursUntil5pm = 17 - hours;
+    const minutesUntil5pm = 60 - minutes;
     
-    if (hoursUntilMidnight === 24 && minutesUntilMidnight === 60) {
-      return "Uploads will be available at 12:00 AM";
+    if (hoursUntil5pm === 0 && minutesUntil5pm === 60) {
+      return "Uploads will be available at 5:00 PM";
     }
     
-    if (hoursUntilMidnight === 24) {
-      return `Uploads will be available in ${minutesUntilMidnight - 1} minutes`;
+    if (hoursUntil5pm === 0) {
+      return `Uploads will be available in ${minutesUntil5pm - 1} minutes`;
     }
     
-    if (minutesUntilMidnight === 60) {
-      return `Uploads will be available in ${hoursUntilMidnight - 1} hours`;
+    if (minutesUntil5pm === 60) {
+      return `Uploads will be available in ${hoursUntil5pm} hours`;
     }
     
-    return `Uploads will be available in ${hoursUntilMidnight - 1}h ${minutesUntilMidnight - 1}m`;
+    return `Uploads will be available in ${hoursUntil5pm - 1}h ${minutesUntil5pm - 1}m`;
   }
   
-  // If it's before 12am (shouldn't happen, but handle edge case)
+  // If it's before 11am or after 5pm, uploads are currently allowed
   return "Uploads are currently allowed";
 }
 
@@ -123,7 +124,7 @@ export function getTimeUntilNextUploadWindow(): string {
  * Get upload window description
  */
 export function getUploadWindowDescription(): string {
-  return "Uploads are allowed between 12:00 AM - 11:00 AM (New Jersey Time)";
+  return "Uploads are allowed between 5:00 PM - 11:00 AM (New Jersey Time)";
 }
 
 /**
@@ -147,9 +148,20 @@ export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: numb
   const targetMinute = 0;
   const targetSecond = 0;
   
-  let totalSecondsRemaining = (targetHour * 3600 + targetMinute * 60 + targetSecond) - (hours * 3600 + minutes * 60 + seconds);
+  let totalSecondsRemaining: number;
   
-  // If we're past 11 AM, return 0
+  // If we're in the evening/night part (5pm-11:59pm), calculate time until 11am next day
+  if (hours >= 17) {
+    // Time until midnight + 11 hours
+    const secondsUntilMidnight = (24 * 3600) - (hours * 3600 + minutes * 60 + seconds);
+    const secondsUntil11am = secondsUntilMidnight + (11 * 3600);
+    totalSecondsRemaining = secondsUntil11am;
+  } else {
+    // We're in the morning part (12am-10:59am), calculate time until 11am today
+    totalSecondsRemaining = (targetHour * 3600 + targetMinute * 60 + targetSecond) - (hours * 3600 + minutes * 60 + seconds);
+  }
+  
+  // If we're past 11 AM (and before 5pm), return 0
   if (totalSecondsRemaining <= 0) {
     return { hours: 0, minutes: 0, seconds: 0 };
   }
@@ -162,7 +174,7 @@ export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: numb
 }
 
 /**
- * Get remaining time until upload window opens (12:00 AM next day)
+ * Get remaining time until upload window opens (5:00 PM)
  * @returns object with hours, minutes, seconds remaining
  */
 export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: number; seconds: number } {
@@ -177,8 +189,8 @@ export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: numbe
   
   const [hours, minutes, seconds] = njTimeString.split(":").map(Number);
   
-  // Calculate time until midnight (12:00 AM next day)
-  const targetHour = 24; // Midnight
+  // Calculate time until 5:00 PM (17:00)
+  const targetHour = 17;
   const targetMinute = 0;
   const targetSecond = 0;
   
@@ -187,9 +199,10 @@ export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: numbe
   
   let totalSecondsRemaining = targetTotalSeconds - currentTotalSeconds;
   
-  // If we're at or past midnight, return 0
+  // If we're past 5pm, calculate time until 5pm next day
   if (totalSecondsRemaining <= 0) {
-    return { hours: 0, minutes: 0, seconds: 0 };
+    const secondsUntilMidnight = (24 * 3600) - currentTotalSeconds;
+    totalSecondsRemaining = secondsUntilMidnight + targetTotalSeconds;
   }
   
   const hoursRemaining = Math.floor(totalSecondsRemaining / 3600);
