@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SHIPPO_API_BASE = "https://api.goshippo.com";
 
-export async function POST(request: NextRequest) {
-  // Handle CORS for WordPress site
+const allowedOrigins = [
+  "https://prepservicesfba.com",
+  "https://www.prepservicesfba.com",
+  "http://localhost:3000", // For local testing
+];
+
+function buildCorsHeaders(request: NextRequest) {
   const origin = request.headers.get("origin");
-  const allowedOrigins = [
-    "https://prepservicesfba.com",
-    "https://www.prepservicesfba.com",
-    "http://localhost:3000", // For local testing
-  ];
-  
   const corsHeaders: Record<string, string> = {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
@@ -20,10 +19,16 @@ export async function POST(request: NextRequest) {
     corsHeaders["Access-Control-Allow-Origin"] = origin;
   }
 
-  // Handle preflight OPTIONS request
-  if (request.method === "OPTIONS") {
-    return new NextResponse(null, { status: 200, headers: corsHeaders });
-  }
+  return corsHeaders;
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const corsHeaders = buildCorsHeaders(request);
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+export async function POST(request: NextRequest) {
+  const corsHeaders = buildCorsHeaders(request);
 
   try {
     const body = await request.json();
