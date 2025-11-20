@@ -134,29 +134,41 @@ export default function PurchasedLabelsPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Purchased Labels</h1>
-        <p className="text-muted-foreground mt-2">
-          View and download your purchased shipping labels
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-500 bg-clip-text text-transparent">
+            Purchased Labels
+          </span>
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          View, download, and track all labels you&apos;ve purchased.
         </p>
       </div>
 
       {/* Date Filters */}
       {safeLabels && safeLabels.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filter by Date
-            </CardTitle>
-            <CardDescription>
-              Filter labels by purchase date range
-            </CardDescription>
+        <Card className="border border-border/70 shadow-sm rounded-2xl">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Filter className="h-4 w-4" />
+                </span>
+                <div>
+                  <CardTitle className="text-base">Filter by Date</CardTitle>
+                  <CardDescription>
+                    Narrow labels by purchase date range.
+                  </CardDescription>
+                </div>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="start-date">From Date</Label>
+                <Label htmlFor="start-date" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  From Date
+                </Label>
                 <Input
                   id="start-date"
                   type="date"
@@ -166,7 +178,9 @@ export default function PurchasedLabelsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="end-date">To Date</Label>
+                <Label htmlFor="end-date" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  To Date
+                </Label>
                 <Input
                   id="end-date"
                   type="date"
@@ -231,17 +245,25 @@ export default function PurchasedLabelsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredLabels.map((label, index) => (
-            <Card key={label.id || `label-${index}`} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-lg">Label #{label.id ? label.id.slice(0, 8) : 'N/A'}</CardTitle>
+            <Card
+              key={label.id || `label-${index}`}
+              className="hover:shadow-md transition-shadow rounded-2xl border border-border/70"
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base font-semibold">
+                      Label #{label.id ? label.id.slice(0, 8) : "N/A"}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {label.selectedRate?.provider || "Unknown"} •{" "}
+                      {label.selectedRate?.serviceLevel || "Standard"}
+                    </CardDescription>
+                  </div>
                   {getStatusBadge(label.status)}
                 </div>
-                <CardDescription>
-                  {label.selectedRate?.provider || 'Unknown'} - {label.selectedRate?.serviceLevel || 'Standard'}
-                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-0">
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -278,11 +300,11 @@ export default function PurchasedLabelsPage() {
                       </span>
                     </div>
                   )}
-                  <div className="pt-2 border-t">
-                    <span className="font-medium">Amount: </span>
-                    <span className="text-lg font-bold">
-                      {label.paymentCurrency?.toUpperCase() || 'USD'} $
-                      {label.paymentAmount ? (label.paymentAmount / 100).toFixed(2) : '0.00'}
+                  <div className="pt-2 border-t flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="text-base font-semibold">
+                      {label.paymentCurrency?.toUpperCase() || "USD"} $
+                      {label.paymentAmount ? (label.paymentAmount / 100).toFixed(2) : "0.00"}
                     </span>
                   </div>
                 </div>

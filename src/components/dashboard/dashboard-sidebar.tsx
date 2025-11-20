@@ -25,6 +25,7 @@ import {
   Package,
   X,
   ShoppingBag,
+  Truck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -68,6 +69,13 @@ export function DashboardSidebar() {
       url: "/dashboard/buy-labels",
       icon: ShoppingBag,
       color: "text-blue-600",
+      badge: null,
+    },
+    {
+      title: "Track Shipment",
+      url: "/dashboard/track-shipment",
+      icon: Truck,
+      color: "text-teal-600",
       badge: null,
     },
     {
