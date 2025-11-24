@@ -88,7 +88,16 @@ function buildInvoiceItems(shipments: ShippedItem[], fallbackDate: string) {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Handle both GET (for testing) and POST (for cron)
+export async function GET(request: NextRequest) {
+  return handleRequest(request);
+}
+
 export async function POST(request: NextRequest) {
+  return handleRequest(request);
+}
+
+async function handleRequest(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
