@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/invoices/generate-daily",
-      "schedule": "0 21 * * *"
+      "schedule": "0 17 * * *"
     }
   ]
 }
