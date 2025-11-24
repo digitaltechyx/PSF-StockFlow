@@ -269,12 +269,5 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   doc.save(`Invoice-${data.invoiceNumber}.pdf`);
 }
 
-export function generateInvoiceNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  
-  return `INV-${year}${month}${day}-${Date.now().toString().slice(-3)}`;
-}
+export { generateInvoiceNumber } from "./invoice-utils";
 

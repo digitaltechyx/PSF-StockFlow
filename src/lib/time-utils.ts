@@ -3,6 +3,8 @@
  * Handles timezone conversion and upload time restrictions
  */
 
+const NEW_JERSEY_TIMEZONE = "America/New_York";
+
 /**
  * Get current time in New Jersey timezone (America/New_York)
  * This automatically handles EST/EDT (Eastern Standard/Daylight Time)
@@ -11,7 +13,7 @@ export function getNewJerseyTime(): Date {
   const now = new Date();
   // Get time string in New Jersey timezone and parse it
   const njTimeString = now.toLocaleString("en-US", { 
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -45,7 +47,7 @@ export function getNewJerseyTime(): Date {
 export function getNewJerseyTimeString(): string {
   const now = new Date();
   return now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -60,7 +62,7 @@ export function getNewJerseyTimeString(): string {
 function getNewJerseyHours(): number {
   const now = new Date();
   const njTimeString = now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     hour: "2-digit",
     hour12: false,
   });
@@ -68,16 +70,16 @@ function getNewJerseyHours(): number {
 }
 
 /**
- * Check if current New Jersey time is within upload window (5pm - 11am)
+ * Check if current New Jersey time is within upload window (3pm - 11am logic, UI still says 5pm)
  * @returns true if uploads are allowed, false otherwise
  */
 export function isUploadTimeAllowed(): boolean {
   const hours = getNewJerseyHours();
   
-  // Allow uploads between 5pm (17) and 11am (11) next day
-  // hours >= 17 means 5:00 PM to 11:59 PM
+  // Allow uploads between 3pm (15) and 11am (11) next day
+  // hours >= 15 means 3:00 PM to 11:59 PM
   // hours < 11 means 12:00 AM to 10:59 AM (uploads allowed until 11:00 AM)
-  return hours >= 17 || hours < 11;
+  return hours >= 15 || hours < 11;
 }
 
 /**
@@ -87,7 +89,7 @@ export function isUploadTimeAllowed(): boolean {
 export function getTimeUntilNextUploadWindow(): string {
   const now = new Date();
   const njTimeString = now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -96,7 +98,7 @@ export function getTimeUntilNextUploadWindow(): string {
   
   const [hours, minutes] = njTimeString.split(":").map(Number);
   
-  // If it's between 11am and 5pm, calculate time until 5pm (17:00)
+  // If it's between 11am and 5pm, calculate time until 5pm (17:00) - UI messaging remains the same
   if (hours >= 11 && hours < 17) {
     const hoursUntil5pm = 17 - hours;
     const minutesUntil5pm = 60 - minutes;
@@ -134,7 +136,7 @@ export function getUploadWindowDescription(): string {
 export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: number; seconds: number } {
   const now = new Date();
   const njTimeString = now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -150,8 +152,8 @@ export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: numb
   
   let totalSecondsRemaining: number;
   
-  // If we're in the evening/night part (5pm-11:59pm), calculate time until 11am next day
-  if (hours >= 17) {
+  // If we're in the evening/night part (3pm-11:59pm), calculate time until 11am next day
+  if (hours >= 15) {
     // Time until midnight + 11 hours
     const secondsUntilMidnight = (24 * 3600) - (hours * 3600 + minutes * 60 + seconds);
     const secondsUntil11am = secondsUntilMidnight + (11 * 3600);
@@ -180,7 +182,7 @@ export function getTimeUntilUploadWindowCloses(): { hours: number; minutes: numb
 export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: number; seconds: number } {
   const now = new Date();
   const njTimeString = now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: NEW_JERSEY_TIMEZONE,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -189,7 +191,7 @@ export function getTimeUntilUploadWindowOpens(): { hours: number; minutes: numbe
   
   const [hours, minutes, seconds] = njTimeString.split(":").map(Number);
   
-  // Calculate time until 5:00 PM (17:00)
+  // Calculate time until 5:00 PM (kept for user-facing messaging)
   const targetHour = 17;
   const targetMinute = 0;
   const targetSecond = 0;
@@ -224,4 +226,64 @@ export function formatTimeRemaining(time: { hours: number; minutes: number; seco
     return `${time.seconds}s`;
   }
 }
+
+function getOffsetMinutesForTimeZone(timeZone: string, reference: Date): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  });
+
+  const parts = formatter.formatToParts(reference);
+  const tzName = parts.find((part) => part.type === "timeZoneName")?.value ?? "GMT-04:00";
+  const match = tzName.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/i);
+
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    const minutes = match[2] ? parseInt(match[2], 10) : 0;
+    const absoluteMinutes = Math.abs(minutes);
+    return hours * 60 + Math.sign(hours) * absoluteMinutes;
+  }
+
+  // Fallback: compare reference time with the same moment expressed in the target timezone
+  const zoned = new Date(reference.toLocaleString("en-US", { timeZone }));
+  return Math.round((zoned.getTime() - reference.getTime()) / (60 * 1000));
+}
+
+/**
+ * Get UTC start/end boundaries for the given day in New Jersey timezone.
+ * Useful for server-side cron jobs.
+ */
+export function getNewJerseyDayBounds(reference: Date = new Date()): {
+  startUtc: Date;
+  endUtc: Date;
+  formattedDate: string;
+} {
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: NEW_JERSEY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = dateFormatter.formatToParts(reference);
+
+  const partValue = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  const year = Number(partValue("year"));
+  const month = Number(partValue("month"));
+  const day = Number(partValue("day"));
+
+  const offsetMinutes = getOffsetMinutesForTimeZone(NEW_JERSEY_TIMEZONE, reference);
+  const startUtcMs = Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60 * 1000;
+  const startUtc = new Date(startUtcMs);
+  const endUtc = new Date(startUtcMs + 24 * 60 * 60 * 1000 - 1);
+
+  const formattedDate = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+
+  return { startUtc, endUtc, formattedDate };
+}
+
 

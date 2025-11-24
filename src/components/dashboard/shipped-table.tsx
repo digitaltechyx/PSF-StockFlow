@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { InventoryItem, ShippedItem } from "@/types";
+import { getShipmentSummary } from "@/lib/shipment-utils";
 import {
   Card,
   CardContent,

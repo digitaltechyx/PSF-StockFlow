@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, FileText, X, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import type { UploadedPDF } from "@/types";
 // Google Drive integration - no Firebase Storage imports needed
 
@@ -121,25 +123,38 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
   };
 
   const handleView = async (pdf: UploadedPDF) => {
-    setSelectedPDF(pdf);
     setIsViewDialogOpen(true);
     setViewURL(null);
     setLoadingViewURL(true);
     
+    let hydratedPdf: UploadedPDF = pdf;
+
     try {
+      if (pdf.id) {
+        const docRef = doc(db, "uploadedPDFs", pdf.id);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          hydratedPdf = { id: pdf.id, ...(docSnap.data() as UploadedPDF) };
+        }
+      }
+
+      setSelectedPDF(hydratedPdf);
+
       // Fetch viewable URL from API
-      const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+      const response = await fetch(
+        `/api/drive/download?filePath=${encodeURIComponent(hydratedPdf.storagePath)}`
+      );
       if (response.ok) {
         const data = await response.json();
-        setViewURL(data.viewURL || data.webUrl || pdf.downloadURL);
+        setViewURL(data.viewURL || data.webUrl || hydratedPdf.downloadURL);
       } else {
         // Fallback to stored downloadURL if API fails
-        setViewURL(pdf.downloadURL);
+        setViewURL(hydratedPdf.downloadURL);
       }
     } catch (error) {
-      console.error('Error fetching view URL:', error);
-      // Fallback to stored downloadURL
+      console.error("Error fetching label details:", error);
       setViewURL(pdf.downloadURL);
+      setSelectedPDF(pdf);
     } finally {
       setLoadingViewURL(false);
     }
@@ -387,6 +402,48 @@ export function PDFList({ pdfs, loading, currentUserId }: PDFListProps) {
                   </p>
                 </div>
               </div>
+
+              {/* Products in Label Section */}
+              {selectedPDF.labelProducts && Array.isArray(selectedPDF.labelProducts) && selectedPDF.labelProducts.length > 0 ? (
+                <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">Products in this Label</h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedPDF.labelProducts.length} product{selectedPDF.labelProducts.length > 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedPDF.labelProducts.map((product: any, idx: number) => {
+                      const shippedUnits = Number(product.shippedUnits) || 0;
+                      const packOf = Number(product.packOf) || 1;
+                      const total = shippedUnits * packOf;
+                      return (
+                        <div key={idx} className="bg-white border rounded p-3 text-sm">
+                          <div className="font-medium mb-2">{product.name || "Product"}</div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Shipped Units</span>
+                              <span className="font-semibold text-base">{shippedUnits}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Pack Of</span>
+                              <span className="font-semibold text-base">{packOf}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Total Units</span>
+                              <span className="font-semibold text-base text-primary">{total}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-lg p-4 bg-muted/30 text-sm text-muted-foreground">
+                  No product details were provided for this label.
+                </div>
+              )}
 
               {/* PDF Viewer */}
               <div className="border rounded-lg overflow-hidden">

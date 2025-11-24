@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { UploadedPDF } from "@/types";
+import type { UploadedPDF, InventoryItem } from "@/types";
 import { PDFUpload } from "@/components/dashboard/pdf-upload";
 import { PDFList } from "@/components/dashboard/pdf-list";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,12 @@ export default function LabelsPage() {
     data: allUploadedPDFs,
     loading: uploadedPDFsLoading
   } = useCollection<UploadedPDF>("uploadedPDFs");
+
+  const {
+    data: inventoryData,
+  } = useCollection<InventoryItem>(
+    userProfile ? `users/${userProfile.uid}/inventory` : ""
+  );
 
   const uploadedPDFs = userProfile?.role === "admin" 
     ? allUploadedPDFs 
@@ -45,6 +51,7 @@ export default function LabelsPage() {
             <PDFUpload
               userId={user.uid}
               userName={userProfile.name || `User_${user.uid}`}
+              inventory={inventoryData}
               onUploadSuccess={() => {
                 // PDF list will automatically refresh via useCollection hook
               }}

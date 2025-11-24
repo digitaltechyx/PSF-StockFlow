@@ -7,9 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, FileText, X, Eye } from "lucide-react";
+import { Search, FileText, X, Eye, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
-import type { UploadedPDF } from "@/types";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCollection } from "@/hooks/use-collection";
+import type { UploadedPDF, InventoryItem } from "@/types";
+import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
+import { useToast } from "@/hooks/use-toast";
 // Google Drive integration - no Firebase Storage imports needed
 
 interface PDFManagementProps {
@@ -18,6 +24,7 @@ interface PDFManagementProps {
 }
 
 export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -26,6 +33,9 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [viewURL, setViewURL] = useState<string | null>(null);
   const [loadingViewURL, setLoadingViewURL] = useState(false);
+  const [activeTab, setActiveTab] = useState<"pending" | "complete">("pending");
+  const [selectedLabelForComplete, setSelectedLabelForComplete] = useState<UploadedPDF | null>(null);
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
   const itemsPerPage = 10;
 
   // Helper function to check if PDF matches date filter
@@ -60,21 +70,29 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
     }
   };
 
+  // Filter PDFs by status (pending/complete) - MUST be declared first
+  const filteredPDFsByStatus = useMemo(() => {
+    return pdfs.filter((pdf) => {
+      const status = pdf.status || "pending";
+      return status === activeTab;
+    });
+  }, [pdfs, activeTab]);
+
   // Get unique client names for filter based on date filter
   const clientNames = useMemo(() => {
-    // First filter PDFs by date if date filter is active
+    // First filter PDFs by status and date if date filter is active
     const dateFilteredPDFs = dateFilter === "all" 
-      ? pdfs 
-      : pdfs.filter((pdf) => matchesDateFilter(pdf, dateFilter));
+      ? filteredPDFsByStatus 
+      : filteredPDFsByStatus.filter((pdf) => matchesDateFilter(pdf, dateFilter));
     
     // Then get unique client names from filtered PDFs
     const names = new Set(dateFilteredPDFs.map((pdf) => pdf.uploadedByName).filter(Boolean));
     return Array.from(names).sort();
-  }, [pdfs, dateFilter]);
+  }, [filteredPDFsByStatus, dateFilter]);
 
   // Filter PDFs
   const filteredPDFs = useMemo(() => {
-    return pdfs.filter((pdf) => {
+    return filteredPDFsByStatus.filter((pdf) => {
       // Search filter
       const matchesSearch =
         searchTerm === "" ||
@@ -89,7 +107,7 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
 
       return matchesSearch && matchesClient && matchesDate;
     });
-  }, [pdfs, searchTerm, dateFilter, clientFilter]);
+  }, [filteredPDFsByStatus, searchTerm, dateFilter, clientFilter]);
 
   // Pagination
   const totalPages = Math.ceil(filteredPDFs.length / itemsPerPage);
@@ -134,30 +152,78 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
   };
 
   const handleView = async (pdf: UploadedPDF) => {
-    setSelectedPDF(pdf);
     setIsViewDialogOpen(true);
     setViewURL(null);
     setLoadingViewURL(true);
     
+    let hydratedPdf: UploadedPDF = pdf;
+
     try {
+      // Fetch fresh data from Firestore to get latest product details
+      if (pdf.id) {
+        const docRef = doc(db, "uploadedPDFs", pdf.id);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          hydratedPdf = { id: pdf.id, ...(docSnap.data() as UploadedPDF) };
+        }
+      }
+
+      setSelectedPDF(hydratedPdf);
+
       // Fetch viewable URL from API
-      const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(pdf.storagePath)}`);
+      const response = await fetch(`/api/drive/download?filePath=${encodeURIComponent(hydratedPdf.storagePath)}`);
       if (response.ok) {
         const data = await response.json();
-        setViewURL(data.viewURL || data.webUrl || pdf.downloadURL);
+        setViewURL(data.viewURL || data.webUrl || hydratedPdf.downloadURL);
       } else {
         // Fallback to stored downloadURL if API fails
-        setViewURL(pdf.downloadURL);
+        setViewURL(hydratedPdf.downloadURL);
       }
     } catch (error) {
-      console.error('Error fetching view URL:', error);
-      // Fallback to stored downloadURL
+      console.error("Error fetching label details:", error);
       setViewURL(pdf.downloadURL);
+      setSelectedPDF(pdf);
     } finally {
       setLoadingViewURL(false);
     }
   };
 
+
+  // Get inventory for the user who uploaded the selected label
+  const { data: userInventory, loading: inventoryLoading } = useCollection<InventoryItem>(
+    selectedLabelForComplete?.uploadedBy ? `users/${selectedLabelForComplete.uploadedBy}/inventory` : ""
+  );
+
+  const handleComplete = (pdf: UploadedPDF) => {
+    setSelectedLabelForComplete(pdf);
+    setIsCompleteDialogOpen(true);
+  };
+
+  const handleShipmentSuccess = async () => {
+    if (selectedLabelForComplete?.id) {
+      try {
+        const docRef = doc(db, "uploadedPDFs", selectedLabelForComplete.id);
+        await updateDoc(docRef, {
+          status: "complete",
+        });
+        toast({
+          title: "Success",
+          description: "Label marked as complete.",
+        });
+        setIsCompleteDialogOpen(false);
+        setSelectedLabelForComplete(null);
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message || "Failed to update label status.",
+        });
+      }
+    }
+  };
+
+  const pendingCount = pdfs.filter((pdf) => (pdf.status || "pending") === "pending").length;
+  const completeCount = pdfs.filter((pdf) => pdf.status === "complete").length;
 
   return (
     <>
@@ -165,7 +231,9 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
         <CardHeader className="w-full min-w-0">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full">
             <div>
-              <CardTitle className="text-purple-600">Labels Management ({filteredPDFs.length} total)</CardTitle>
+              <CardTitle className="text-purple-600">
+                Labels Management ({pendingCount} pending, {completeCount} complete)
+              </CardTitle>
               <CardDescription>View and manage all uploaded labels from all users</CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -247,7 +315,20 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          <Tabs value={activeTab} onValueChange={(value) => {
+            setActiveTab(value as "pending" | "complete");
+            setCurrentPage(1);
+          }} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="pending">
+                Pending Labels ({pendingCount})
+              </TabsTrigger>
+              <TabsTrigger value="complete">
+                Complete Labels ({completeCount})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pending" className="mt-0">
+              {loading ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
@@ -283,6 +364,17 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                         <Eye className="h-3 w-3 mr-1" />
                         View
                       </Button>
+                      {activeTab === "pending" && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="text-[10px] h-6 px-2"
+                          onClick={() => handleComplete(pdf)}
+                        >
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Complete
+                        </Button>
+                      )}
                     </div>
                   </div>
                   {/* Desktop: full layout */}
@@ -309,6 +401,17 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                           <Eye className="h-4 w-4" />
                           View
                         </Button>
+                        {activeTab === "pending" && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="flex items-center gap-2"
+                            onClick={() => handleComplete(pdf)}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Complete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -326,15 +429,28 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                           </Badge>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-1 ml-3 flex-shrink-0 text-xs"
-                        onClick={() => handleView(pdf)}
-                      >
-                        <Eye className="h-3 w-3" />
-                        View
-                      </Button>
+                      <div className="flex items-center gap-1 ml-3 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-1 text-xs"
+                          onClick={() => handleView(pdf)}
+                        >
+                          <Eye className="h-3 w-3" />
+                          View
+                        </Button>
+                        {activeTab === "pending" && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="flex items-center gap-1 text-xs"
+                            onClick={() => handleComplete(pdf)}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Complete
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -384,6 +500,147 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
               </div>
             </div>
           )}
+            </TabsContent>
+            <TabsContent value="complete" className="mt-0">
+              {loading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                  ))}
+                </div>
+              ) : paginatedPDFs.length > 0 ? (
+                <div className="space-y-3">
+                  {paginatedPDFs.map((pdf) => (
+                    <div key={pdf.id}>
+                      {/* Mobile: compact layout */}
+                      <div className="block sm:hidden p-3 border rounded-lg bg-purple-50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-sm text-purple-800 truncate">{pdf.fileName}</h3>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {pdf.uploadedByName} • {formatDate(pdf.uploadedAt)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {pdf.year}/{pdf.month}/{pdf.date}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="text-[10px] whitespace-nowrap bg-purple-100 text-purple-800">
+                            {formatFileSize(pdf.size)}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-[10px] h-6 px-2"
+                            onClick={() => handleView(pdf)}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View
+                          </Button>
+                        </div>
+                      </div>
+                      {/* Desktop: full layout */}
+                      <div className="hidden md:block">
+                        <div className="flex items-center justify-between p-4 border rounded-lg bg-purple-50">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-purple-800 truncate">{pdf.fileName}</h3>
+                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                              <span className="truncate">Client: {pdf.uploadedByName}</span>
+                              <span>Uploaded: {formatDate(pdf.uploadedAt)}</span>
+                              <span className="hidden lg:inline">Path: {pdf.year}/{pdf.month}/{pdf.uploadedByName}/{pdf.date}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {formatFileSize(pdf.size)}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-2"
+                              onClick={() => handleView(pdf)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Tablet: medium layout */}
+                      <div className="hidden sm:block md:hidden">
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-purple-50">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-sm text-purple-800 truncate">{pdf.fileName}</h3>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <span className="truncate">{pdf.uploadedByName}</span>
+                              <span>•</span>
+                              <span>{formatDate(pdf.uploadedAt)}</span>
+                              <Badge variant="secondary" className="text-[10px] ml-auto">
+                                {formatFileSize(pdf.size)}
+                              </Badge>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-1 ml-3 flex-shrink-0 text-xs"
+                            onClick={() => handleView(pdf)}
+                          >
+                            <Eye className="h-3 w-3" />
+                            View
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-semibold">No completed labels found</p>
+                  <p className="text-sm mt-2">
+                    {filteredPDFsByStatus.length === 0
+                      ? "No labels have been completed yet."
+                      : "No completed labels match your search or filter criteria."}
+                  </p>
+                </div>
+              )}
+
+              {/* Pagination Controls for Complete Tab */}
+              {filteredPDFs.length > itemsPerPage && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                  <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                    Showing {startIndex + 1} to {Math.min(endIndex, filteredPDFs.length)} of {filteredPDFs.length} records
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="text-xs sm:text-sm"
+                    >
+                      <span className="hidden sm:inline">Previous</span>
+                      <span className="sm:hidden">Prev</span>
+                    </Button>
+                    <span className="text-xs sm:text-sm px-2">
+                      {currentPage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="text-xs sm:text-sm"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -436,6 +693,48 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                 </div>
               </div>
 
+              {/* Products in Label Section */}
+              {selectedPDF.labelProducts && Array.isArray(selectedPDF.labelProducts) && selectedPDF.labelProducts.length > 0 ? (
+                <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">Products in this Label</h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedPDF.labelProducts.length} product{selectedPDF.labelProducts.length > 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedPDF.labelProducts.map((product: any, idx: number) => {
+                      const shippedUnits = Number(product.shippedUnits) || 0;
+                      const packOf = Number(product.packOf) || 1;
+                      const total = shippedUnits * packOf;
+                      return (
+                        <div key={idx} className="bg-white border rounded p-3 text-sm">
+                          <div className="font-medium mb-2">{product.name || "Product"}</div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Shipped Units</span>
+                              <span className="font-semibold text-base">{shippedUnits}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Pack Of</span>
+                              <span className="font-semibold text-base">{packOf}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[11px]">Total Units</span>
+                              <span className="font-semibold text-base text-primary">{total}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-lg p-4 bg-muted/30 text-sm text-muted-foreground">
+                  No product details were provided for this label.
+                </div>
+              )}
+
               {/* PDF Viewer */}
               <div className="border rounded-lg overflow-hidden">
                 {loadingViewURL ? (
@@ -454,6 +753,44 @@ export function PDFManagement({ pdfs, loading }: PDFManagementProps) {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Label Dialog with Ship Inventory Form */}
+      <Dialog 
+        open={isCompleteDialogOpen} 
+        onOpenChange={(open) => {
+          setIsCompleteDialogOpen(open);
+          if (!open) {
+            setSelectedLabelForComplete(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg">
+              Complete Label: {selectedLabelForComplete?.fileName}
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Create shipment record for {selectedLabelForComplete?.uploadedByName}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedLabelForComplete && selectedLabelForComplete.uploadedBy && (
+            <div className="mt-4">
+              {inventoryLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  Loading inventory...
+                </div>
+              ) : (
+                <ShipInventoryForm 
+                  userId={selectedLabelForComplete.uploadedBy}
+                  inventory={userInventory}
+                  prefillData={selectedLabelForComplete.labelProducts}
+                  onSuccess={handleShipmentSuccess}
+                />
+              )}
             </div>
           )}
         </DialogContent>

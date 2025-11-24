@@ -26,9 +26,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribeAuth = onAuthStateChanged(
       auth,
       async (fbUser) => {
-        setUser(fbUser);
+      setUser(fbUser);
         setAuthInitialized(true);
-        if (!fbUser) {
+      if (!fbUser) {
           setUserProfile(null);
           setLoading(false);
         }
@@ -58,10 +58,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         (docSnapshot) => {
           if (docSnapshot.exists()) {
             setUserProfile({ uid: user.uid, ...docSnapshot.data() } as UserProfile);
-          } else {
-            setUserProfile(null);
-          }
-          setLoading(false);
+        } else {
+          setUserProfile(null);
+        }
+        setLoading(false);
         },
         (error) => {
           console.error("Error fetching user profile:", error);

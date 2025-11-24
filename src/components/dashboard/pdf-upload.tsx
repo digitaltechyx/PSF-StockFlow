@@ -1,31 +1,39 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Loader2, X, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Upload, Loader2, X, FileText, CheckCircle2, Clock, AlertCircle, Plus, ChevronsUpDown, Check } from "lucide-react";
 import { uploadPDF, type UploadProgress } from "@/lib/pdf-upload";
 import { compressPDF } from "@/lib/pdf-compression";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getFolderInfo } from "@/lib/pdf-upload";
-import type { UploadedPDF } from "@/types";
+import type { UploadedPDF, InventoryItem } from "@/types";
 import { 
   isUploadTimeAllowed, 
   getNewJerseyTimeString, 
-  getTimeUntilNextUploadWindow,
-  getUploadWindowDescription,
   getTimeUntilUploadWindowCloses,
   getTimeUntilUploadWindowOpens,
   formatTimeRemaining
 } from "@/lib/time-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
 
 interface PDFUploadProps {
   userId: string;
   userName: string;
+  inventory?: InventoryItem[];
   onUploadSuccess?: () => void;
+}
+
+interface LabelProductInput {
+  id: string;
+  productId?: string;
+  name?: string;
+  shippedUnits: string;
+  packOf: string;
 }
 
 interface FileUploadState {
@@ -34,9 +42,118 @@ interface FileUploadState {
   status: "pending" | "compressing" | "uploading" | "success" | "error";
   progress: number;
   error?: string;
+  products: LabelProductInput[];
 }
 
-export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps) {
+const generateProductId = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2, 10);
+};
+
+const createEmptyProduct = (): LabelProductInput => ({
+  id: generateProductId(),
+  productId: undefined,
+  name: "",
+  shippedUnits: "1",
+  packOf: "1",
+});
+
+interface InventorySelectButtonProps {
+  inventory: InventoryItem[];
+  selectedProductId?: string;
+  disabled: boolean;
+  onSelect: (item: InventoryItem) => void;
+}
+
+function InventorySelectButton({ inventory, selectedProductId, disabled, onSelect }: InventorySelectButtonProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filteredInventory = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return inventory
+      .filter((item) => item.quantity > 0)
+      .filter((item) => item.productName.toLowerCase().includes(normalized));
+  }, [inventory, query]);
+
+  const selectedProduct = selectedProductId
+    ? inventory.find((item) => item.id === selectedProductId)
+    : undefined;
+
+  const handleSelect = (item: InventoryItem) => {
+    onSelect(item);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (disabled || inventory.length === 0) {
+          setOpen(false);
+          return;
+        }
+        setOpen(next);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled || inventory.length === 0}
+          className="w-full sm:w-56 justify-between"
+        >
+          <span className="truncate text-left">
+            {selectedProduct
+              ? `${selectedProduct.productName} (In Stock: ${selectedProduct.quantity})`
+              : inventory.length === 0
+              ? "No inventory available"
+              : "Select from inventory"}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </DialogTrigger>
+      {inventory.length > 0 && (
+        <DialogContent className="p-0">
+          <DialogTitle className="sr-only">Select product</DialogTitle>
+          <div className="p-3 border-b">
+            <Input
+              autoFocus
+              placeholder="Search products..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {filteredInventory.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleSelect(item)}
+              >
+                <Check className={`h-4 w-4 ${selectedProductId === item.id ? "opacity-100" : "opacity-0"}`} />
+                <span className="flex-1 truncate">
+                  {item.productName} (In Stock: {item.quantity})
+                </span>
+              </button>
+            ))}
+            {filteredInventory.length === 0 && (
+              <div className="px-3 py-4 text-sm text-muted-foreground">
+                No products match your search.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      )}
+    </Dialog>
+  );
+}
+
+export function PDFUpload({ userId, userName, inventory = [], onUploadSuccess }: PDFUploadProps) {
   const { toast } = useToast();
   const [fileUploads, setFileUploads] = useState<FileUploadState[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -68,6 +185,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
       originalFile: file,
       status: "pending",
       progress: 0,
+      products: [createEmptyProduct()],
     }));
 
     setFileUploads((prev) => [...prev, ...newFiles]);
@@ -78,13 +196,60 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
     }
   };
 
+  const prepareProductsForUpload = (fileState: FileUploadState) => {
+    const normalized = fileState.products.reduce<
+      { name: string; quantity: number; productId: string; shippedUnits: number; packOf: number }[]
+    >(
+      (acc, product) => {
+        if (!product.productId) {
+          throw new Error(`Select a product from your inventory for ${fileState.originalFile.name}.`);
+        }
+
+        const inventoryMatch = inventory.find((item) => item.id === product.productId);
+        if (!inventoryMatch) {
+          throw new Error(`Product no longer exists in inventory for ${fileState.originalFile.name}. Refresh and try again.`);
+        }
+
+        const shippedUnits = Number(product.shippedUnits.trim());
+        if (!Number.isFinite(shippedUnits) || shippedUnits <= 0) {
+          throw new Error(`Enter shipped units for "${inventoryMatch.productName}" in ${fileState.originalFile.name}.`);
+        }
+
+        const packOf = Number(product.packOf.trim());
+        if (!Number.isFinite(packOf) || packOf <= 0) {
+          throw new Error(`Enter pack size for "${inventoryMatch.productName}" in ${fileState.originalFile.name}.`);
+        }
+
+        const totalUnits = shippedUnits * packOf;
+
+        acc.push({
+          name: inventoryMatch.productName,
+          quantity: totalUnits,
+          shippedUnits,
+          packOf,
+          productId: inventoryMatch.id,
+        });
+        return acc;
+      },
+      []
+    );
+
+    if (normalized.length === 0) {
+      throw new Error(`Add at least one product for ${fileState.originalFile.name}.`);
+    }
+
+    return normalized;
+  };
+
   const handleUpload = async () => {
     // Check if uploads are allowed at this time
     if (!isUploadTimeAllowed()) {
       toast({
         variant: "destructive",
         title: "Upload Not Allowed",
-        description: `Uploads are only allowed between 5:00 PM - 11:00 AM (New Jersey Time) for same day fulfilment. ${getTimeUntilNextUploadWindow()}`,
+        description: `Uploads are currently disabled. Available in ${formatTimeRemaining(
+          getTimeUntilUploadWindowOpens()
+        )}`,
       });
       return;
     }
@@ -98,6 +263,17 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
       return;
     }
 
+    try {
+      fileUploads.forEach(prepareProductsForUpload);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Missing Product Details",
+        description: error.message || "Add product name and quantity for every label.",
+      });
+      return;
+    }
+
     setIsUploading(true);
     const currentDate = new Date();
     const folderInfo = getFolderInfo(currentDate);
@@ -105,6 +281,8 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
     // Upload all files
     const uploadPromises = fileUploads.map(async (fileState, index) => {
       try {
+        const labelProducts = prepareProductsForUpload(fileState);
+
         // Step 1: Compress PDF
         setFileUploads((prev) => {
           const updated = [...prev];
@@ -163,6 +341,8 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
           year: folderInfo.year,
           month: folderInfo.month,
           date: folderInfo.date,
+          labelProducts: labelProducts,
+          status: "pending", // Default status for new labels
         };
 
         await addDoc(collection(db, "uploadedPDFs"), pdfMetadata);
@@ -217,6 +397,48 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
     }
 
     setIsUploading(false);
+  };
+
+  const addProductEntry = (fileIndex: number) => {
+    setFileUploads((prev) =>
+      prev.map((file, idx) =>
+        idx === fileIndex
+          ? { ...file, products: [...file.products, createEmptyProduct()] }
+          : file
+      )
+    );
+  };
+
+  const updateProductEntry = (
+    fileIndex: number,
+    productId: string,
+    updates: Partial<LabelProductInput>
+  ) => {
+    setFileUploads((prev) =>
+      prev.map((file, idx) =>
+        idx === fileIndex
+          ? {
+              ...file,
+              products: file.products.map((product) =>
+                product.id === productId ? { ...product, ...updates } : product
+              ),
+            }
+          : file
+      )
+    );
+  };
+
+  const removeProductEntry = (fileIndex: number, productId: string) => {
+    setFileUploads((prev) =>
+      prev.map((file, idx) => {
+        if (idx !== fileIndex) return file;
+        const filtered = file.products.filter((product) => product.id !== productId);
+        return {
+          ...file,
+          products: filtered.length > 0 ? filtered : [createEmptyProduct()],
+        };
+      })
+    );
   };
 
   const handleRemoveFile = (index: number) => {
@@ -276,7 +498,7 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
           <Alert variant="destructive" className="py-2 flex items-center gap-3 [&>svg]:relative [&>svg]:left-0 [&>svg]:top-0 [&>svg]:translate-y-0 [&>svg~*]:pl-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <AlertDescription className="text-xs sm:text-sm text-left flex-1">
-              {getUploadWindowDescription()}. Uploads will be available in{" "}
+              Uploads are currently disabled. Available in{" "}
               <span className="font-mono font-semibold">{formatTimeRemaining(timeRemaining)}</span>
             </AlertDescription>
           </Alert>
@@ -360,7 +582,9 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
 
       {fileUploads.length > 0 && (
         <div className="space-y-3 max-h-[400px] overflow-y-auto">
-          {fileUploads.map((fileState, index) => (
+          {fileUploads.map((fileState, index) => {
+            const productInputsDisabled = fileState.status !== "pending" || isUploading;
+            return (
             <div
               key={index}
               className={`p-3 border rounded-lg ${
@@ -431,11 +655,90 @@ export function PDFUpload({ userId, userName, onUploadSuccess }: PDFUploadProps)
                 <div className="mt-2 text-xs text-red-600">{fileState.error}</div>
               )}
 
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Products in this label
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => addProductEntry(index)}
+                    disabled={productInputsDisabled}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add product
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {fileState.products.map((product) => (
+                    <div
+                      key={product.id}
+                      className="flex flex-col sm:flex-row gap-2 rounded-md bg-white/70 p-2 border border-border/60"
+                    >
+                      <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                        <InventorySelectButton
+                          inventory={inventory}
+                          selectedProductId={product.productId}
+                          disabled={productInputsDisabled}
+                          onSelect={(item) =>
+                            updateProductEntry(index, product.id, {
+                              productId: item.id,
+                              name: item.productName,
+                            })
+                          }
+                        />
+                        <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="Shipped units"
+                            value={product.shippedUnits}
+                            onChange={(e) =>
+                              updateProductEntry(index, product.id, { shippedUnits: e.target.value })
+                            }
+                            disabled={productInputsDisabled}
+                            className="w-full sm:w-28 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="Pack of"
+                            value={product.packOf}
+                            onChange={(e) =>
+                              updateProductEntry(index, product.id, { packOf: e.target.value })
+                            }
+                            disabled={productInputsDisabled}
+                            className="w-full sm:w-24 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground"
+                        onClick={() => removeProductEntry(index, product.id)}
+                        disabled={productInputsDisabled}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Select every SKU from your inventory and record the packed quantity.
+                </p>
+              </div>
+
               {fileState.status === "success" && (
                 <div className="mt-2 text-xs text-green-600">Uploaded successfully!</div>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
 

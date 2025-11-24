@@ -74,8 +74,23 @@ export default function PurchasedLabelsPage() {
     });
   }, [safeLabels, startDate, endDate]);
 
-  const getStatusBadge = (status: string | undefined) => {
+  const getStatusBadge = (label: LabelPurchase) => {
+    const { status, paymentStatus, errorMessage } = label;
+
+    if (paymentStatus === "failed") {
+      return <Badge variant="destructive">Payment Failed</Badge>;
+    }
+
+    if (paymentStatus === "canceled") {
+      return <Badge className="bg-orange-500 text-white">Payment Canceled</Badge>;
+    }
+
+    if (paymentStatus === "pending" && errorMessage) {
+      return <Badge className="bg-amber-500 text-white">Payment Issue</Badge>;
+    }
+
     if (!status) return <Badge variant="outline">Unknown</Badge>;
+
     switch (status) {
       case "completed":
       case "label_purchased":
@@ -85,11 +100,77 @@ export default function PurchasedLabelsPage() {
       case "payment_pending":
         return <Badge className="bg-yellow-500">Pending</Badge>;
       case "label_failed":
+        return <Badge variant="destructive">Label Failed</Badge>;
       case "payment_failed":
-        return <Badge variant="destructive">Failed</Badge>;
+        return <Badge variant="destructive">Payment Failed</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const sanitizeErrorMessage = (message?: string | null) => {
+    if (!message) return "";
+    return message.replace(/stripe/gi, "payment processor").trim();
+  };
+
+  const getStatusDetail = (
+    label: LabelPurchase
+  ): {
+    tone: "warning" | "error" | "info";
+    title: string;
+    message: string;
+  } | null => {
+    const { status, paymentStatus, errorMessage } = label;
+    const sanitizedError = sanitizeErrorMessage(errorMessage);
+
+    if (paymentStatus === "failed") {
+      return {
+        tone: "error",
+        title: "Payment declined",
+        message:
+          sanitizedError ||
+          "Your payment provider declined this charge. Please verify details with your bank or update the card before trying again.",
+      };
+    }
+
+    if (paymentStatus === "canceled") {
+      return {
+        tone: "warning",
+        title: "Payment canceled",
+        message: "You canceled this payment before it completed. Start a new purchase when you're ready.",
+      };
+    }
+
+    if (paymentStatus === "pending" && errorMessage) {
+      return {
+        tone: "warning",
+        title: "Action required",
+        message:
+          sanitizedError ||
+          "Your payment provider needs confirmation. Complete any authentication prompts or contact them, then retry the payment.",
+      };
+    }
+
+    if (status === "label_failed") {
+      return {
+        tone: "error",
+        title: "Issue on our side",
+        message:
+          sanitizedError ||
+          "We ran into an issue generating this label. Please try again in a moment or contact support.",
+      };
+    }
+
+    if (status === "payment_pending" && paymentStatus === "pending") {
+      return {
+        tone: "info",
+        title: "Processing",
+        message:
+          "Awaiting confirmation from your payment provider. If your card shows declined or incomplete, resolve it with them and retry the purchase.",
+      };
+    }
+
+    return null;
   };
 
   const handleDownloadLabel = (labelUrl: string, trackingNumber?: string) => {
@@ -260,7 +341,7 @@ export default function PurchasedLabelsPage() {
                       {label.selectedRate?.serviceLevel || "Standard"}
                     </CardDescription>
                   </div>
-                  {getStatusBadge(label.status)}
+                  {getStatusBadge(label)}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 pt-0">
@@ -335,11 +416,25 @@ export default function PurchasedLabelsPage() {
                   )}
                 </div>
 
-                {label.errorMessage && (
-                  <div className="p-2 bg-destructive/10 text-destructive text-xs rounded">
-                    {label.errorMessage}
-                  </div>
-                )}
+                {(() => {
+                  const detail = getStatusDetail(label);
+                  if (!detail) return null;
+
+                  const toneStyles: Record<typeof detail.tone, string> = {
+                    warning: "bg-amber-50 text-amber-700 border border-amber-200",
+                    error: "bg-red-50 text-red-700 border border-red-200",
+                    info: "bg-sky-50 text-sky-700 border border-sky-200",
+                  };
+
+                  return (
+                    <div className={`p-3 text-xs rounded space-y-1 ${toneStyles[detail.tone]}`}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                        {detail.title}
+                      </p>
+                      <p className="text-[13px] leading-snug">{detail.message}</p>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           ))}

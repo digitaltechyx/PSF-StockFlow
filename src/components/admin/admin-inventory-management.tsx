@@ -1465,78 +1465,78 @@ export function AdminInventoryManagement({
                       <div className={`flex items-center gap-2 text-sm ${isLowStock ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>
                         <Package className={`h-4 w-4 shrink-0 ${isLowStock ? 'text-red-600 dark:text-red-400' : ''}`} />
                         <span>Qty: <span className={`font-semibold ${isLowStock ? 'text-red-800 dark:text-red-300' : 'text-foreground'}`}>{item.quantity}</span></span>
-                      </div>
+                  </div>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 shrink-0" />
                         <span className="truncate">Added: {formatDate(item.dateAdded)}</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-auto">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditProductWithLog(item)}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditProductWithLog(item)}
                             className="w-full"
-                          >
+                        >
                             <Edit className="h-4 w-4 mr-1" />
                             <span className="text-xs">Edit</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Edit product details</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestockProduct(item)}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Edit product details</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRestockProduct(item)}
                             className="w-full text-green-600 hover:text-green-700"
-                          >
+                        >
                             <Package className="h-4 w-4 mr-1" />
                             <span className="text-xs">Restock</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Restock product</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleRecycleProduct(item)}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Restock product</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleRecycleProduct(item)}
                             className="w-full text-orange-600 hover:text-orange-700"
-                          >
+                        >
                             <RotateCcw className="h-4 w-4 mr-1" />
                             <span className="text-xs">Recycle</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Move to Recycle Bin</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleDeleteProduct(item)}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Move to Recycle Bin</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDeleteProduct(item)}
                             className="w-full text-red-600 hover:text-red-700"
-                          >
+                        >
                             <Trash2 className="h-4 w-4 mr-1" />
                             <span className="text-xs">Delete</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Permanently delete product</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Permanently delete product</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   </CardContent>
                 </Card>
                 );
@@ -1752,11 +1752,11 @@ export function AdminInventoryManagement({
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Truck className="h-4 w-4 shrink-0" />
                           <span>Shipped: <span className="font-semibold text-foreground">{(item as any).boxesShipped ?? item.shippedQty}</span></span>
-                        </div>
+                    </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Package className="h-4 w-4 shrink-0" />
                           <span>Remaining: <span className="font-semibold text-foreground">{item.remainingQty}</span></span>
-                        </div>
+                  </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Package className="h-4 w-4 shrink-0" />
                           <span>Pack: <span className="font-semibold text-foreground">{item.packOf}</span></span>

@@ -110,7 +110,7 @@ const parcelSchema = z.object({
   width: z.coerce.number().positive("Width must be positive"),
   height: z.coerce.number().positive("Height must be positive"),
   weightPounds: z.coerce.number().min(0, "Pounds must be 0 or greater").max(70, "Max: 70lbs"),
-  weightOunces: z.coerce.number().min(0, "Ounces must be 0 or greater").max(15.999, "Max: 15.999 ozs"),
+  weightOunces: z.coerce.number().min(0, "Ounces must be 0 or greater").max(15.999, "Max: 15.999 oz"),
   distanceUnit: z.enum(["in", "ft", "cm", "m"]),
 }).refine((data) => {
   // Total weight must be greater than 0
@@ -725,10 +725,10 @@ export function BuyLabelsForm() {
                             )}
                           />
                           <div className="flex items-center px-3 border border-l-0 border-input bg-muted rounded-r-md text-sm font-medium">
-                            ozs
+                            oz
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground">Enter Package weight in ounces (1 pound = 16 ozs).</p>
+                        <p className="text-xs text-muted-foreground">Enter Package weight in ounces (1 pound = 16 oz).</p>
                       </div>
                     </div>
                   </div>
