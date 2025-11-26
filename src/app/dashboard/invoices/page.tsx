@@ -5,7 +5,8 @@ import { useCollection } from "@/hooks/use-collection";
 import type { Invoice } from "@/types";
 import { InvoicesSection } from "@/components/dashboard/invoices-section";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Receipt, DollarSign } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Receipt, DollarSign, Info, Mail } from "lucide-react";
 
 export default function InvoicesPage() {
   const { userProfile } = useAuth();
@@ -65,6 +66,32 @@ export default function InvoicesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Development Notice */}
+      <Alert className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
+        <Info className="h-5 w-5 text-blue-600" />
+        <AlertTitle className="text-base font-semibold text-blue-900 mb-2">
+          Auto Invoice Generation Feature - Coming Soon
+        </AlertTitle>
+        <AlertDescription className="text-sm text-blue-800 space-y-2">
+          <p>
+            The automatic invoice generation feature is currently under development and will be launched in <strong>January 2026</strong>. 
+            Please ignore any related functionality for the time being.
+          </p>
+          <p className="flex items-center gap-2 pt-1">
+            <Mail className="h-4 w-4" />
+            <span>
+              If you have any questions or encounter any issues, please contact our development team at:{" "}
+              <a 
+                href="mailto:onlywork0308@gmail.com" 
+                className="font-semibold text-blue-900 hover:text-blue-700 underline"
+              >
+                onlywork0308@gmail.com
+              </a>
+            </span>
+          </p>
+        </AlertDescription>
+      </Alert>
 
       {/* Invoices Section */}
       <Card className="border-2 shadow-xl overflow-hidden">
