@@ -206,6 +206,7 @@ export interface Invoice {
     shipTo: string;
     unitPrice: number;
     amount: number;
+    shipmentId?: string; // Track which shipment this item came from
   }>;
   subtotal: number;
   grandTotal: number;
