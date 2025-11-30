@@ -15,11 +15,13 @@ import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X, ArrowUpDown, Edit } from "lucide-react";
+import { CheckCircle, XCircle, User, Calendar, Phone, Mail, Eye, Trash2, UserCheck, RotateCcw, Search, X, ArrowUpDown, Edit, Shield } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import type { UserProfile } from "@/types";
 import { EditUserForm } from "./edit-user-form";
+import { RoleFeatureManagement } from "./role-feature-management";
+import { getUserRoles, getDefaultFeaturesForRole } from "@/lib/permissions";
 
 interface MemberManagementProps {
   adminUser: UserProfile | null;
@@ -33,9 +35,15 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const [sortOrder, setSortOrder] = useState<"a-z" | "z-a">("a-z");
   const itemsPerPage = 12;
 
-  // Filter users (include admin) and apply search
+  // Filter users (exclude pure commission agents, but include users with multiple roles) and apply search
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
+      const userRoles = getUserRoles(user);
+      // Exclude pure commission agents (only commission_agent role, no user role)
+      if (userRoles.length === 1 && userRoles[0] === "commission_agent") return false;
+      // Include users with "user" role (even if they also have commission_agent role)
+      if (!userRoles.includes("user")) return false;
+      
       const matchesSearch = searchQuery === "" || 
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -107,10 +115,33 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
 
   const handleApproveUser = async (user: UserProfile) => {
     try {
-      await updateDoc(doc(db, "users", user.uid), {
+      const userRoles = getUserRoles(user);
+      const updateData: any = {
         status: "approved",
         approvedAt: new Date(),
-      });
+      };
+
+      // If user doesn't have features yet, give them default features based on their role
+      if (!user.features || user.features.length === 0) {
+        // Get all default features for all user roles
+        const defaultFeatures: string[] = [];
+        userRoles.forEach((role) => {
+          const roleFeatures = getDefaultFeaturesForRole(role);
+          roleFeatures.forEach((feature) => {
+            if (!defaultFeatures.includes(feature)) {
+              defaultFeatures.push(feature);
+            }
+          });
+        });
+        updateData.features = defaultFeatures;
+      }
+
+      // Ensure roles array is set
+      if (!user.roles || user.roles.length === 0) {
+        updateData.roles = userRoles.length > 0 ? userRoles : [user.role || "user"];
+      }
+
+      await updateDoc(doc(db, "users", user.uid), updateData);
 
       toast({
         title: "Success",
@@ -212,6 +243,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const UserCard = ({ user, showActions = false, showRestore = false, isAdmin = false }: { user: UserProfile; showActions?: boolean; showRestore?: boolean; isAdmin?: boolean }) => {
     const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
     const [isUserEditMode, setIsUserEditMode] = useState(false);
+    const [activeTab, setActiveTab] = useState<"details" | "roles">("details");
 
     const getAvatarSrc = () => {
       if (user.profilePictureUrl) {
@@ -298,18 +330,16 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                 <DialogTrigger asChild>
                     <Button 
                       variant="outline" 
-                      size="sm" 
-                      className="flex-1" 
+                      size="icon" 
                       onClick={() => {
                         setIsUserDialogOpen(true);
                         setIsUserEditMode(false);
                       }}
                     >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
+                    <Eye className="h-4 w-4" />
                   </Button>
                 </DialogTrigger>
-                  <DialogContent className="max-w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[85vh] overflow-y-auto">
+                  <DialogContent className="max-w-full sm:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <div className="flex items-center justify-between">
                         <div>
@@ -345,7 +375,19 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                         }}
                         onCancel={() => setIsUserEditMode(false)}
                       />
-                    ) : (
+                    ) : isAdmin ? (
+                      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "details" | "roles")} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="details" className="flex items-center gap-2">
+                            <User className="h-4 w-4" />
+                            Details
+                          </TabsTrigger>
+                          <TabsTrigger value="roles" className="flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            Roles & Features
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="details" className="mt-4">
                     <div className="space-y-4">
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-12 w-12">
@@ -383,6 +425,23 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                               <span className="font-medium">Approved:</span>
                               <p className="text-muted-foreground">{formatDate(user.approvedAt)}</p>
                             </div>
+                          )}
+                          {user.referredBy && (
+                            <>
+                              <div>
+                                <span className="font-medium">Referred By:</span>
+                                <p className="text-muted-foreground font-mono">{user.referredBy}</p>
+                              </div>
+                              {user.referredByAgentId && (() => {
+                                const agent = users.find(u => u.uid === user.referredByAgentId);
+                                return (
+                                  <div>
+                                    <span className="font-medium">Agent Name:</span>
+                                    <p className="text-muted-foreground">{agent?.name || "N/A"}</p>
+                                  </div>
+                                );
+                              })()}
+                            </>
                           )}
                         </div>
                       </div>
@@ -442,7 +501,33 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                           </div>
                         </div>
                       )}
-                    </div>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="roles" className="mt-4">
+                          <RoleFeatureManagement
+                            user={user}
+                            onSuccess={() => {
+                              // Refresh will happen automatically via useCollection
+                            }}
+                          />
+                        </TabsContent>
+                      </Tabs>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex items-center space-x-3">
+                          <Avatar className="h-12 w-12">
+                            <AvatarImage src={`https://avatar.vercel.sh/${user.email}.png`} />
+                            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <h3 className="font-semibold">{user.name}</h3>
+                            <p className="text-sm text-muted-foreground">{user.email}</p>
+                          </div>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          <p>Role: {getUserRoles(user).join(", ") || user.role || "N/A"}</p>
+                        </div>
+                      </div>
                     )}
                   </DialogContent>
                 </Dialog>
@@ -459,12 +544,11 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                   <TooltipTrigger asChild>
                     <Button
                       variant="default"
-                      size="sm"
+                      size="icon"
                       onClick={() => handleApproveUser(user)}
-                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700"
                     >
-                      <UserCheck className="h-4 w-4 mr-1" />
-                      Approve
+                      <UserCheck className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -472,15 +556,20 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                   </TooltipContent>
                 </Tooltip>
               )}
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={() => handleDeleteUser(user)}
-                className="flex-1"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="destructive" 
+                    size="icon"
+                    onClick={() => handleDeleteUser(user)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete user account</p>
+                </TooltipContent>
+              </Tooltip>
             </>
           )}
 
@@ -489,12 +578,11 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon"
                   onClick={() => handleRestoreUser(user)}
-                  className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
                 >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  Restore
+                  <RotateCcw className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>

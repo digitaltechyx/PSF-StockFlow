@@ -19,7 +19,11 @@ export default function PendingApprovalPage() {
       } else if (userProfile?.role === "admin") {
         router.replace("/admin/dashboard");
       } else if (userProfile?.status === "approved") {
-        router.replace("/dashboard");
+        if (userProfile?.role === "commission_agent") {
+          router.replace("/dashboard/agent");
+        } else {
+          router.replace("/dashboard");
+        }
       } else if (userProfile?.status === "deleted") {
         router.replace("/login");
       }
@@ -79,7 +83,9 @@ export default function PendingApprovalPage() {
               An administrator will review your account and approve it soon.
             </p>
             <p className="text-xs text-muted-foreground">
-              You will receive access to the inventory management system once approved.
+              {userProfile?.role === "commission_agent" 
+                ? "You will receive access to your portal once approved."
+                : "You will receive access to the inventory management system once approved."}
             </p>
           </div>
 

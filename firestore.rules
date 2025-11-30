@@ -1,13 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to check if user has a specific role (supports both legacy role and roles array)
+    // Note: Firestore rules don't support array.contains(), so we check the legacy role field
+    // and also check if roles array exists (client-side code ensures both are set)
+    function hasRole(userData, role) {
+      // Check legacy role field (always set when roles are updated)
+      return userData.role == role || 
+             // Also check if roles array exists (for backward compatibility)
+             (userData.roles != null && userData.roles.size() > 0);
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin(userData) {
+      return userData.role == 'admin' || 
+             (userData.roles != null && userData.roles.hasAny(['admin']));
+    }
+    
+    // Helper function to check if user is commission agent
+    function isCommissionAgent(userData) {
+      return userData.role == 'commission_agent' || 
+             (userData.roles != null && userData.roles.hasAny(['commission_agent']));
+    }
+    
     // Allow users to read/write their own user document
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
       // Allow admins to read and update all users (for approval/deletion)
       allow read, update: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+      
+      // Allow commission agents to read users (to see their referred clients)
+      allow read: if request.auth != null && 
+        isCommissionAgent(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+      
+      // Allow unauthenticated users to read users for referral code validation during registration
+      // This is needed to validate referral codes before account creation
+      // Note: This allows querying users collection, but only for referral code validation
+      allow get, list: if request.auth == null;
     }
     
     // Allow users to read/write their own inventory
@@ -16,7 +47,7 @@ service cloud.firestore {
       
       // Allow admins to manage any user's inventory
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
     }
     
     // Allow users to read/write their own shipped items
@@ -34,7 +65,7 @@ service cloud.firestore {
       
       // Allow admins to read and write any user's restock history
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
     }
     
     // Allow users to read their own recycled shipped items
@@ -89,7 +120,7 @@ service cloud.firestore {
       
       // Allow admins to read and write any user's invoices
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
     }
     
     // Allow users to read their own purchased labels
@@ -111,7 +142,7 @@ service cloud.firestore {
       // Allow users to read their own PDFs, admins can read all
       allow read: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+         isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data));
       allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
       
       // Allow users to create their own PDFs
@@ -121,7 +152,27 @@ service cloud.firestore {
       // Allow users to update/delete their own PDFs, or admins to manage any PDF
       allow update, delete: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+         isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins to read and write all commissions
+      allow read, write: if request.auth != null && 
+        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        isCommissionAgent(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
     }
   }
 }

@@ -1,7 +1,18 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
-export type UserRole = "admin" | "user";
+export type UserRole = "admin" | "user" | "commission_agent";
 export type UserStatus = "pending" | "approved" | "deleted";
+
+export type UserFeature =
+  | "buy_labels"
+  | "upload_labels"
+  | "track_shipment"
+  | "view_invoices"
+  | "restock_summary"
+  | "delete_logs"
+  | "modification_logs"
+  | "disposed_inventory"
+  | "affiliate_dashboard";
 
 export interface UserProfile {
   uid: string;
@@ -17,11 +28,18 @@ export interface UserProfile {
   country?: string | null;
   zipCode?: string | null;
   profilePictureUrl?: string | null;
-  role: UserRole;
+  role: UserRole; // Legacy single role (for backward compatibility)
+  roles?: UserRole[]; // New array format for multiple roles
+  features?: UserFeature[]; // Granted features
   status?: UserStatus; // Optional for backward compatibility
   createdAt?: Date;
   approvedAt?: Date;
   deletedAt?: Date;
+  referredByAgentId?: string; // ID of the commission agent who referred this user
+  referralCode?: string; // Unique referral code for commission agents
+  socialProfile?: string; // Social media profile URL
+  salesExperience?: string[]; // Array of sales experience types
+  referralSource?: string; // How they heard about the program
 }
 
 export interface InventoryItem {
@@ -251,6 +269,28 @@ export interface UploadedPDF {
   date: string; // e.g., "2024-01-15"
   labelProducts?: LabelProductDetail[];
   status?: "pending" | "complete"; // Label processing status
+}
+
+export interface Commission {
+  id: string;
+  agentId: string; // Commission agent's user ID
+  agentName: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  clientId: string; // Client's user ID
+  clientName: string;
+  invoiceAmount: number;
+  commissionAmount: number; // 10% of invoice amount
+  status: "pending" | "paid";
+  createdAt: Date | {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  paidAt?: Date | {
+    seconds: number;
+    nanoseconds: number;
+  } | string;
+  paidBy?: string; // Admin user ID who marked as paid
 }
 
 export interface AuthContextType {

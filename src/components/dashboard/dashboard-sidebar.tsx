@@ -26,12 +26,15 @@ import {
   X,
   ShoppingBag,
   Truck,
+  Users,
+  UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { Invoice, UploadedPDF } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { hasRole, hasFeature } from "@/lib/permissions";
 
 export function DashboardSidebar() {
   const pathname = usePathname();
@@ -50,12 +53,20 @@ export function DashboardSidebar() {
   const pendingInvoicesCount = invoices.filter(inv => inv.status === 'pending').length;
   const labelsCount = uploadedPDFs.length;
 
-  const menuItems = [
+  // Check if user has "user" role - if yes, show full client dashboard
+  // If only commission_agent, show only affiliate menu
+  const hasUserRole = hasRole(userProfile, "user");
+  const hasAgentRole = hasRole(userProfile, "commission_agent");
+
+  // Build menu items based on roles and features
+  const allMenuItems = [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
       color: "text-blue-600",
+      requiredRole: "user" as const,
+      requiredFeature: null as string | null,
     },
     {
       title: "Upload Labels",
@@ -63,6 +74,8 @@ export function DashboardSidebar() {
       icon: Package,
       color: "text-indigo-600",
       badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: "upload_labels" as const,
     },
     {
       title: "Buy Labels",
@@ -70,6 +83,8 @@ export function DashboardSidebar() {
       icon: ShoppingBag,
       color: "text-blue-600",
       badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: "buy_labels" as const,
     },
     {
       title: "Track Shipment",
@@ -77,24 +92,32 @@ export function DashboardSidebar() {
       icon: Truck,
       color: "text-teal-600",
       badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: "track_shipment" as const,
     },
     {
       title: "Restock Summary",
       url: "/dashboard/restock-history",
       icon: History,
       color: "text-green-600",
+      requiredRole: "user" as const,
+      requiredFeature: "restock_summary" as const,
     },
     {
       title: "Deleted Logs",
       url: "/dashboard/delete-logs",
       icon: Trash2,
       color: "text-red-600",
+      requiredRole: "user" as const,
+      requiredFeature: "delete_logs" as const,
     },
     {
       title: "Modification Logs",
       url: "/dashboard/edit-logs",
       icon: Edit,
       color: "text-blue-600",
+      requiredRole: "user" as const,
+      requiredFeature: "modification_logs" as const,
     },
     {
       title: "Disposed Inventory",
@@ -102,6 +125,8 @@ export function DashboardSidebar() {
       icon: RotateCcw,
       color: "text-orange-600",
       badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: "disposed_inventory" as const,
     },
     {
       title: "Invoices",
@@ -109,8 +134,42 @@ export function DashboardSidebar() {
       icon: FileText,
       color: "text-purple-600",
       badge: pendingInvoicesCount > 0 ? pendingInvoicesCount : null,
+      requiredRole: "user" as const,
+      requiredFeature: "view_invoices" as const,
+    },
+    {
+      title: "Affiliate",
+      url: "/dashboard/agent",
+      icon: UserCheck,
+      color: "text-purple-600",
+      badge: null,
+      requiredRole: "commission_agent" as const,
+      requiredFeature: "affiliate_dashboard" as const,
     },
   ];
+
+  // Filter menu items based on roles and features
+  // IMPORTANT: If a menu item requires a feature, user MUST have that feature (strict check, no role fallback)
+  // Features can be granted to any role, allowing cross-role access
+  const menuItems = allMenuItems.filter((item) => {
+    // First, check if user has the required role (base requirement)
+    const hasRequiredRole = 
+      (item.requiredRole === "user" && hasUserRole) ||
+      (item.requiredRole === "commission_agent" && hasAgentRole);
+    
+    // If user doesn't have the required role, don't show the item
+    if (!hasRequiredRole) {
+      return false;
+    }
+    
+    // If a feature is specified, user MUST have that feature (strict requirement, no fallback)
+    if (item.requiredFeature) {
+      return hasFeature(userProfile, item.requiredFeature);
+    }
+    
+    // If no feature requirement, show based on role (which we already checked above)
+    return true;
+  }).map(({ requiredRole, requiredFeature, ...item }) => item); // Remove internal fields
 
   return (
     <Sidebar className="border-r border-border/40 bg-gradient-to-b from-background to-muted/20">

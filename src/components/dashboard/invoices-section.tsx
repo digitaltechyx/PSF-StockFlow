@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import type { Invoice } from "@/types";
+import { createCommissionForInvoice } from "@/lib/commission-utils";
 
 interface InvoicesSectionProps {
   invoices: Invoice[];
@@ -24,7 +25,7 @@ interface InvoicesSectionProps {
 
 export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState("");
@@ -166,6 +167,16 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
       await updateDoc(doc(db, `users/${invoice.userId}/invoices/${invoiceId}`), {
         status: 'paid',
       });
+      
+      // Create commission if user was referred by an agent
+      if (userProfile && invoice.status === 'pending') {
+        try {
+          await createCommissionForInvoice(invoice, userProfile);
+        } catch (commissionError) {
+          console.error("Error creating commission:", commissionError);
+          // Don't fail the whole operation if commission creation fails
+        }
+      }
       
       toast({
         title: "Invoice Marked as Paid",

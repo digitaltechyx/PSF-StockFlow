@@ -72,13 +72,27 @@ export default function LoginPage() {
           return;
         }
         
-        // Redirect based on role and status
-        if (userProfile.role === 'admin') {
+        // Import permission helpers
+        const { hasRole, getUserRoles } = await import("@/lib/permissions");
+        
+        // Redirect based on roles and status
+        const userRoles = getUserRoles(userProfile);
+        
+        if (hasRole(userProfile, 'admin')) {
           router.push("/admin/dashboard");
         } else if (userStatus === "pending") {
           router.push("/pending-approval");
         } else {
-          router.push("/dashboard");
+          // If user has "user" role, redirect to client dashboard (full access)
+          // If only commission_agent, redirect to agent dashboard
+          if (hasRole(userProfile, 'user')) {
+            router.push("/dashboard");
+          } else if (hasRole(userProfile, 'commission_agent')) {
+            router.push("/dashboard/agent");
+          } else {
+            // Fallback to client dashboard
+            router.push("/dashboard");
+          }
         }
       } else {
         // If no profile exists, redirect to regular dashboard
@@ -161,12 +175,20 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            If you don&apos;t have an account, please{" "}
-            <Link href="/register" className="underline text-primary font-medium">
-              fill out the onboarding form
-            </Link>
-            {" "}to complete your registration.
+          <div className="mt-4 text-center text-sm text-muted-foreground space-y-2">
+            <div>
+              If you don&apos;t have an account, please{" "}
+              <Link href="/register" className="underline text-primary font-medium">
+                fill out the onboarding form
+              </Link>
+              {" "}to complete your registration.
+            </div>
+            <div>
+              Want to join our affiliate program?{" "}
+              <Link href="/register-agent" className="underline text-primary font-medium">
+                Apply as Affiliate
+              </Link>
+            </div>
           </div>
         </div>
       </div>

@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { auth, db } from "@/lib/firebase";
 import { Loader2, UserPlus } from "lucide-react";
+import { getDefaultFeaturesForRole } from "@/lib/permissions";
 
 const createUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -68,7 +69,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         values.password
       );
 
-      // Create user profile in Firestore
+      // Create user profile in Firestore with all features by default
       await setDoc(doc(db, "users", userCredential.user.uid), {
         uid: userCredential.user.uid,
         name: values.name,
@@ -83,6 +84,8 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         country: values.country,
         zipCode: values.zipCode,
         role: values.role,
+        roles: [values.role], // Set roles array
+        features: getDefaultFeaturesForRole(values.role), // Give all features by default for clients
         status: "pending",
         createdAt: new Date(),
       });

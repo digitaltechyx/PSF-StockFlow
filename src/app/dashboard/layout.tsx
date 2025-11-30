@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { ProfileDialog } from "@/components/dashboard/profile-dialog";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { hasRole, getUserRoles } from "@/lib/permissions";
 import {
   SidebarProvider,
   SidebarInset,
@@ -40,9 +41,14 @@ export default function DashboardLayout({
       }
       
       // Now we have both user and userProfile
-      if (userProfile.role !== "user") {
-        // Redirect if not a regular user, e.g., an admin trying to access user dash
+      const userRoles = getUserRoles(userProfile);
+      
+      if (hasRole(userProfile, "admin")) {
+        // Redirect admin to admin dashboard
         router.replace("/admin/dashboard");
+      } else if (userRoles.length === 0 || (!hasRole(userProfile, "user") && !hasRole(userProfile, "commission_agent"))) {
+        // Unknown role, redirect to login
+        router.replace("/login");
       } else if (userProfile.status === "pending") {
         // Redirect pending users to a waiting page
         router.replace("/pending-approval");
@@ -84,8 +90,9 @@ export default function DashboardLayout({
     );
   }
 
-  // If profile loaded but user is not a regular user or has invalid status, show loading (redirect will happen)
-  if (userProfile && (userProfile.role !== "user" || userProfile.status === "pending" || userProfile.status === "deleted")) {
+  // If profile loaded but user is not a regular user/agent or has invalid status, show loading (redirect will happen)
+  const userRoles = userProfile ? getUserRoles(userProfile) : [];
+  if (userProfile && ((userRoles.length === 0 || (!hasRole(userProfile, "user") && !hasRole(userProfile, "commission_agent"))) || userProfile.status === "pending" || userProfile.status === "deleted")) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

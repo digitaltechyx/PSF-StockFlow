@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -40,6 +40,7 @@ const formSchema = z.object({
   state: z.string().min(1, { message: "State is required." }),
   country: z.string().min(1, { message: "Country is required." }),
   zipCode: z.string().min(5, { message: "Zip code must be at least 5 characters." }),
+  referralCode: z.string().optional(),
   termsAccepted: z.boolean().refine((val) => val === true, {
     message: "You must accept the terms and conditions.",
   }),
@@ -64,6 +65,7 @@ export default function RegisterPage() {
       state: "",
       country: "",
       zipCode: "",
+      referralCode: "",
       termsAccepted: false,
     },
   });
@@ -71,10 +73,39 @@ export default function RegisterPage() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
+      let referredByAgentId: string | null = null;
+      
+      // Validate referral code if provided
+      if (values.referralCode && values.referralCode.trim() !== "") {
+        const referralCode = values.referralCode.trim().toUpperCase();
+        const agentsQuery = query(
+          collection(db, "users"),
+          where("referralCode", "==", referralCode),
+          where("role", "==", "commission_agent"),
+          where("status", "==", "approved")
+        );
+        const agentsSnapshot = await getDocs(agentsQuery);
+        
+        if (!agentsSnapshot.empty) {
+          referredByAgentId = agentsSnapshot.docs[0].id;
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Invalid Referral Code",
+            description: "The referral code you entered is invalid or the agent is not approved.",
+          });
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
       const user = userCredential.user;
 
-      await setDoc(doc(db, "users", user.uid), {
+      // Import default features helper
+      const { getDefaultFeaturesForRole } = await import("@/lib/permissions");
+      
+      const userData: any = {
         uid: user.uid,
         name: values.fullName,
         email: values.email,
@@ -88,9 +119,19 @@ export default function RegisterPage() {
         country: values.country,
         zipCode: values.zipCode,
         role: "user",
+        roles: ["user"], // Set roles array
+        features: getDefaultFeaturesForRole("user"), // Give all features by default
         status: "pending",
         createdAt: new Date(),
-      });
+      };
+
+      // Add referral information if referral code was provided
+      if (values.referralCode && values.referralCode.trim() !== "" && referredByAgentId) {
+        userData.referredBy = values.referralCode.trim().toUpperCase();
+        userData.referredByAgentId = referredByAgentId;
+      }
+
+      await setDoc(doc(db, "users", user.uid), userData);
 
       toast({
         title: "Registration Successful",
@@ -267,6 +308,24 @@ export default function RegisterPage() {
               />
               <FormField
                 control={form.control}
+                name="referralCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Referral Code (Optional)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Enter referral code if you have one" 
+                        {...field}
+                        className="uppercase"
+                        onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
@@ -332,6 +391,12 @@ export default function RegisterPage() {
             Already have an account?{" "}
             <Link href="/login" className="underline text-primary">
               Login
+            </Link>
+          </div>
+          <div className="mt-2 text-center text-sm">
+            Want to join our affiliate program?{" "}
+            <Link href="/register-agent" className="underline text-primary font-semibold">
+              Apply as Affiliate
             </Link>
           </div>
         </div>

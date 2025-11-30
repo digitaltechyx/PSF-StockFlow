@@ -10,11 +10,13 @@ import { generateInvoicePDF } from "@/lib/invoice-generator";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type Invoice, type UserProfile } from "@/types";
+import { type Invoice, type UserProfile, type Commission } from "@/types";
 import { db } from "@/lib/firebase";
-import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
+import { collection, query, getDocs, orderBy, doc, updateDoc, where } from "firebase/firestore";
 import type { ShippedItem } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
+import { createCommissionForInvoice } from "@/lib/commission-utils";
+import { DollarSign } from "lucide-react";
 
 interface InvoiceManagementProps {
   users: UserProfile[];
@@ -44,6 +46,11 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [userFilterTab, setUserFilterTab] = useState<"all" | "unpaid" | "paid">("all");
   const [activeTab, setActiveTab] = useState<"pending" | "paid">("pending");
   const [currentPage, setCurrentPage] = useState(1);
+  const [mainTab, setMainTab] = useState<"invoices" | "commissions">("invoices");
+  const [commissionTab, setCommissionTab] = useState<"pending" | "paid">("pending");
+  const [commissions, setCommissions] = useState<Commission[]>([]);
+  const [commissionsLoading, setCommissionsLoading] = useState(false);
+  const [commissionPage, setCommissionPage] = useState(1);
   const itemsPerPage = 12;
   
   // Load all invoices from all users
@@ -78,8 +85,37 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     }
   };
 
+  // Load all commissions
+  const loadCommissions = async () => {
+    setCommissionsLoading(true);
+    try {
+      const commissionsQuery = query(
+        collection(db, "commissions"),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(commissionsQuery);
+      
+      const commissionsData = snapshot.docs.map(doc => ({
+        ...doc.data() as Commission,
+        id: doc.id,
+      }));
+      
+      setCommissions(commissionsData);
+    } catch (error) {
+      console.error('Error loading commissions:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load commissions.",
+      });
+    } finally {
+      setCommissionsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadInvoices();
+    loadCommissions();
   }, [users]);
 
   // Calculate summary for each user
@@ -235,9 +271,26 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
   const handleMarkAsPaid = async (invoiceId: string, invoice: Invoice) => {
     try {
+      // Find the user who owns this invoice
+      const user = users.find(u => u.uid === invoice.userId);
+      
       await updateDoc(doc(db, `users/${invoice.userId}/invoices/${invoiceId}`), {
         status: 'paid',
       });
+      
+      // Create commission if user was referred by an agent
+      if (user && invoice.status === 'pending') {
+        try {
+          // Ensure invoice has id field
+          const invoiceWithId = { ...invoice, id: invoice.id || invoiceId };
+          await createCommissionForInvoice(invoiceWithId, user);
+          await loadCommissions(); // Refresh commissions after creating
+        } catch (commissionError) {
+          console.error("Error creating commission:", commissionError);
+          // Don't fail the whole operation if commission creation fails
+        }
+      }
+      
       toast({
         title: "Invoice Marked as Paid",
         description: "Invoice status has been updated.",
@@ -253,25 +306,76 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     }
   };
 
+  const handleMarkCommissionAsPaid = async (commissionId: string, commission: Commission) => {
+    try {
+      await updateDoc(doc(db, `commissions/${commissionId}`), {
+        status: 'paid',
+        paidAt: new Date(),
+        paidBy: adminUser?.uid || 'admin',
+      });
+      
+      toast({
+        title: "Commission Marked as Paid",
+        description: "Commission status has been updated.",
+      });
+      await loadCommissions(); // Refresh commissions
+    } catch (error) {
+      console.error("Error updating commission:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update commission status.",
+      });
+    }
+  };
+
   const formatDate = (date: any) => {
     if (!date) return "N/A";
     if (typeof date === 'string') return new Date(date).toLocaleDateString();
     return new Date(date.seconds * 1000).toLocaleDateString();
   };
 
+  // Filter commissions by status
+  const pendingCommissions = commissions.filter(c => c.status === 'pending');
+  const paidCommissions = commissions.filter(c => c.status === 'paid');
+  const currentCommissions = commissionTab === 'pending' ? pendingCommissions : paidCommissions;
+  
+  // Pagination for commissions
+  const commissionStartIndex = (commissionPage - 1) * itemsPerPage;
+  const commissionEndIndex = commissionStartIndex + itemsPerPage;
+  const paginatedCommissions = currentCommissions.slice(commissionStartIndex, commissionEndIndex);
+  const totalCommissionPages = Math.ceil(currentCommissions.length / itemsPerPage);
+
   return (
     <div className="space-y-6">
-      {/* Search Bar */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Invoice Management
-              </CardTitle>
-              <CardDescription>View user invoices and payment status</CardDescription>
-            </div>
+      {/* Main Tabs: Invoices and Commissions */}
+      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as "invoices" | "commissions")} className="w-full">
+        <TabsList className="grid grid-cols-2 w-full mb-6">
+          <TabsTrigger value="invoices" className="flex items-center gap-2">
+            <Receipt className="h-4 w-4" />
+            Invoices
+          </TabsTrigger>
+          <TabsTrigger value="commissions" className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4" />
+            Commissions
+            {pendingCommissions.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{pendingCommissions.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="invoices" className="space-y-6">
+          {/* Search Bar */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Invoice Management
+                  </CardTitle>
+                  <CardDescription>View user invoices and payment status</CardDescription>
+                </div>
             <div className="flex gap-2">
               <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
                 Total Pending: {userSummaries.reduce((sum, s) => sum + s.pendingCount, 0)}
@@ -846,6 +950,247 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
           )}
         </DialogContent>
       </Dialog>
+
+        </TabsContent>
+
+        <TabsContent value="commissions" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5" />
+                    Commission Management
+                  </CardTitle>
+                  <CardDescription>View and manage commission payments to agents</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
+                    Pending: ${pendingCommissions.reduce((sum, c) => sum + (c.commissionAmount || 0), 0).toFixed(2)}
+                  </Badge>
+                  <Badge variant="default" className="text-green-600 bg-green-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
+                    Paid: ${paidCommissions.reduce((sum, c) => sum + (c.commissionAmount || 0), 0).toFixed(2)}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={commissionTab} onValueChange={(value) => {
+                setCommissionTab(value as "pending" | "paid");
+                setCommissionPage(1);
+              }} className="w-full">
+                <TabsList className="grid grid-cols-2 w-full mb-6">
+                  <TabsTrigger value="pending" className="flex items-center justify-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Pending Commissions
+                    <Badge variant="secondary" className="text-xs">{pendingCommissions.length}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="paid" className="flex items-center justify-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    Paid Commissions
+                    <Badge variant="secondary" className="text-xs">{paidCommissions.length}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="pending" className="mt-6">
+                  {commissionsLoading ? (
+                    <div className="text-center py-12">
+                      <p className="text-muted-foreground">Loading commissions...</p>
+                    </div>
+                  ) : paginatedCommissions.length > 0 ? (
+                    <>
+                      <div className="space-y-3">
+                        {paginatedCommissions.map((commission) => {
+                          const client = users.find(u => u.uid === commission.clientId);
+                          return (
+                            <Card key={commission.id} className="border-yellow-200 bg-yellow-50/50">
+                              <CardContent className="p-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4 className="font-semibold text-sm sm:text-base">Agent: {commission.agentName}</h4>
+                                      <Badge variant="secondary" className="text-xs">Pending</Badge>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Client:</span>
+                                        <p className="font-medium">{client?.name || commission.clientName || "Unknown"}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Invoice #:</span>
+                                        <p className="font-mono font-medium">{commission.invoiceNumber}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Invoice Amount:</span>
+                                        <p className="font-medium">${commission.invoiceAmount.toFixed(2)}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Commission (10%):</span>
+                                        <p className="font-bold text-lg text-yellow-700">${commission.commissionAmount.toFixed(2)}</p>
+                                      </div>
+                                      <div className="sm:col-span-2">
+                                        <span className="text-muted-foreground">Created:</span>
+                                        <p className="text-xs">{formatDate(commission.createdAt)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {commissionTab === 'pending' && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => handleMarkCommissionAsPaid(commission.id, commission)}
+                                      className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Mark as Paid
+                                    </Button>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                      
+                      {totalCommissionPages > 1 && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {commissionStartIndex + 1} to {Math.min(commissionEndIndex, currentCommissions.length)} of {currentCommissions.length} commissions
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCommissionPage(p => Math.max(1, p - 1))}
+                              disabled={commissionPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <span className="text-sm">
+                              Page {commissionPage} of {totalCommissionPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCommissionPage(p => Math.min(totalCommissionPages, p + 1))}
+                              disabled={commissionPage === totalCommissionPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <DollarSign className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">No {commissionTab === 'pending' ? 'Pending' : 'Paid'} Commissions</h3>
+                      <p className="text-muted-foreground">
+                        {commissionTab === 'pending' 
+                          ? "All commissions have been paid." 
+                          : "No commissions have been paid yet."}
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="paid" className="mt-6">
+                  {commissionsLoading ? (
+                    <div className="text-center py-12">
+                      <p className="text-muted-foreground">Loading commissions...</p>
+                    </div>
+                  ) : paginatedCommissions.length > 0 ? (
+                    <>
+                      <div className="space-y-3">
+                        {paginatedCommissions.map((commission) => {
+                          const client = users.find(u => u.uid === commission.clientId);
+                          return (
+                            <Card key={commission.id} className="border-green-200 bg-green-50/50">
+                              <CardContent className="p-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4 className="font-semibold text-sm sm:text-base">Agent: {commission.agentName}</h4>
+                                      <Badge variant="default" className="text-xs bg-green-600">Paid</Badge>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Client:</span>
+                                        <p className="font-medium">{client?.name || commission.clientName || "Unknown"}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Invoice #:</span>
+                                        <p className="font-mono font-medium">{commission.invoiceNumber}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Invoice Amount:</span>
+                                        <p className="font-medium">${commission.invoiceAmount.toFixed(2)}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Commission (10%):</span>
+                                        <p className="font-bold text-lg text-green-700">${commission.commissionAmount.toFixed(2)}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Paid On:</span>
+                                        <p className="text-xs">{formatDate(commission.paidAt)}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Created:</span>
+                                        <p className="text-xs">{formatDate(commission.createdAt)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                      
+                      {totalCommissionPages > 1 && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {commissionStartIndex + 1} to {Math.min(commissionEndIndex, currentCommissions.length)} of {currentCommissions.length} commissions
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCommissionPage(p => Math.max(1, p - 1))}
+                              disabled={commissionPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <span className="text-sm">
+                              Page {commissionPage} of {totalCommissionPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCommissionPage(p => Math.min(totalCommissionPages, p + 1))}
+                              disabled={commissionPage === totalCommissionPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <DollarSign className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">No Paid Commissions</h3>
+                      <p className="text-muted-foreground">
+                        No commissions have been paid yet.
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

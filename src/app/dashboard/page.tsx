@@ -9,9 +9,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, Truck, DollarSign } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { hasRole } from "@/lib/permissions";
 
 export default function DashboardPage() {
   const { userProfile } = useAuth();
+  const router = useRouter();
+
+  // Redirect commission agents (without user role) to their affiliate dashboard
+  // If user has both roles, they stay on client dashboard
+  useEffect(() => {
+    if (userProfile && hasRole(userProfile, "commission_agent") && !hasRole(userProfile, "user")) {
+      router.replace("/dashboard/agent");
+    }
+  }, [userProfile, router]);
   
   const { 
     data: inventoryData, 
