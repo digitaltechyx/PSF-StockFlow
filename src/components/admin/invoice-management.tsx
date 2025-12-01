@@ -284,18 +284,24 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
           // Ensure invoice has id field
           const invoiceWithId = { ...invoice, id: invoice.id || invoiceId };
           await createCommissionForInvoice(invoiceWithId, user);
-          await loadCommissions(); // Refresh commissions after creating
+          // Refresh both commissions and invoices after creating commission
+          await Promise.all([
+            loadCommissions(), // Refresh commissions after creating
+            loadInvoices(),    // Refresh invoices list
+          ]);
         } catch (commissionError) {
           console.error("Error creating commission:", commissionError);
           // Don't fail the whole operation if commission creation fails
         }
+      } else {
+        // If no commission created, just refresh invoices
+        await loadInvoices(); // Refresh UI
       }
       
       toast({
         title: "Invoice Marked as Paid",
         description: "Invoice status has been updated.",
       });
-      loadInvoices(); // Refresh UI
     } catch (error) {
       console.error("Error updating invoice:", error);
       toast({
@@ -318,7 +324,12 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         title: "Commission Marked as Paid",
         description: "Commission status has been updated.",
       });
-      await loadCommissions(); // Refresh commissions
+      
+      // Refresh both commissions and invoices to update all sections
+      await Promise.all([
+        loadCommissions(), // Refresh commissions list
+        loadInvoices(),    // Refresh invoices list (paid invoices section)
+      ]);
     } catch (error) {
       console.error("Error updating commission:", error);
       toast({

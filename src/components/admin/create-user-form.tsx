@@ -12,10 +12,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { auth, db } from "@/lib/firebase";
-import { Loader2, UserPlus } from "lucide-react";
+import { Loader2, UserPlus, Shield, Zap } from "lucide-react";
 import { getDefaultFeaturesForRole } from "@/lib/permissions";
+import type { UserRole, UserFeature } from "@/types";
 
 const createUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -29,13 +31,22 @@ const createUserSchema = z.object({
   state: z.string().min(1, "State is required"),
   country: z.string().min(1, "Country is required"),
   zipCode: z.string().min(5, "Zip code must be at least 5 characters"),
-  role: z.literal("user").default("user"),
+  role: z.enum(["user", "sub_admin"]).default("user"),
+  features: z.array(z.string()).default([]),
 });
 
 interface CreateUserFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
 }
+
+// Admin features available for sub admins
+const ADMIN_FEATURES: { value: UserFeature; label: string; description: string }[] = [
+  { value: "admin_dashboard", label: "Admin Dashboard", description: "Access to admin dashboard overview" },
+  { value: "manage_users", label: "Manage Users", description: "Create, edit, and manage users" },
+  { value: "manage_invoices", label: "Manage Invoices", description: "View and manage invoices" },
+  { value: "manage_labels", label: "Manage Labels", description: "View and manage uploaded labels" },
+];
 
 export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
   const { toast } = useToast();
@@ -56,8 +67,12 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
       country: "",
       zipCode: "",
       role: "user",
+      features: [],
     },
   });
+
+  const selectedRole = form.watch("role");
+  const selectedFeatures = form.watch("features");
 
   async function onSubmit(values: z.infer<typeof createUserSchema>) {
     setIsLoading(true);
@@ -69,7 +84,17 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         values.password
       );
 
-      // Create user profile in Firestore with all features by default
+      // Determine features based on role
+      let userFeatures: UserFeature[] = [];
+      if (values.role === "sub_admin") {
+        // Sub admin gets only the features explicitly selected
+        userFeatures = values.features as UserFeature[];
+      } else {
+        // Regular users get default features for their role
+        userFeatures = getDefaultFeaturesForRole(values.role);
+      }
+
+      // Create user profile in Firestore
       await setDoc(doc(db, "users", userCredential.user.uid), {
         uid: userCredential.user.uid,
         name: values.name,
@@ -85,8 +110,8 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         zipCode: values.zipCode,
         role: values.role,
         roles: [values.role], // Set roles array
-        features: getDefaultFeaturesForRole(values.role), // Give all features by default for clients
-        status: "pending",
+        features: userFeatures,
+        status: values.role === "sub_admin" ? "approved" : "pending", // Sub admins are auto-approved
         createdAt: new Date(),
       });
 
@@ -297,14 +322,105 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
               )}
             />
 
-            <div className="bg-muted/50 p-3 rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                <strong>Role:</strong> Regular User
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Created users will have access to view inventory and shipped orders.
-              </p>
-            </div>
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>User Role</FormLabel>
+                  <FormControl>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent/50">
+                        <input
+                          type="radio"
+                          id="role-user"
+                          checked={field.value === "user"}
+                          onChange={() => field.onChange("user")}
+                          className="h-4 w-4"
+                        />
+                        <label htmlFor="role-user" className="flex-1 cursor-pointer">
+                          <div className="font-medium">Regular User</div>
+                          <div className="text-xs text-muted-foreground">
+                            Client access with inventory management, shipments, and invoices
+                          </div>
+                        </label>
+                      </div>
+                      <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent/50">
+                        <input
+                          type="radio"
+                          id="role-sub_admin"
+                          checked={field.value === "sub_admin"}
+                          onChange={() => field.onChange("sub_admin")}
+                          className="h-4 w-4"
+                        />
+                        <label htmlFor="role-sub_admin" className="flex-1 cursor-pointer">
+                          <div className="font-medium">Sub Admin</div>
+                          <div className="text-xs text-muted-foreground">
+                            Admin dashboard access with limited features (select features below)
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {selectedRole === "sub_admin" && (
+              <FormField
+                control={form.control}
+                name="features"
+                render={() => (
+                  <FormItem>
+                    <div className="mb-4">
+                      <FormLabel className="text-base flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        Admin Features
+                      </FormLabel>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Select which admin features this sub admin should have access to.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {ADMIN_FEATURES.map((feature) => (
+                        <div
+                          key={feature.value}
+                          className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-accent/50"
+                        >
+                          <Checkbox
+                            checked={selectedFeatures.includes(feature.value)}
+                            onCheckedChange={(checked) => {
+                              const currentFeatures = form.getValues("features");
+                              if (checked) {
+                                form.setValue("features", [...currentFeatures, feature.value]);
+                              } else {
+                                form.setValue(
+                                  "features",
+                                  currentFeatures.filter((f) => f !== feature.value)
+                                );
+                              }
+                            }}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 space-y-1">
+                            <label className="text-sm font-medium leading-none cursor-pointer">
+                              {feature.label}
+                            </label>
+                            <p className="text-xs text-muted-foreground">{feature.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedFeatures.length === 0 && (
+                      <p className="text-sm text-amber-600 mt-2">
+                        ⚠️ No features selected. Sub admin will not have access to any admin pages.
+                      </p>
+                    )}
+                  </FormItem>
+                )}
+              />
+            )}
 
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={isLoading} className="flex-1">

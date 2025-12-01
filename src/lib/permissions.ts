@@ -19,6 +19,9 @@ export function getDefaultFeaturesForRole(role: UserRole): UserFeature[] {
   } else if (role === "commission_agent") {
     // Commission agents get affiliate dashboard by default
     return ["affiliate_dashboard"];
+  } else if (role === "sub_admin") {
+    // Sub admins get no features by default - admin must explicitly grant them
+    return [];
   }
   // Admin has all features (handled in hasFeature function)
   return [];
@@ -78,6 +81,7 @@ export function hasFeature(userProfile: UserProfile | null | undefined, feature:
     return true;
   }
   
+  // Sub admins must have features explicitly granted (no automatic access)
   // Check if feature is granted
   if (userProfile.features && Array.isArray(userProfile.features)) {
     return userProfile.features.includes(feature);
@@ -97,6 +101,7 @@ export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...fe
     return true;
   }
   
+  // Sub admins must have features explicitly granted (no automatic access)
   if (userProfile.features && Array.isArray(userProfile.features)) {
     return features.some(feature => userProfile.features!.includes(feature));
   }
@@ -111,4 +116,5 @@ export function getPrimaryRole(userProfile: UserProfile | null | undefined): Use
   const roles = getUserRoles(userProfile);
   return roles.length > 0 ? roles[0] : null;
 }
+
 

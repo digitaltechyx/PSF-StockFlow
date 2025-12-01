@@ -1,39 +1,64 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to safely get user data
+    // Returns null if document doesn't exist
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+    
     // Helper function to check if user has a specific role (supports both legacy role and roles array)
     // Note: Firestore rules don't support array.contains(), so we check the legacy role field
     // and also check if roles array exists (client-side code ensures both are set)
     function hasRole(userData, role) {
-      // Check legacy role field (always set when roles are updated)
-      return userData.role == role || 
-             // Also check if roles array exists (for backward compatibility)
-             (userData.roles != null && userData.roles.size() > 0);
+      // Handle null/undefined userData
+      return userData != null && (
+        userData.role == role || 
+        (userData.roles != null && userData.roles.hasAny([role]))
+      );
     }
     
     // Helper function to check if user is admin
     function isAdmin(userData) {
-      return userData.role == 'admin' || 
-             (userData.roles != null && userData.roles.hasAny(['admin']));
+      return userData != null && (
+        userData.role == 'admin' || 
+        (userData.roles != null && userData.roles.hasAny(['admin']))
+      );
     }
     
     // Helper function to check if user is commission agent
     function isCommissionAgent(userData) {
-      return userData.role == 'commission_agent' || 
-             (userData.roles != null && userData.roles.hasAny(['commission_agent']));
+      return userData != null && (
+        userData.role == 'commission_agent' || 
+        (userData.roles != null && userData.roles.hasAny(['commission_agent']))
+      );
+    }
+    
+    // Helper function to check if user is sub admin
+    function isSubAdmin(userData) {
+      return userData != null && (
+        userData.role == 'sub_admin' || 
+        (userData.roles != null && userData.roles.hasAny(['sub_admin']))
+      );
+    }
+    
+    // Helper function to check if user is admin or sub admin
+    function isAdminOrSubAdmin(userData) {
+      return userData != null && (isAdmin(userData) || isSubAdmin(userData));
     }
     
     // Allow users to read/write their own user document
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and update all users (for approval/deletion)
+      // Allow admins and sub admins to read and update all users (for approval/deletion)
+      // Note: Client-side code will filter based on features (manage_users)
       allow read, update: if request.auth != null && 
-        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
       
       // Allow commission agents to read users (to see their referred clients)
       allow read: if request.auth != null && 
-        isCommissionAgent(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isCommissionAgent(getUserData(request.auth.uid));
       
       // Allow unauthenticated users to read users for referral code validation during registration
       // This is needed to validate referral codes before account creation
@@ -45,72 +70,80 @@ service cloud.firestore {
     match /users/{userId}/inventory/{document} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to manage any user's inventory
+      // Allow admins and sub admins to manage any user's inventory
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read/write their own shipped items
     match /users/{userId}/shipped/{document} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to manage any user's shipped items
+      // Allow admins and sub admins to manage any user's shipped items
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own restock history
     match /users/{userId}/restockHistory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's restock history
+      // Allow admins and sub admins to read and write any user's restock history
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own recycled shipped items
     match /users/{userId}/recycledShipped/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's recycled shipped items
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own recycled restock history
     match /users/{userId}/recycledRestockHistory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's recycled restock history
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own recycled inventory
     match /users/{userId}/recycledInventory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's recycled inventory
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own delete logs
     match /users/{userId}/deleteLogs/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's delete logs
+      // Allow admins and sub admins to read and write any user's delete logs
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own edit logs
     match /users/{userId}/editLogs/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's edit logs
+      // Allow admins and sub admins to read and write any user's edit logs
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own invoices
@@ -118,18 +151,20 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's invoices
+      // Allow admins and sub admins to read and write any user's invoices
+      // Note: Client-side code will filter based on features (manage_invoices)
       allow read, write: if request.auth != null && 
-        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow users to read their own purchased labels
     match /users/{userId}/labelPurchases/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins to read and write any user's purchased labels
+      // Allow admins and sub admins to read and write any user's purchased labels
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
     }
     
     // Allow authenticated users to create their own user document during registration
@@ -139,27 +174,30 @@ service cloud.firestore {
     
     // Allow users to manage their own uploaded PDFs
     match /uploadedPDFs/{pdfId} {
-      // Allow users to read their own PDFs, admins can read all
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
       allow read: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data));
+         isAdminOrSubAdmin(getUserData(request.auth.uid)));
       allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
       
       // Allow users to create their own PDFs
       allow create: if request.auth != null && 
         request.resource.data.uploadedBy == request.auth.uid;
       
-      // Allow users to update/delete their own PDFs, or admins to manage any PDF
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
       allow update, delete: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data));
+         isAdminOrSubAdmin(getUserData(request.auth.uid)));
     }
     
     // Commissions collection
     match /commissions/{commissionId} {
-      // Allow admins to read and write all commissions
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isAdminOrSubAdmin(getUserData(request.auth.uid));
       
       // Allow commission agents to read their own commissions
       // For individual document reads
@@ -169,7 +207,7 @@ service cloud.firestore {
       // For list/query operations - allow if user is commission agent
       // The query filter will ensure they only see their own commissions
       allow list: if request.auth != null && 
-        isCommissionAgent(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
+        isCommissionAgent(getUserData(request.auth.uid));
       
       // Allow system to create commissions (when invoice is paid)
       allow create: if request.auth != null;

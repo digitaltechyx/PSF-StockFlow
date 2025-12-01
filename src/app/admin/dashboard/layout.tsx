@@ -10,6 +10,7 @@ import {
   SidebarProvider,
   SidebarInset,
 } from "@/components/ui/sidebar";
+import { hasRole } from "@/lib/permissions";
 
 export default function AdminDashboardLayout({
   children,
@@ -30,13 +31,14 @@ export default function AdminDashboardLayout({
 
   useEffect(() => {
     if (!loading) {
-      if (!user || userProfile?.role !== "admin") {
+      // Allow both admin and sub_admin to access admin dashboard
+      if (!user || (!hasRole(userProfile, "admin") && !hasRole(userProfile, "sub_admin"))) {
         router.replace("/login");
       }
     }
   }, [user, userProfile, loading, router]);
 
-  if (loading || !user || userProfile?.role !== "admin") {
+  if (loading || !user || (!hasRole(userProfile, "admin") && !hasRole(userProfile, "sub_admin"))) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

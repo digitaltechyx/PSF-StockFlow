@@ -77,22 +77,25 @@ export default function LoginPage() {
         
         // Redirect based on roles and status
         const userRoles = getUserRoles(userProfile);
+        const hasAdminRole = hasRole(userProfile, 'admin') || hasRole(userProfile, 'sub_admin');
+        const hasUserRole = hasRole(userProfile, 'user');
+        const hasAgentRole = hasRole(userProfile, 'commission_agent');
         
-        if (hasRole(userProfile, 'admin')) {
-          router.push("/admin/dashboard");
-        } else if (userStatus === "pending") {
+        if (userStatus === "pending") {
           router.push("/pending-approval");
-        } else {
-          // If user has "user" role, redirect to client dashboard (full access)
+        } else if (hasAdminRole) {
+          // ALWAYS prioritize admin/sub_admin dashboard if user has that role
+          // Even if they have other roles, admin dashboard should be the default
+          router.push("/admin/dashboard");
+        } else if (hasUserRole) {
+          // If user has "user" role, redirect to client dashboard
+          router.push("/dashboard");
+        } else if (hasAgentRole) {
           // If only commission_agent, redirect to agent dashboard
-          if (hasRole(userProfile, 'user')) {
-            router.push("/dashboard");
-          } else if (hasRole(userProfile, 'commission_agent')) {
-            router.push("/dashboard/agent");
-          } else {
-            // Fallback to client dashboard
-            router.push("/dashboard");
-          }
+          router.push("/dashboard/agent");
+        } else {
+          // Fallback to client dashboard
+          router.push("/dashboard");
         }
       } else {
         // If no profile exists, redirect to regular dashboard
@@ -187,7 +190,7 @@ export default function LoginPage() {
               Want to join our affiliate program?{" "}
               <Link href="/register-agent" className="underline text-primary font-medium">
                 Apply as Affiliate
-              </Link>
+            </Link>
             </div>
           </div>
         </div>

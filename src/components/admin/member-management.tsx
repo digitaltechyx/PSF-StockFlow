@@ -501,7 +501,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
                           </div>
                         </div>
                       )}
-                          </div>
+                    </div>
                         </TabsContent>
                         <TabsContent value="roles" className="mt-4">
                           <RoleFeatureManagement
@@ -558,13 +558,13 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button 
-                    variant="destructive" 
+              <Button 
+                variant="destructive" 
                     size="icon"
-                    onClick={() => handleDeleteUser(user)}
-                  >
+                onClick={() => handleDeleteUser(user)}
+              >
                     <Trash2 className="h-4 w-4" />
-                  </Button>
+              </Button>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>Delete user account</p>

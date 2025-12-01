@@ -19,8 +19,10 @@ interface RoleFeatureManagementProps {
   onSuccess?: () => void;
 }
 
-const ALL_ROLES: UserRole[] = ["user", "commission_agent"];
-const ALL_FEATURES: { value: UserFeature; label: string; description: string }[] = [
+const ALL_ROLES: UserRole[] = ["user", "commission_agent", "sub_admin"];
+
+// Client features
+const CLIENT_FEATURES: { value: UserFeature; label: string; description: string }[] = [
   { value: "buy_labels", label: "Buy Labels", description: "Access to purchase labels" },
   { value: "upload_labels", label: "Upload Labels", description: "Upload shipping labels" },
   { value: "track_shipment", label: "Track Shipment", description: "Track shipment status" },
@@ -31,6 +33,17 @@ const ALL_FEATURES: { value: UserFeature; label: string; description: string }[]
   { value: "disposed_inventory", label: "Disposed Inventory", description: "View disposed items" },
   { value: "affiliate_dashboard", label: "Affiliate Dashboard", description: "Access affiliate/commission dashboard" },
 ];
+
+// Admin features (for sub admins)
+const ADMIN_FEATURES: { value: UserFeature; label: string; description: string }[] = [
+  { value: "admin_dashboard", label: "Admin Dashboard", description: "Access to admin dashboard overview" },
+  { value: "manage_users", label: "Manage Users", description: "Create, edit, and manage users" },
+  { value: "manage_invoices", label: "Manage Invoices", description: "View and manage invoices" },
+  { value: "manage_labels", label: "Manage Labels", description: "View and manage uploaded labels" },
+];
+
+// All features combined
+const ALL_FEATURES = [...CLIENT_FEATURES, ...ADMIN_FEATURES];
 
 export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagementProps) {
   const { toast } = useToast();
@@ -159,7 +172,11 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
-                      {role === "user" ? "Client/User" : "Commission Agent"}
+                      {role === "user" 
+                        ? "Client/User" 
+                        : role === "commission_agent"
+                        ? "Commission Agent"
+                        : "Sub Admin"}
                       {isSelected && (
                         <Badge variant="secondary" className="text-xs">
                           Active
@@ -170,7 +187,9 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
                   <p className="text-xs text-muted-foreground">
                     {role === "user"
                       ? "Access to client dashboard with inventory management, shipments, and invoices"
-                      : "Access to affiliate dashboard with referral code, clients, and commissions"}
+                      : role === "commission_agent"
+                      ? "Access to affiliate dashboard with referral code, clients, and commissions"
+                      : "Access to admin dashboard with limited features (select features below)"}
                   </p>
                 </div>
               </div>
@@ -192,38 +211,97 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
             <CardTitle>Feature Access</CardTitle>
           </div>
           <CardDescription>
-            Grant specific feature access to this user. Features can be assigned to any role (clients or commission agents). 
-            For example, you can grant "Buy Labels" to a commission agent even if they don't have the "user" role.
+            Grant specific feature access to this user. Features can be assigned to any role. 
+            For sub admins, select admin features to grant access to specific admin pages.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {ALL_FEATURES.map((feature) => {
-              const isSelected = selectedFeatures.includes(feature.value);
-              return (
-                <div
-                  key={feature.value}
-                  className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                >
-                  <Checkbox
-                    id={`feature-${feature.value}`}
-                    checked={isSelected}
-                    onCheckedChange={() => handleFeatureToggle(feature.value)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 space-y-1">
-                    <Label
-                      htmlFor={`feature-${feature.value}`}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+          {/* Client Features Section */}
+          {selectedRoles.some(r => r === "user" || r === "commission_agent") && (
+            <div className="mb-6">
+              <h4 className="text-sm font-semibold mb-3 text-muted-foreground">Client Features</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {CLIENT_FEATURES.map((feature) => {
+                  const isSelected = selectedFeatures.includes(feature.value);
+                  return (
+                    <div
+                      key={feature.value}
+                      className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors"
                     >
-                      {feature.label}
-                    </Label>
-                    <p className="text-xs text-muted-foreground">{feature.description}</p>
-                  </div>
+                      <Checkbox
+                        id={`feature-${feature.value}`}
+                        checked={isSelected}
+                        onCheckedChange={() => handleFeatureToggle(feature.value)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <Label
+                          htmlFor={`feature-${feature.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {feature.label}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{feature.description}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Admin Features Section */}
+          {selectedRoles.includes("sub_admin") && (
+            <div>
+              <div className="mb-3 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">Admin Features Required</h4>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Sub admins must have admin features explicitly granted to access admin pages. Select the features below to grant access.
+                  </p>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {ADMIN_FEATURES.map((feature) => {
+                  const isSelected = selectedFeatures.includes(feature.value);
+                  return (
+                    <div
+                      key={feature.value}
+                      className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors border-primary/20"
+                    >
+                      <Checkbox
+                        id={`feature-${feature.value}`}
+                        checked={isSelected}
+                        onCheckedChange={() => handleFeatureToggle(feature.value)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <Label
+                          htmlFor={`feature-${feature.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {feature.label}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{feature.description}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {selectedRoles.includes("sub_admin") && 
+               !selectedFeatures.some(f => ADMIN_FEATURES.some(af => af.value === f)) && (
+                <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+                    ⚠️ No Admin Features Selected
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    This sub admin will not have access to any admin pages. Please select at least one admin feature above.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

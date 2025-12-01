@@ -1,6 +1,6 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
-export type UserRole = "admin" | "user" | "commission_agent";
+export type UserRole = "admin" | "user" | "commission_agent" | "sub_admin";
 export type UserStatus = "pending" | "approved" | "deleted";
 
 export type UserFeature =
@@ -12,7 +12,11 @@ export type UserFeature =
   | "delete_logs"
   | "modification_logs"
   | "disposed_inventory"
-  | "affiliate_dashboard";
+  | "affiliate_dashboard"
+  | "admin_dashboard"
+  | "manage_users"
+  | "manage_invoices"
+  | "manage_labels";
 
 export interface UserProfile {
   uid: string;

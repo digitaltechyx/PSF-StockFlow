@@ -9,16 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Users, UserPlus, Shield } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Users, UserPlus, Shield, UserCheck } from "lucide-react";
 import { CreateUserForm } from "@/components/admin/create-user-form";
 import { MemberManagement } from "@/components/admin/member-management";
+import { CommissionAgentsManagement } from "@/components/admin/commission-agents-management";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getUserRoles } from "@/lib/permissions";
 
 export default function AdminUsersPage() {
   const { userProfile: adminUser } = useAuth();
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateUser, setShowCreateUser] = useState(false);
+  const [activeTab, setActiveTab] = useState<"users" | "commission_agents">("users");
 
   const filteredUsers = useMemo(() => {
     return users
@@ -33,6 +37,14 @@ export default function AdminUsersPage() {
         return name.includes(term) || email.includes(term) || phone.includes(term);
       });
   }, [users, adminUser, searchTerm]);
+
+  // Count pending commission agents
+  const pendingCommissionAgentsCount = useMemo(() => {
+    return users.filter((user) => {
+      const userRoles = getUserRoles(user);
+      return userRoles.includes("commission_agent") && user.status === "pending";
+    }).length;
+  }, [users]);
 
   const pendingUsersCount = users.filter((user) => 
     user.uid !== adminUser?.uid && user.status === "pending"
@@ -92,15 +104,52 @@ export default function AdminUsersPage() {
             </Dialog>
           </div>
 
-          {usersLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-32 w-full rounded-xl" />
-              ))}
-            </div>
-          ) : (
-            <MemberManagement adminUser={adminUser} />
-          )}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "commission_agents")} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="users" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Users
+                {pendingUsersCount > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {pendingUsersCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="commission_agents" className="flex items-center gap-2">
+                <UserCheck className="h-4 w-4" />
+                Commission Agents
+                {pendingCommissionAgentsCount > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {pendingCommissionAgentsCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="users" className="mt-0">
+              {usersLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-32 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : (
+                <MemberManagement adminUser={adminUser} />
+              )}
+            </TabsContent>
+            
+            <TabsContent value="commission_agents" className="mt-0">
+              {usersLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-32 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : (
+                <CommissionAgentsManagement adminUser={adminUser} />
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

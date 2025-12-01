@@ -23,12 +23,15 @@ import {
   Shield,
   Package,
   X,
+  UserCheck,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, UploadedPDF } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { hasFeature, hasRole } from "@/lib/permissions";
 
 export function AdminSidebar() {
   const pathname = usePathname();
@@ -90,12 +93,15 @@ export function AdminSidebar() {
     }).length;
   }, [allUploadedPDFs, currentDate]);
 
-  const menuItems = [
+  // Filter menu items based on user's features
+  // Admin has all features automatically, sub_admin needs explicit grants
+  const allMenuItems = [
     {
       title: "Dashboard",
       url: "/admin/dashboard",
       icon: LayoutDashboard,
       color: "text-blue-600",
+      requiredFeature: "admin_dashboard" as const,
     },
     {
       title: "Users",
@@ -103,12 +109,14 @@ export function AdminSidebar() {
       icon: Users,
       color: "text-green-600",
       badge: activeUsersCount > 0 ? activeUsersCount : null,
+      requiredFeature: "manage_users" as const,
     },
     {
       title: "Invoices",
       url: "/admin/dashboard/invoices",
       icon: FileText,
       color: "text-indigo-600",
+      requiredFeature: "manage_invoices" as const,
     },
     {
       title: "Labels",
@@ -116,8 +124,27 @@ export function AdminSidebar() {
       icon: Package,
       color: "text-pink-600",
       badge: newLabelsCount > 0 ? newLabelsCount : null,
+      requiredFeature: "manage_labels" as const,
     },
   ];
+
+  // Filter menu items based on user's role and features
+  const menuItems = allMenuItems.filter((item) => {
+    // Admin always sees all items
+    if (hasRole(userProfile, "admin")) {
+      return true;
+    }
+    // Sub admin only sees items for which they have the required feature
+    if (hasRole(userProfile, "sub_admin")) {
+      return hasFeature(userProfile, item.requiredFeature);
+    }
+    return false;
+  });
+
+  // Check if user has other roles (client or commission agent) to show additional dashboard links
+  const hasUserRole = hasRole(userProfile, "user");
+  const hasAgentRole = hasRole(userProfile, "commission_agent");
+  const hasOtherRoles = hasUserRole || hasAgentRole;
 
   return (
     <Sidebar className="border-r border-border/40 bg-gradient-to-b from-background to-muted/20">
@@ -151,51 +178,107 @@ export function AdminSidebar() {
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.url || (item.url === "/admin/dashboard" && pathname === "/admin/dashboard");
-                
-                return (
-                  <SidebarMenuItem key={item.url}>
+            {menuItems.length > 0 ? (
+              <SidebarMenu className="space-y-1">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.url || (item.url === "/admin/dashboard" && pathname === "/admin/dashboard");
+                  
+                  return (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        tooltip={item.title}
+                        className={cn(
+                          "group relative h-11 rounded-lg transition-all duration-200",
+                          isActive 
+                            ? "bg-gradient-to-r from-primary/10 to-primary/5 text-primary shadow-sm border border-primary/20" 
+                            : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Link href={item.url} className="flex items-center gap-3">
+                          <Icon className={cn(
+                            "h-5 w-5 transition-transform group-hover:scale-110",
+                            isActive ? item.color : "text-muted-foreground"
+                          )} />
+                          <span className={cn(
+                            "font-medium transition-colors",
+                            isActive && "font-semibold"
+                          )}>
+                            {item.title}
+                          </span>
+                          {item.badge !== null && item.badge !== undefined && (
+                            <SidebarMenuBadge className={cn(
+                              "ml-auto bg-primary text-primary-foreground shadow-sm",
+                              isActive && "bg-primary/90"
+                            )}>
+                              {item.badge}
+                            </SidebarMenuBadge>
+                          )}
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            ) : hasRole(userProfile, "sub_admin") ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <p className="font-medium text-amber-800 dark:text-amber-200 mb-1">
+                  No Admin Features Granted
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  You have sub_admin role but no admin features have been granted. Please contact an administrator to grant you access to admin features.
+                </p>
+              </div>
+            ) : null}
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Other Dashboards Section - Show if user has multiple roles */}
+        {hasOtherRoles && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Other Dashboards
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="space-y-1">
+                {hasUserRole && (
+                  <SidebarMenuItem>
                     <SidebarMenuButton
                       asChild
-                      isActive={isActive}
-                      tooltip={item.title}
-                      className={cn(
-                        "group relative h-11 rounded-lg transition-all duration-200",
-                        isActive 
-                          ? "bg-gradient-to-r from-primary/10 to-primary/5 text-primary shadow-sm border border-primary/20" 
-                          : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
-                      )}
+                      tooltip="Client Dashboard"
+                      className="group relative h-11 rounded-lg transition-all duration-200 hover:bg-accent/50 text-muted-foreground hover:text-foreground"
                     >
-                      <Link href={item.url} className="flex items-center gap-3">
-                        <Icon className={cn(
-                          "h-5 w-5 transition-transform group-hover:scale-110",
-                          isActive ? item.color : "text-muted-foreground"
-                        )} />
-                        <span className={cn(
-                          "font-medium transition-colors",
-                          isActive && "font-semibold"
-                        )}>
-                          {item.title}
+                      <Link href="/dashboard" className="flex items-center gap-3">
+                        <Briefcase className="h-5 w-5 transition-transform group-hover:scale-110 text-muted-foreground" />
+                        <span className="font-medium transition-colors">
+                          Client Dashboard
                         </span>
-                        {item.badge !== null && item.badge !== undefined && (
-                          <SidebarMenuBadge className={cn(
-                            "ml-auto bg-primary text-primary-foreground shadow-sm",
-                            isActive && "bg-primary/90"
-                          )}>
-                            {item.badge}
-                          </SidebarMenuBadge>
-                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                )}
+                {hasAgentRole && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip="Affiliate Dashboard"
+                      className="group relative h-11 rounded-lg transition-all duration-200 hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                    >
+                      <Link href="/dashboard/agent" className="flex items-center gap-3">
+                        <UserCheck className="h-5 w-5 transition-transform group-hover:scale-110 text-muted-foreground" />
+                        <span className="font-medium transition-colors">
+                          Affiliate Dashboard
+                        </span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

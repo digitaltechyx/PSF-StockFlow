@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { ProfileDialog } from "@/components/dashboard/profile-dialog";
@@ -20,6 +20,7 @@ export default function DashboardLayout({
 }) {
   const { user, userProfile, loading, signOut } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [showProfile, setShowProfile] = useState(false);
 
   const handleProfileClick = () => {
@@ -42,11 +43,38 @@ export default function DashboardLayout({
       
       // Now we have both user and userProfile
       const userRoles = getUserRoles(userProfile);
+      const hasAdminRole = hasRole(userProfile, "admin") || hasRole(userProfile, "sub_admin");
+      const hasUserRole = hasRole(userProfile, "user");
+      const hasAgentRole = hasRole(userProfile, "commission_agent");
       
-      if (hasRole(userProfile, "admin")) {
-        // Redirect admin to admin dashboard
+      // Check if user is trying to access agent dashboard
+      const isOnAgentDashboard = pathname?.startsWith("/dashboard/agent");
+      
+      // Allow access to client dashboard if user has "user" role (even if they also have sub_admin)
+      // Allow access to agent dashboard if user has "commission_agent" role (even if they also have sub_admin)
+      // Only redirect to admin dashboard if:
+      // 1. User has admin/sub_admin role AND
+      // 2. They don't have the appropriate role for the dashboard they're trying to access
+      if (hasAdminRole && !hasUserRole && !hasAgentRole) {
+        // User has admin role but no client/agent roles - redirect to admin dashboard
         router.replace("/admin/dashboard");
-      } else if (userRoles.length === 0 || (!hasRole(userProfile, "user") && !hasRole(userProfile, "commission_agent"))) {
+      } else if (isOnAgentDashboard && !hasAgentRole) {
+        // User is trying to access agent dashboard but doesn't have agent role
+        if (hasAdminRole) {
+          router.replace("/admin/dashboard");
+        } else if (hasUserRole) {
+          router.replace("/dashboard");
+        } else {
+          router.replace("/login");
+        }
+      } else if (!isOnAgentDashboard && !hasUserRole && !hasAgentRole) {
+        // User is on client dashboard but doesn't have user or agent role
+        if (hasAdminRole) {
+          router.replace("/admin/dashboard");
+        } else {
+          router.replace("/login");
+        }
+      } else if (userRoles.length === 0) {
         // Unknown role, redirect to login
         router.replace("/login");
       } else if (userProfile.status === "pending") {
@@ -61,7 +89,7 @@ export default function DashboardLayout({
       // No user and not loading - redirect to login
       router.replace("/login");
     }
-  }, [user, userProfile, loading, router, signOut]);
+  }, [user, userProfile, loading, router, signOut, pathname]);
 
   // Show loading while auth state is being determined
   if (loading) {
