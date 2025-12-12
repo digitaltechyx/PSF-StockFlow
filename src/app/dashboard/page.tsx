@@ -7,7 +7,7 @@ import { InventoryTable } from "@/components/dashboard/inventory-table";
 import { ShippedTable } from "@/components/dashboard/shipped-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Truck, DollarSign } from "lucide-react";
+import { Package, Truck, DollarSign, AlertCircle, Mail, MessageCircle } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { hasRole } from "@/lib/permissions";
@@ -100,6 +100,48 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Maintenance Notice Banner */}
+      <Card className="border-2 border-amber-200 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 shadow-lg">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 mt-1">
+              <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shadow-md">
+                <AlertCircle className="h-5 w-5 text-white" />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                System Maintenance in Progress
+              </h3>
+              <p className="text-sm text-amber-800 mb-4">
+                Our application is currently undergoing scheduled maintenance to improve your experience. 
+                We apologize for any inconvenience this may cause.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="flex items-center gap-2 text-sm text-amber-800">
+                  <Mail className="h-4 w-4 text-amber-600" />
+                  <span className="font-medium">Email:</span>
+                  <a 
+                    href="mailto:info@prepservicesfba.com" 
+                    className="text-amber-700 hover:text-amber-900 underline"
+                  >
+                    info@prepservicesfba.com
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-amber-800">
+                  <MessageCircle className="h-4 w-4 text-amber-600" />
+                  <span className="font-medium">WhatsApp:</span>
+                  <span className="text-amber-700">Available 24/7</span>
+                </div>
+              </div>
+              <p className="text-xs text-amber-700 mt-3 italic">
+                For urgent inquiries, please contact us via Email or WhatsApp. We'll respond as soon as possible.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-2 border-blue-200/50 bg-gradient-to-br from-blue-50 to-blue-100/50 shadow-lg">
@@ -148,8 +190,9 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Main Content - Single Column Layout */}
+      <div className="space-y-6">
+        {/* Inventory Section - First Row */}
         <Card className="border-2 shadow-xl overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white pb-4">
             <div className="flex items-center justify-between">
@@ -177,6 +220,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Shipped Orders Section - Second Row */}
         <Card className="border-2 shadow-xl overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white pb-4">
             <div className="flex items-center justify-between">
