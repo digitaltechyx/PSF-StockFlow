@@ -310,21 +310,21 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       const qty = add.bubbleWrapFeet || 0;
       const price = add.pricePerFoot || 0;
       const amt = qty * price;
-      services.push(`Bubble Wrap: ${qty} ft @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+      services.push(`Bubble Wrap: ${qty} ft × $${price.toFixed(2)} = $${amt.toFixed(2)}`);
     }
     
     if ((add.stickerRemovalItems || 0) > 0 && (add.pricePerItem || 0) > 0) {
       const qty = add.stickerRemovalItems || 0;
       const price = add.pricePerItem || 0;
       const amt = qty * price;
-      services.push(`Sticker Removal: ${qty} items @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+      services.push(`Sticker Removal: ${qty} items × $${price.toFixed(2)} = $${amt.toFixed(2)}`);
     }
     
     if ((add.warningLabels || 0) > 0 && (add.pricePerLabel || 0) > 0) {
       const qty = add.warningLabels || 0;
       const price = add.pricePerLabel || 0;
       const amt = qty * price;
-      services.push(`Warning Labels: ${qty} labels @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+      services.push(`Warning Labels: ${qty} labels × $${price.toFixed(2)} = $${amt.toFixed(2)}`);
     }
     
     if (services.length > 0) {
