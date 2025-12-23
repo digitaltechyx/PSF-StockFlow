@@ -67,6 +67,10 @@ export default function AdminNotificationsPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const { data: users } = useCollection<UserProfile>("users");
+  const canSeeAdminNotifications =
+    hasRole(userProfile, "admin") ||
+    hasRole(userProfile, "sub_admin") ||
+    (userProfile as any)?.features?.includes?.("admin_dashboard");
 
   const usersById = useMemo(() => {
     const map = new Map<string, UserProfile>();
@@ -102,7 +106,7 @@ export default function AdminNotificationsPage() {
   );
 
   useEffect(() => {
-    if (!hasRole(userProfile, "admin") && !hasRole(userProfile, "sub_admin")) return;
+    if (!canSeeAdminNotifications) return;
 
     const userIds = users
       .map((u: any) => String(u?.uid || u?.id || ""))

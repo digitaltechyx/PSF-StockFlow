@@ -20,6 +20,10 @@ export default function AdminDashboardLayout({
   const { user, userProfile, loading } = useAuth();
   const router = useRouter();
   const [showProfile, setShowProfile] = useState(false);
+  const canAccessAdmin =
+    hasRole(userProfile, "admin") ||
+    hasRole(userProfile, "sub_admin") ||
+    (userProfile as any)?.features?.includes?.("admin_dashboard");
 
   const handleProfileClick = () => {
     setShowProfile(!showProfile);
@@ -32,13 +36,13 @@ export default function AdminDashboardLayout({
   useEffect(() => {
     if (!loading) {
       // Allow both admin and sub_admin to access admin dashboard
-      if (!user || (!hasRole(userProfile, "admin") && !hasRole(userProfile, "sub_admin"))) {
+      if (!user || !canAccessAdmin) {
         router.replace("/login");
       }
     }
-  }, [user, userProfile, loading, router]);
+  }, [user, canAccessAdmin, loading, router]);
 
-  if (loading || !user || (!hasRole(userProfile, "admin") && !hasRole(userProfile, "sub_admin"))) {
+  if (loading || !user || !canAccessAdmin) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

@@ -33,14 +33,28 @@ export function getDefaultFeaturesForRole(role: UserRole): UserFeature[] {
 export function getUserRoles(userProfile: UserProfile | null | undefined): UserRole[] {
   if (!userProfile) return [];
   
+  const normalizeRole = (r: any): UserRole | null => {
+    const s = String(r || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+
+    if (s === "admin") return "admin";
+    if (s === "sub_admin" || s === "subadmin") return "sub_admin";
+    if (s === "commission_agent" || s === "commissionagent") return "commission_agent";
+    if (s === "user") return "user";
+    return null;
+  };
+
   // If roles array exists, use it
   if (userProfile.roles && Array.isArray(userProfile.roles)) {
-    return userProfile.roles;
+    return userProfile.roles.map(normalizeRole).filter(Boolean) as UserRole[];
   }
   
   // Fallback to legacy single role
   if (userProfile.role) {
-    return [userProfile.role];
+    const n = normalizeRole(userProfile.role);
+    return n ? [n] : [];
   }
   
   return [];
@@ -79,6 +93,14 @@ export function hasFeature(userProfile: UserProfile | null | undefined, feature:
   // Admin always has all features
   if (hasRole(userProfile, "admin")) {
     return true;
+  }
+
+  // Some installs treat "admin_dashboard" feature as admin access (even if role field is inconsistent)
+  // Keep this narrow to avoid granting admin capabilities to regular users.
+  if (feature === "admin_dashboard") {
+    if (userProfile.features && Array.isArray(userProfile.features)) {
+      return userProfile.features.includes("admin_dashboard");
+    }
   }
   
   // Sub admins must have features explicitly granted (no automatic access)

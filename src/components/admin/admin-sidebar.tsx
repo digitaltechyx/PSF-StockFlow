@@ -216,15 +216,20 @@ export function AdminSidebar() {
 
   // Filter menu items based on user's role and features
   const menuItems = allMenuItems.filter((item) => {
+    const canAccessAdmin =
+      hasRole(userProfile, "admin") ||
+      hasRole(userProfile, "sub_admin") ||
+      (userProfile as any)?.features?.includes?.("admin_dashboard");
+
     // Admin always sees all items
-    if (hasRole(userProfile, "admin")) {
+    if (hasRole(userProfile, "admin") || ((userProfile as any)?.features?.includes?.("admin_dashboard") && !hasRole(userProfile, "sub_admin"))) {
       return true;
     }
     // Sub admin only sees items for which they have the required feature
     if (hasRole(userProfile, "sub_admin")) {
       return hasFeature(userProfile, item.requiredFeature);
     }
-    return false;
+    return canAccessAdmin ? hasFeature(userProfile, item.requiredFeature) : false;
   });
 
   // Check if user has other roles (client or commission agent) to show additional dashboard links

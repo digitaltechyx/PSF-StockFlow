@@ -100,10 +100,10 @@ function InventoryContent() {
   const normalizedUserId = selectedUser?.uid || selectedUser?.id;
   const isValidUserId = normalizedUserId && typeof normalizedUserId === 'string' && normalizedUserId.trim() !== '';
   
-  const { data: inventory, loading: inventoryLoading } = useCollection<InventoryItem>(
+  const { data: inventory, loading: inventoryLoading, error: inventoryError } = useCollection<InventoryItem>(
     isValidUserId ? `users/${normalizedUserId}/inventory` : ""
   );
-  const { data: shipped, loading: shippedLoading } = useCollection<ShippedItem>(
+  const { data: shipped, loading: shippedLoading, error: shippedError } = useCollection<ShippedItem>(
     isValidUserId ? `users/${normalizedUserId}/shipped` : ""
   );
 
@@ -126,6 +126,17 @@ function InventoryContent() {
         </div>
       </CardHeader>
       <CardContent className="p-6">
+        {(inventoryError || shippedError) && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <div className="font-semibold">Firestore access error</div>
+            <div className="text-xs mt-1">
+              {String((inventoryError || shippedError)?.message || "Missing or insufficient permissions.")}
+            </div>
+            <div className="text-xs mt-2">
+              If this is an admin account, confirm your `users/{uid}` doc has <span className="font-mono">role: \"admin\"</span> (or <span className="font-mono">roles: [\"admin\"]</span>).
+            </div>
+          </div>
+        )}
         {/* User Selector */}
         <div className="mb-6 pb-6 border-b">
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
