@@ -5,20 +5,64 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { format } from "date-fns";
 import { generateInvoiceNumber } from "@/lib/invoice-utils";
 
 const CRON_SECRET = process.env.INVOICE_CRON_SECRET || process.env.CRON_SECRET;
 
-function isAuthorized(request: NextRequest): boolean {
+function isAdminLikeUserDoc(data: any): boolean {
+  if (!data) return false;
+  if (data.isAdmin === true || data.admin === true || data.is_admin === true) return true;
+  if (data.isSubAdmin === true || data.is_sub_admin === true) return true;
+
+  const role = String(data.role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (role === "admin" || role === "sub_admin" || role === "subadmin") return true;
+
+  const roles = Array.isArray(data.roles) ? data.roles.map((r: any) => String(r || "").trim().toLowerCase().replace(/[\s-]+/g, "_")) : [];
+  if (roles.includes("admin") || roles.includes("sub_admin") || roles.includes("subadmin")) return true;
+
+  // features can be array or map
+  if (Array.isArray(data.features)) {
+    if (data.features.includes("admin_dashboard") || data.features.includes("manage_invoices") || data.features.includes("manage_users")) return true;
+  } else if (data.features && typeof data.features === "object") {
+    if (data.features.admin_dashboard === true || data.features.manage_invoices === true || data.features.manage_users === true) return true;
+  }
+
+  return false;
+}
+
+async function isAuthorized(request: NextRequest): Promise<boolean> {
+  // If no secret is configured, allow (dev/test).
   if (!CRON_SECRET) return true;
+
+  // 1) Cron secret (header or query param)
   const header = request.headers.get("authorization");
   if (header === `Bearer ${CRON_SECRET}`) return true;
-
   const url = new URL(request.url);
   const secretParam = url.searchParams.get("secret");
-  return secretParam === CRON_SECRET;
+  if (secretParam && secretParam === CRON_SECRET) return true;
+
+  // 2) Admin user session via Firebase ID token (for live admin UI)
+  // We intentionally reuse Authorization: Bearer <idToken> (if it isn't the CRON secret)
+  if (header && header.startsWith("Bearer ")) {
+    const token = header.slice("Bearer ".length).trim();
+    if (token && token !== CRON_SECRET) {
+      try {
+        const decoded = await adminAuth().verifyIdToken(token);
+        const uid = decoded?.uid;
+        if (!uid) return false;
+        const db = adminDb();
+        const snap = await db.collection("users").doc(uid).get();
+        const userData = snap.exists ? snap.data() : null;
+        if (isAdminLikeUserDoc(userData)) return true;
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+
+  return false;
 }
 
 export const dynamic = "force-dynamic";
@@ -34,7 +78,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleRequest(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

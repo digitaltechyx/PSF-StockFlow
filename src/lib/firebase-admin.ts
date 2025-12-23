@@ -4,6 +4,7 @@ let admin: typeof import('firebase-admin') | null = null;
 // Lazy initialization to avoid build-time errors
 let adminDbInstance: any = null;
 let adminFieldValueInstance: any = null;
+let adminAuthInstance: any = null;
 
 function getAdmin() {
   if (typeof window !== 'undefined') {
@@ -82,7 +83,16 @@ export function getAdminFieldValue() {
   return adminFieldValueInstance;
 }
 
+export function getAdminAuth() {
+  if (!adminAuthInstance) {
+    initializeAdmin();
+    const adminModule = getAdmin();
+    adminAuthInstance = adminModule.auth();
+  }
+  return adminAuthInstance;
+}
+
 // Export getters for lazy initialization (only called when API routes run)
 // Use getAdminDb() and getAdminFieldValue() in API routes instead of direct exports
-export { getAdminDb as adminDb, getAdminFieldValue as adminFieldValue };
+export { getAdminDb as adminDb, getAdminFieldValue as adminFieldValue, getAdminAuth as adminAuth };
 

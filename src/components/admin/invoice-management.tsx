@@ -33,7 +33,7 @@ interface UserInvoiceSummary {
 }
 
 export function InvoiceManagement({ users }: InvoiceManagementProps) {
-  const { userProfile: adminUser } = useAuth();
+  const { user, userProfile: adminUser } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -142,8 +142,10 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
       params.set("test", "true");
       if (storageTestSecret.trim()) params.set("secret", storageTestSecret.trim());
 
+      const idToken = user ? await user.getIdToken() : "";
       const res = await fetch(`/api/invoices/generate-monthly-storage?${params.toString()}`, {
         method: "GET",
+        headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined,
       });
 
       const payload = await res.json().catch(() => ({} as any));
