@@ -51,7 +51,12 @@ export function AdminSidebar() {
   // Pending requests badge (Notifications)
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   useEffect(() => {
+    // Don't start Firestore listeners until auth/profile is ready.
+    // Starting collectionGroup listeners unauthenticated triggers permission-denied "uncaught" snapshot errors.
+    if (!userProfile?.uid) return;
+
     let cancelled = false;
+    let warnedRealtime = false;
     const run = async () => {
       try {
         const countStatuses = async (collectionName: string, statuses: string[]) => {
@@ -113,19 +118,31 @@ export function AdminSidebar() {
     let unsub2: (() => void) | null = null;
     let unsub3: (() => void) | null = null;
 
+    const onRealtimeError = (err: any) => {
+      if (cancelled) return;
+      // Most common: auth not ready, rules deny collectionGroup, or query needs index
+      const code = err?.code || err?.name;
+      if (!warnedRealtime) {
+        warnedRealtime = true;
+        console.warn("[AdminSidebar] Realtime badge listener failed; falling back to polling.", code, err?.message || err);
+      }
+      // Fallback polling uses simpler equality queries; if those are also blocked, we'll just show 0.
+      run();
+    };
+
     try {
       unsub1 = onSnapshot(shipmentQ, (snap) => {
         shipmentCount = snap.size;
         push();
-      });
+      }, onRealtimeError);
       unsub2 = onSnapshot(inventoryQ, (snap) => {
         inventoryCount = snap.size;
         push();
-      });
+      }, onRealtimeError);
       unsub3 = onSnapshot(returnsQ, (snap) => {
         returnsCount = snap.size;
         push();
-      });
+      }, onRealtimeError);
     } catch {
       // Fallback to polling if realtime listeners fail (permissions / indexing)
       run();
@@ -146,7 +163,7 @@ export function AdminSidebar() {
       unsub2?.();
       unsub3?.();
     };
-  }, []);
+  }, [userProfile?.uid]);
 
   // Filter menu items based on user's features
   // Admin has all features automatically, sub_admin needs explicit grants
