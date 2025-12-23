@@ -81,6 +81,22 @@
    return 0;
  }
 
+ function formatUpdated(v: any): string {
+   const ms = toMs(v);
+   if (!ms) return "";
+   try {
+     return new Intl.DateTimeFormat(undefined, {
+       year: "numeric",
+       month: "short",
+       day: "2-digit",
+       hour: "2-digit",
+       minute: "2-digit",
+     }).format(new Date(ms));
+   } catch {
+     return "";
+   }
+ }
+
  function money(v: unknown): string {
    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
    if (!Number.isFinite(n)) return "-";
@@ -90,6 +106,16 @@
  function pickLatest<T extends { updatedAt?: any; createdAt?: any }>(docs: T[]): T | null {
    if (!docs || docs.length === 0) return null;
    return [...docs].sort((a, b) => toMs(b.updatedAt || b.createdAt) - toMs(a.updatedAt || a.createdAt))[0] ?? null;
+ }
+
+ function normalizeSize(input: unknown): string {
+   const raw = (typeof input === "string" ? input : "").toLowerCase();
+   const compact = raw.replace(/\s+/g, "");
+   if (compact.includes("20") && compact.includes("feet")) return "20feet";
+   if (compact.includes("40") && compact.includes("feet")) return "40feet";
+   if (compact.includes("20") && compact.includes("ft")) return "20feet";
+   if (compact.includes("40") && compact.includes("ft")) return "40feet";
+   return compact || "unknown";
  }
 
  function productTypeLabel(t: string) {
@@ -143,7 +169,7 @@
    const containerBySize = useMemo(() => {
      const m = new Map<string, ContainerHandlingDoc>();
      for (const d of containerHandlingPricingList || []) {
-       const size = d.containerSize || "unknown";
+       const size = normalizeSize(d.containerSize);
        const prev = m.get(size);
        if (!prev || toMs(d.updatedAt || d.createdAt) > toMs(prev.updatedAt || prev.createdAt)) m.set(size, d);
      }
@@ -252,18 +278,42 @@
              <CardTitle className="text-base">Storage Pricing</CardTitle>
            </CardHeader>
            <CardContent className="space-y-2 text-sm">
-             <div className="flex items-center justify-between">
-               <span>Storage Type</span>
-               <span className="font-medium">{latestStorage?.storageType || (userProfile as any)?.storageType || "-"}</span>
-             </div>
-             <div className="flex items-center justify-between">
-               <span>Price</span>
-               <span className="font-semibold">{money(latestStorage?.price)}</span>
-             </div>
-             {(latestStorage?.storageType === "pallet_base" || (userProfile as any)?.storageType === "pallet_base") && (
-               <div className="flex items-center justify-between">
-                 <span>Pallet Count</span>
-                 <span className="font-medium">{latestStorage?.palletCount ?? "-"}</span>
+             {latestStorage ? (
+               <>
+                 <div className="flex items-center justify-between">
+                   <span>Storage Type</span>
+                   <span className="font-medium">{latestStorage.storageType || (userProfile as any)?.storageType || "-"}</span>
+                 </div>
+                 <div className="flex items-center justify-between">
+                   <span>Price</span>
+                   <span className="font-semibold">{money(latestStorage.price)}</span>
+                 </div>
+                 {(latestStorage.storageType === "pallet_base" || (userProfile as any)?.storageType === "pallet_base") && (
+                   <div className="flex items-center justify-between">
+                     <span>Pallet Count</span>
+                     <span className="font-medium">{latestStorage.palletCount ?? "-"}</span>
+                   </div>
+                 )}
+                 {formatUpdated(latestStorage.updatedAt || latestStorage.createdAt) && (
+                   <div className="text-xs text-muted-foreground pt-2 border-t">
+                     Last updated: {formatUpdated(latestStorage.updatedAt || latestStorage.createdAt)}
+                   </div>
+                 )}
+               </>
+             ) : (
+               <div className="space-y-2">
+                 <div className="text-muted-foreground">
+                   Storage pricing is not configured yet.
+                 </div>
+                 <div className="text-xs text-muted-foreground">
+                   Your admin will set this based on your assigned storage type.
+                 </div>
+                 {(userProfile as any)?.storageType && (
+                   <div className="flex items-center justify-between text-xs">
+                     <span className="text-muted-foreground">Assigned Type</span>
+                     <span className="font-medium">{(userProfile as any).storageType}</span>
+                   </div>
+                 )}
                </div>
              )}
            </CardContent>
@@ -275,9 +325,24 @@
            <CardHeader>
              <CardTitle className="text-base">Box Forwarding</CardTitle>
            </CardHeader>
-           <CardContent className="text-sm flex items-center justify-between">
-             <span>Price</span>
-             <span className="font-semibold">{money(latestBox?.price)}</span>
+           <CardContent className="space-y-2 text-sm">
+             <div className="text-xs text-muted-foreground">
+               Applies when you select shipment type <span className="font-medium">Box Forwarding</span>.
+             </div>
+             <div className="flex items-center justify-between">
+               <span>Forwarding Price</span>
+               <span className="font-semibold">{latestBox ? money(latestBox.price) : "-"}</span>
+             </div>
+             {!latestBox && (
+               <div className="text-xs text-muted-foreground">
+                 Not configured by admin yet.
+               </div>
+             )}
+             {latestBox && formatUpdated(latestBox.updatedAt || latestBox.createdAt) && (
+               <div className="text-xs text-muted-foreground pt-2 border-t">
+                 Last updated: {formatUpdated(latestBox.updatedAt || latestBox.createdAt)}
+               </div>
+             )}
            </CardContent>
          </Card>
        </TabsContent>
@@ -288,13 +353,26 @@
              <CardTitle className="text-base">Pallet Forwarding</CardTitle>
            </CardHeader>
            <CardContent className="space-y-2 text-sm">
+             <div className="text-xs text-muted-foreground">
+               Applies when you select shipment type <span className="font-medium">Pallet</span> and sub-type <span className="font-medium">Forwarding</span>.
+             </div>
              <div className="flex items-center justify-between">
                <span>Forwarding Price</span>
-               <span className="font-semibold">{money(latestPallet?.price)}</span>
+               <span className="font-semibold">{latestPallet ? money(latestPallet.price) : "-"}</span>
              </div>
+             {!latestPallet && (
+               <div className="text-xs text-muted-foreground">
+                 Not configured by admin yet.
+               </div>
+             )}
              <div className="text-xs text-muted-foreground">
                Pallet “Existing Inventory” pricing is handled manually at approval.
              </div>
+             {latestPallet && formatUpdated(latestPallet.updatedAt || latestPallet.createdAt) && (
+               <div className="text-xs text-muted-foreground pt-2 border-t">
+                 Last updated: {formatUpdated(latestPallet.updatedAt || latestPallet.createdAt)}
+               </div>
+             )}
            </CardContent>
          </Card>
        </TabsContent>
@@ -305,14 +383,22 @@
              <CardTitle className="text-base">Container Handling</CardTitle>
            </CardHeader>
            <CardContent className="space-y-2 text-sm">
-             <div className="flex items-center justify-between">
-               <span>20ft</span>
-               <span className="font-semibold">{money(containerBySize.get("20ft")?.price)}</span>
+             <div className="text-xs text-muted-foreground">
+               Container handling rates are set by admin per container size.
              </div>
              <div className="flex items-center justify-between">
-               <span>40ft</span>
-               <span className="font-semibold">{money(containerBySize.get("40ft")?.price)}</span>
+               <span>20 ft</span>
+               <span className="font-semibold">{money(containerBySize.get("20feet")?.price)}</span>
              </div>
+             <div className="flex items-center justify-between">
+               <span>40 ft</span>
+               <span className="font-semibold">{money(containerBySize.get("40feet")?.price)}</span>
+             </div>
+             {!containerBySize.get("20feet") && !containerBySize.get("40feet") && (
+               <div className="text-xs text-muted-foreground">
+                 Not configured by admin yet.
+               </div>
+             )}
            </CardContent>
          </Card>
        </TabsContent>
@@ -323,18 +409,31 @@
              <CardTitle className="text-base">Additional Services</CardTitle>
            </CardHeader>
            <CardContent className="space-y-2 text-sm">
+             <div className="text-xs text-muted-foreground">
+               These rates are used for invoicing when you request additional services.
+             </div>
              <div className="flex items-center justify-between">
                <span>Bubble Wrap (per ft)</span>
-               <span className="font-semibold">{money(latestAdditional?.bubbleWrapPrice)}</span>
+               <span className="font-semibold">{latestAdditional ? money(latestAdditional.bubbleWrapPrice) : "-"}</span>
              </div>
              <div className="flex items-center justify-between">
                <span>Sticker Removal (per item)</span>
-               <span className="font-semibold">{money(latestAdditional?.stickerRemovalPrice)}</span>
+               <span className="font-semibold">{latestAdditional ? money(latestAdditional.stickerRemovalPrice) : "-"}</span>
              </div>
              <div className="flex items-center justify-between">
                <span>Warning Labels (per label)</span>
-               <span className="font-semibold">{money(latestAdditional?.warningLabelPrice)}</span>
+               <span className="font-semibold">{latestAdditional ? money(latestAdditional.warningLabelPrice) : "-"}</span>
              </div>
+             {!latestAdditional && (
+               <div className="text-xs text-muted-foreground">
+                 Not configured by admin yet.
+               </div>
+             )}
+             {latestAdditional && formatUpdated(latestAdditional.updatedAt || latestAdditional.createdAt) && (
+               <div className="text-xs text-muted-foreground pt-2 border-t">
+                 Last updated: {formatUpdated(latestAdditional.updatedAt || latestAdditional.createdAt)}
+               </div>
+             )}
            </CardContent>
          </Card>
        </TabsContent>
