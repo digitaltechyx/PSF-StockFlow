@@ -60,7 +60,6 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [isStorageTestDialogOpen, setIsStorageTestDialogOpen] = useState(false);
   const [storageTestUserId, setStorageTestUserId] = useState<string>("");
   const [storageTestMonth, setStorageTestMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [storageTestSecret, setStorageTestSecret] = useState<string>("");
   const [isGeneratingStorageTest, setIsGeneratingStorageTest] = useState(false);
 
   // Discount editor (admin-only, for already generated invoices)
@@ -136,32 +135,29 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
     setIsGeneratingStorageTest(true);
     try {
-      const params = new URLSearchParams();
-      params.set("userId", storageTestUserId);
-      if (storageTestMonth) params.set("month", storageTestMonth);
-      params.set("test", "true");
-      if (storageTestSecret.trim()) params.set("secret", storageTestSecret.trim());
-
       const idToken = user ? await user.getIdToken() : "";
-      const res = await fetch(`/api/invoices/generate-monthly-storage?${params.toString()}`, {
-        method: "GET",
-        headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined,
+      if (!idToken) throw new Error("Please re-login and try again.");
+
+      const res = await fetch(`/api/admin/generate-storage-invoice-test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          userId: storageTestUserId,
+          month: storageTestMonth,
+        }),
       });
 
       const payload = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        throw new Error(payload?.error || payload?.details || "Failed to generate storage invoice");
+        throw new Error(payload?.details || payload?.error || "Failed to generate storage invoice");
       }
-
-      const created = Array.isArray(payload?.results)
-        ? payload.results.find((r: any) => r?.status === "invoice_created")
-        : null;
 
       toast({
         title: "Storage Invoice Generated",
-        description: created?.invoiceNumber
-          ? `Created ${created.invoiceNumber}`
-          : "Invoice generation completed.",
+        description: payload?.invoiceNumber ? `Created ${payload.invoiceNumber}` : "Invoice generation completed.",
       });
 
       setIsStorageTestDialogOpen(false);
@@ -1742,15 +1738,6 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   type="month"
                   value={storageTestMonth}
                   onChange={(e) => setStorageTestMonth(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Secret (optional)</Label>
-                <Input
-                  type="password"
-                  placeholder="CRON secret if required"
-                  value={storageTestSecret}
-                  onChange={(e) => setStorageTestSecret(e.target.value)}
                 />
               </div>
             </div>
