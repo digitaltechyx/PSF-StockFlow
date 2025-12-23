@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { createCommissionForInvoice } from "@/lib/commission-utils";
 import { DollarSign } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { hasRole } from "@/lib/permissions";
 
 interface InvoiceManagementProps {
   users: UserProfile[];
@@ -180,7 +181,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     setCommissionsLoading(true);
     try {
       // Check if user is admin before attempting to load
-      if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'sub_admin')) {
+      if (!adminUser || (!hasRole(adminUser, "admin") && !hasRole(adminUser, "sub_admin"))) {
         console.warn('User is not an admin, skipping commissions load');
         setCommissions([]);
         setCommissionsLoading(false);

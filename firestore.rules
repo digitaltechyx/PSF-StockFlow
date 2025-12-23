@@ -14,33 +14,66 @@ service cloud.firestore {
       return signedIn() &&
         currentUserDoc().exists &&
         (
+          // Explicit booleans used in some installs
+          (currentUserDoc().data.isAdmin == true) ||
+          (currentUserDoc().data.isSubAdmin == true) ||
+          (currentUserDoc().data.admin == true) ||
+          (currentUserDoc().data.is_admin == true) ||
+          (currentUserDoc().data.is_sub_admin == true) ||
+
           // Role (single)
-          currentUserDoc().data.role == 'admin' ||
-          currentUserDoc().data.role == 'sub_admin' ||
-          currentUserDoc().data.role == 'Admin' ||
-          currentUserDoc().data.role == 'Sub Admin' ||
-          currentUserDoc().data.role == 'sub-admin' ||
-          currentUserDoc().data.role == 'subadmin' ||
+          (currentUserDoc().data.role is string &&
+            (
+              currentUserDoc().data.role.matches('(?i)^\\s*admin\\s*$') ||
+              currentUserDoc().data.role.matches('(?i)^\\s*sub[_\\s-]*admin\\s*$')
+            )
+          ) ||
+
+          // Alternate field names used in some installs
+          (currentUserDoc().data.userType is string &&
+            (
+              currentUserDoc().data.userType.matches('(?i)^\\s*admin\\s*$') ||
+              currentUserDoc().data.userType.matches('(?i)^\\s*sub[_\\s-]*admin\\s*$')
+            )
+          ) ||
+          (currentUserDoc().data.userRole is string &&
+            (
+              currentUserDoc().data.userRole.matches('(?i)^\\s*admin\\s*$') ||
+              currentUserDoc().data.userRole.matches('(?i)^\\s*sub[_\\s-]*admin\\s*$')
+            )
+          ) ||
 
           // Roles (array)
-          (currentUserDoc().data.roles != null &&
+          (currentUserDoc().data.roles is list &&
             currentUserDoc().data.roles.hasAny([
               'admin',
               'sub_admin',
               'Admin',
+              'ADMIN',
               'Sub Admin',
+              'SUB_ADMIN',
+              'sub admin',
               'sub-admin',
               'subadmin'
             ])) ||
 
           // Feature-gated admin UI accounts (some installs use features instead of role)
-          (currentUserDoc().data.features != null &&
+          // features as array
+          (currentUserDoc().data.features is list &&
             currentUserDoc().data.features.hasAny([
               'admin_dashboard',
               'manage_users',
               'manage_invoices',
               'manage_labels'
-            ]))
+            ])) ||
+          // features as map { admin_dashboard: true, ... }
+          (currentUserDoc().data.features is map &&
+            (
+              currentUserDoc().data.features.admin_dashboard == true ||
+              currentUserDoc().data.features.manage_users == true ||
+              currentUserDoc().data.features.manage_invoices == true ||
+              currentUserDoc().data.features.manage_labels == true
+            ))
         );
     }
 
