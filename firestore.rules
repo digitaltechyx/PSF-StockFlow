@@ -12,8 +12,23 @@ service cloud.firestore {
     function isAdminOrSubAdmin() {
       // Be tolerant to older/dirty data (case/format variations) and feature-based admin access.
       return signedIn() &&
-        currentUserDoc().exists &&
         (
+          // Custom claims (if configured)
+          (request.auth.token.admin == true) ||
+          (request.auth.token.isAdmin == true) ||
+          (request.auth.token.sub_admin == true) ||
+          (request.auth.token.subAdmin == true) ||
+          (request.auth.token.isSubAdmin == true) ||
+          ((request.auth.token.role is string) &&
+            (
+              request.auth.token.role.matches('(?i)^\\s*admin\\s*$') ||
+              request.auth.token.role.matches('(?i)^\\s*sub[_\\s-]*admin\\s*$')
+            )) ||
+          ((request.auth.token.roles is list) &&
+            request.auth.token.roles.hasAny(['admin', 'sub_admin', 'sub-admin', 'subadmin', 'Admin', 'SUB_ADMIN', 'ADMIN'])) ||
+
+          // Firestore user doc
+          (currentUserDoc().exists &&
           // Explicit booleans used in some installs
           (currentUserDoc().data.isAdmin == true) ||
           (currentUserDoc().data.isSubAdmin == true) ||
@@ -73,7 +88,7 @@ service cloud.firestore {
               currentUserDoc().data.features.manage_users == true ||
               currentUserDoc().data.features.manage_invoices == true ||
               currentUserDoc().data.features.manage_labels == true
-            ))
+            )))
         );
     }
 
