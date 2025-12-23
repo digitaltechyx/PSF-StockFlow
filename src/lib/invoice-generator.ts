@@ -250,20 +250,29 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       currentY = 20;
     }
     
+    const safeItem: any = item as any;
+    const qty = Number(safeItem?.quantity || 0);
+    const productName = String(safeItem?.productName || safeItem?.description || '');
+    const shipDate = String(safeItem?.shipDate || '');
+    const shipTo = String(safeItem?.shipTo || '');
+    const packaging = String(safeItem?.packaging || '');
+    const unitPrice = Number(safeItem?.unitPrice || 0);
+    const amount = Number(safeItem?.amount || 0);
+
     doc.setFont('helvetica', 'normal');
-    doc.text(item.quantity.toString(), colQty, currentY);
-    doc.text(item.productName.substring(0, 30), colProduct, currentY);
-    doc.text(String(item.shipDate || '').substring(0, 10), colShipDate, currentY);
-    doc.text(String(item.shipTo || '').substring(0, 14), colShipTo, currentY);
-    doc.text(item.packaging, colPackaging, currentY);
-    doc.text(`$${item.unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
-    doc.text(`$${item.amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
+    doc.text(String(qty), colQty, currentY);
+    doc.text(productName.substring(0, 30), colProduct, currentY);
+    doc.text(shipDate.substring(0, 10), colShipDate, currentY);
+    doc.text(shipTo.substring(0, 14), colShipTo, currentY);
+    doc.text(packaging.substring(0, 12), colPackaging, currentY);
+    doc.text(`$${unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
+    doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
     
     currentY += 7;
   });
   
   // Calculate totals
-  const itemsSubtotal = data.items.reduce((sum, item) => sum + item.amount, 0);
+  const itemsSubtotal = data.items.reduce((sum, item: any) => sum + Number((item as any)?.amount || 0), 0);
   const additionalTotal = Number(data.additionalServices?.total || 0);
   const computedGrossTotal = itemsSubtotal + (Number.isFinite(additionalTotal) ? additionalTotal : 0);
 

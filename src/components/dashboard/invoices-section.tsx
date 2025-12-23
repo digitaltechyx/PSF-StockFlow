@@ -525,6 +525,59 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
           
           {selectedInvoice && (
             <div className="space-y-4 sm:space-y-6 mt-2 sm:mt-4">
+              {(() => {
+                const type = (selectedInvoice as any).type;
+                const isStorage = type === "storage";
+                if (!isStorage) return null;
+
+                const storageType = (selectedInvoice as any).storageType as string | undefined;
+                const invoiceMonth = (selectedInvoice as any).invoiceMonth as string | undefined;
+                const palletCount = (selectedInvoice as any).palletCount as number | undefined;
+                const itemCount = (selectedInvoice as any).itemCount as number | undefined;
+
+                const firstItem = selectedInvoice.items?.[0] as any;
+                const unitPrice = Number(firstItem?.unitPrice || 0);
+
+                return (
+                  <div className="p-3 sm:p-4 border rounded-lg">
+                    <h4 className="font-semibold text-sm sm:text-base mb-2">Storage Details</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Storage Type</p>
+                        <p className="font-medium">{storageType || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Invoice Month</p>
+                        <p className="font-medium">{invoiceMonth || "-"}</p>
+                      </div>
+                      {storageType === "pallet_base" ? (
+                        <>
+                          <div>
+                            <p className="text-muted-foreground">Pallet Count</p>
+                            <p className="font-medium">{typeof palletCount === "number" ? palletCount : (typeof itemCount === "number" ? itemCount : "-")}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Price Per Pallet</p>
+                            <p className="font-medium">${unitPrice.toFixed(2)}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-muted-foreground">Item Count</p>
+                            <p className="font-medium">{typeof itemCount === "number" ? itemCount : "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Price Per Item</p>
+                            <p className="font-medium">${unitPrice.toFixed(2)}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Invoice Header */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 bg-muted rounded-lg">
                 <div>
@@ -580,20 +633,23 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                       {selectedInvoice.items.map((item, idx) => {
                         const dateValue = isContainerHandling && (item as any).receivingDate 
                           ? (item as any).receivingDate 
-                          : (item.shipDate || '-');
+                          : ((item as any).shipDate || '-');
+                        const productName = (item as any).productName || (item as any).description || "—";
+                        const shipTo = (item as any).shipTo || "—";
+                        const packaging = (item as any).packaging || "—";
                         return (
-                          <div key={`${item.productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
-                            <div>{item.quantity}</div>
-                            <div className="col-span-2">{item.productName}</div>
+                          <div key={`${productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
+                            <div>{(item as any).quantity}</div>
+                            <div className="col-span-2">{productName}</div>
                             <div>{dateValue}</div>
                             {!isContainerHandling && (
                               <>
-                                <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
-                                <div>{item.packaging}</div>
+                                <div className="truncate" title={shipTo}>{shipTo}</div>
+                                <div>{packaging}</div>
                               </>
                             )}
-                            <div>${item.unitPrice.toFixed(2)}</div>
-                            <div className="font-semibold">${item.amount.toFixed(2)}</div>
+                            <div>${Number((item as any).unitPrice || 0).toFixed(2)}</div>
+                            <div className="font-semibold">${Number((item as any).amount || 0).toFixed(2)}</div>
                           </div>
                         );
                       })}
@@ -606,15 +662,15 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
               <div className="sm:hidden space-y-3">
                 <h4 className="font-semibold text-sm mb-2">Items</h4>
                 {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${item.productName}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                  <div key={`${((item as any).productName || (item as any).description || "item")}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{item.productName}</p>
-                        <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                        <p className="font-semibold text-sm truncate">{(item as any).productName || (item as any).description || "—"}</p>
+                        <p className="text-xs text-muted-foreground">Qty: {(item as any).quantity}</p>
                       </div>
                       <div className="text-right ml-2">
-                        <p className="font-semibold text-sm">${item.amount.toFixed(2)}</p>
-                        <p className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} each</p>
+                        <p className="font-semibold text-sm">${Number((item as any).amount || 0).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">${Number((item as any).unitPrice || 0).toFixed(2)} each</p>
                       </div>
                     </div>
                     {(() => {
@@ -626,18 +682,18 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                             <p className="font-medium">
                               {isContainerHandling && (item as any).receivingDate
                                 ? (item as any).receivingDate
-                                : (item.shipDate || '-')}
+                                : (((item as any).shipDate) || '-')}
                             </p>
                           </div>
                           {!isContainerHandling && (
                             <>
                               <div>
                                 <p className="text-muted-foreground">Packaging</p>
-                                <p className="font-medium">{item.packaging}</p>
+                                <p className="font-medium">{(item as any).packaging || "—"}</p>
                               </div>
                               <div className="col-span-2">
                                 <p className="text-muted-foreground">Ship To</p>
-                                <p className="font-medium break-words">{item.shipTo}</p>
+                                <p className="font-medium break-words">{(item as any).shipTo || "—"}</p>
                               </div>
                             </>
                           )}

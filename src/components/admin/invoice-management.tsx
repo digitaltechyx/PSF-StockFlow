@@ -10,6 +10,7 @@ import { generateInvoicePDF } from "@/lib/invoice-generator";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Invoice, type UserProfile, type Commission } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs, orderBy, doc, updateDoc, where } from "firebase/firestore";
@@ -53,6 +54,13 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [commissionsLoading, setCommissionsLoading] = useState(false);
   const [commissionPage, setCommissionPage] = useState(1);
   const itemsPerPage = 12;
+
+  // Manual test generation for storage invoices (admin review)
+  const [isStorageTestDialogOpen, setIsStorageTestDialogOpen] = useState(false);
+  const [storageTestUserId, setStorageTestUserId] = useState<string>("");
+  const [storageTestMonth, setStorageTestMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [storageTestSecret, setStorageTestSecret] = useState<string>("");
+  const [isGeneratingStorageTest, setIsGeneratingStorageTest] = useState(false);
 
   // Discount editor (admin-only, for already generated invoices)
   const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false);
@@ -112,6 +120,58 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateStorageTestInvoice = async () => {
+    if (!storageTestUserId) {
+      toast({
+        variant: "destructive",
+        title: "Select a user",
+        description: "Please choose a user to generate a storage invoice for.",
+      });
+      return;
+    }
+
+    setIsGeneratingStorageTest(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("userId", storageTestUserId);
+      if (storageTestMonth) params.set("month", storageTestMonth);
+      params.set("test", "true");
+      if (storageTestSecret.trim()) params.set("secret", storageTestSecret.trim());
+
+      const res = await fetch(`/api/invoices/generate-monthly-storage?${params.toString()}`, {
+        method: "GET",
+      });
+
+      const payload = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        throw new Error(payload?.error || payload?.details || "Failed to generate storage invoice");
+      }
+
+      const created = Array.isArray(payload?.results)
+        ? payload.results.find((r: any) => r?.status === "invoice_created")
+        : null;
+
+      toast({
+        title: "Storage Invoice Generated",
+        description: created?.invoiceNumber
+          ? `Created ${created.invoiceNumber}`
+          : "Invoice generation completed.",
+      });
+
+      setIsStorageTestDialogOpen(false);
+      await loadInvoices();
+    } catch (error: any) {
+      console.error("Storage test invoice generation failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to generate storage invoice.",
+      });
+    } finally {
+      setIsGeneratingStorageTest(false);
     }
   };
 
@@ -570,14 +630,23 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   </CardTitle>
                   <CardDescription>View user invoices and payment status</CardDescription>
                 </div>
-            <div className="flex gap-2">
-              <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
-                Total Pending: {userSummaries.reduce((sum, s) => sum + s.pendingCount, 0)}
-              </Badge>
-              <Badge variant="default" className="text-green-600 bg-green-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
-                Total Paid: {userSummaries.reduce((sum, s) => sum + s.paidCount, 0)}
-              </Badge>
-            </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
+                    Total Pending: {userSummaries.reduce((sum, s) => sum + s.pendingCount, 0)}
+                  </Badge>
+                  <Badge variant="default" className="text-green-600 bg-green-100 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2">
+                    Total Paid: {userSummaries.reduce((sum, s) => sum + s.paidCount, 0)}
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setIsStorageTestDialogOpen(true)}
+                  >
+                    <Receipt className="h-4 w-4 mr-2" />
+                    Generate Storage Invoice (Test)
+                  </Button>
+                </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -1038,6 +1107,59 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
           
           {selectedInvoice && (
             <div className="space-y-4 sm:space-y-6 mt-2 sm:mt-4">
+              {(() => {
+                const type = (selectedInvoice as any).type;
+                const isStorage = type === "storage";
+                if (!isStorage) return null;
+
+                const storageType = (selectedInvoice as any).storageType as string | undefined;
+                const invoiceMonth = (selectedInvoice as any).invoiceMonth as string | undefined;
+                const palletCount = (selectedInvoice as any).palletCount as number | undefined;
+                const itemCount = (selectedInvoice as any).itemCount as number | undefined;
+
+                const firstItem = selectedInvoice.items?.[0] as any;
+                const unitPrice = Number(firstItem?.unitPrice || 0);
+
+                return (
+                  <div className="p-3 sm:p-4 border rounded-lg">
+                    <h4 className="font-semibold text-sm sm:text-base mb-2">Storage Details</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Storage Type</p>
+                        <p className="font-medium">{storageType || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Invoice Month</p>
+                        <p className="font-medium">{invoiceMonth || "-"}</p>
+                      </div>
+                      {storageType === "pallet_base" ? (
+                        <>
+                          <div>
+                            <p className="text-muted-foreground">Pallet Count</p>
+                            <p className="font-medium">{typeof palletCount === "number" ? palletCount : (typeof itemCount === "number" ? itemCount : "-")}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Price Per Pallet</p>
+                            <p className="font-medium">${unitPrice.toFixed(2)}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-muted-foreground">Item Count</p>
+                            <p className="font-medium">{typeof itemCount === "number" ? itemCount : "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Price Per Item</p>
+                            <p className="font-medium">${unitPrice.toFixed(2)}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Invoice Header */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 bg-muted rounded-lg">
                 <div>
@@ -1093,20 +1215,23 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                       {selectedInvoice.items.map((item, idx) => {
                         const dateValue = isContainerHandling && (item as any).receivingDate 
                           ? (item as any).receivingDate 
-                          : (item.shipDate || '-');
+                          : (((item as any).shipDate) || '-');
+                        const productName = (item as any).productName || (item as any).description || "—";
+                        const shipTo = (item as any).shipTo || "—";
+                        const packaging = (item as any).packaging || "—";
                         return (
-                          <div key={`${item.productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
-                            <div>{item.quantity}</div>
-                            <div className="col-span-2">{item.productName}</div>
+                          <div key={`${productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
+                            <div>{(item as any).quantity}</div>
+                            <div className="col-span-2">{productName}</div>
                             <div>{dateValue}</div>
                             {!isContainerHandling && (
                               <>
-                                <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
-                                <div>{item.packaging}</div>
+                                <div className="truncate" title={shipTo}>{shipTo}</div>
+                                <div>{packaging}</div>
                               </>
                             )}
-                            <div>${item.unitPrice.toFixed(2)}</div>
-                            <div className="font-semibold">${item.amount.toFixed(2)}</div>
+                            <div>${Number((item as any).unitPrice || 0).toFixed(2)}</div>
+                            <div className="font-semibold">${Number((item as any).amount || 0).toFixed(2)}</div>
                           </div>
                         );
                       })}
@@ -1119,15 +1244,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               <div className="sm:hidden space-y-3">
                 <h4 className="font-semibold text-sm mb-2">Items</h4>
                 {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${item.productName}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                  <div key={`${((item as any).productName || (item as any).description || "item")}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{item.productName}</p>
-                        <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                        <p className="font-semibold text-sm truncate">{(item as any).productName || (item as any).description || "—"}</p>
+                        <p className="text-xs text-muted-foreground">Qty: {(item as any).quantity}</p>
                       </div>
                       <div className="text-right ml-2">
-                        <p className="font-semibold text-sm">${item.amount.toFixed(2)}</p>
-                        <p className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} each</p>
+                        <p className="font-semibold text-sm">${Number((item as any).amount || 0).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">${Number((item as any).unitPrice || 0).toFixed(2)} each</p>
                       </div>
                     </div>
                     {(() => {
@@ -1139,18 +1264,18 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                             <p className="font-medium">
                               {isContainerHandling && (item as any).receivingDate
                                 ? (item as any).receivingDate
-                                : (item.shipDate || '-')}
+                                : (((item as any).shipDate) || '-')}
                             </p>
                           </div>
                           {!isContainerHandling && (
                             <>
                               <div>
                                 <p className="text-muted-foreground">Packaging</p>
-                                <p className="font-medium">{item.packaging}</p>
+                                <p className="font-medium">{(item as any).packaging || "—"}</p>
                               </div>
                               <div className="col-span-2">
                                 <p className="text-muted-foreground">Ship To</p>
-                                <p className="font-medium break-words">{item.shipTo}</p>
+                                <p className="font-medium break-words">{(item as any).shipTo || "—"}</p>
                               </div>
                             </>
                           )}
@@ -1579,6 +1704,72 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Generate Storage Invoice (Test) */}
+      <Dialog open={isStorageTestDialogOpen} onOpenChange={setIsStorageTestDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Generate Storage Invoice (Test)</DialogTitle>
+            <DialogDescription>
+              Creates a test storage invoice for review (does not overwrite existing invoices).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>User</Label>
+              <Select value={storageTestUserId} onValueChange={setStorageTestUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a user..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((u) => (
+                    <SelectItem key={u.uid} value={u.uid}>
+                      {(u.name || u.email || u.uid).toString()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Month</Label>
+                <Input
+                  type="month"
+                  value={storageTestMonth}
+                  onChange={(e) => setStorageTestMonth(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Secret (optional)</Label>
+                <Input
+                  type="password"
+                  placeholder="CRON secret if required"
+                  value={storageTestSecret}
+                  onChange={(e) => setStorageTestSecret(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsStorageTestDialogOpen(false)}
+                disabled={isGeneratingStorageTest}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleGenerateStorageTestInvoice}
+                disabled={!storageTestUserId || isGeneratingStorageTest}
+              >
+                {isGeneratingStorageTest ? "Generating..." : "Generate"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
