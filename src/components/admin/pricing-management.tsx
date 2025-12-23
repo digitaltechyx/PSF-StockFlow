@@ -1226,7 +1226,7 @@ export function PricingManagement({ users }: PricingManagementProps) {
                               {adminSelectedStorageType === "product_base"
                                 ? "Product Base: Charged per item in inventory (first month free for new items)"
                                 : adminSelectedStorageType === "pallet_base"
-                                ? "Pallet Base: Monthly charge = Number of Pallets Ã— Price per Pallet"
+                                ? "Pallet Base: Monthly charge = Number of Pallets × Price per Pallet"
                                 : "Assign a storage type to this user"}
                             </p>
                           </div>
@@ -1240,7 +1240,7 @@ export function PricingManagement({ users }: PricingManagementProps) {
                                 <p className="text-sm text-muted-foreground">
                                   {adminSelectedStorageType === "product_base" 
                                     ? "Product Base Storage - Charged per item in inventory"
-                                    : "Pallet Base Storage - Monthly charge = Number of Pallets Ã— Price per Pallet"}
+                                    : "Pallet Base Storage - Monthly charge = Number of Pallets × Price per Pallet"}
                                 </p>
                               </div>
                               <div>
@@ -1280,7 +1280,7 @@ export function PricingManagement({ users }: PricingManagementProps) {
                                     className="w-48"
                                   />
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    Number of pallets assigned to this user. Monthly invoice will be: (Number of Pallets Ã— Price per Pallet).
+                                    Number of pallets assigned to this user. Monthly invoice will be: (Number of Pallets × Price per Pallet).
                                   </p>
                                 </div>
                               )}

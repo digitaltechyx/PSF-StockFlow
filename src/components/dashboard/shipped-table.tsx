@@ -688,7 +688,7 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                     selectedAdditionalServices.length > 0 ? (
                       selectedAdditionalServices.map((service: string, index: number) => (
                         <div key={index} className="text-sm">
-                          <span className="font-medium">â€¢ </span>
+                          <span className="font-medium">• </span>
                           <span className="capitalize">
                             {service === "bubbleWrap" ? "Bubble Wrap" :
                              service === "stickerRemoval" ? "Sticker Removal" :
@@ -705,19 +705,19 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                     <>
                       {selectedAdditionalServices.bubbleWrapFeet > 0 && (
                         <div className="text-sm">
-                          <span className="font-medium">â€¢ Bubble Wrap:</span>
+                          <span className="font-medium">• Bubble Wrap:</span>
                           <span className="ml-2">{selectedAdditionalServices.bubbleWrapFeet} feet</span>
                         </div>
                       )}
                       {selectedAdditionalServices.stickerRemovalItems > 0 && (
                         <div className="text-sm">
-                          <span className="font-medium">â€¢ Sticker Removal:</span>
+                          <span className="font-medium">• Sticker Removal:</span>
                           <span className="ml-2">{selectedAdditionalServices.stickerRemovalItems} items</span>
                         </div>
                       )}
                       {selectedAdditionalServices.warningLabels > 0 && (
                         <div className="text-sm">
-                          <span className="font-medium">â€¢ Warning Labels:</span>
+                          <span className="font-medium">• Warning Labels:</span>
                           <span className="ml-2">{selectedAdditionalServices.warningLabels} labels</span>
                         </div>
                       )}

@@ -785,12 +785,12 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
           <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
             {uploadAllowed ? (
               <>
-                <span className="font-medium">âœ“ Allowed</span>
+                <span className="font-medium">✓ Allowed</span>
                 <span className="font-mono">({timeRemaining} remaining)</span>
               </>
             ) : (
               <>
-                <span className="font-medium">âš ï¸ Disabled</span>
+                <span className="font-medium">⚠️ Disabled</span>
                 <span className="font-mono">({timeRemaining} until available)</span>
               </>
             )}
@@ -798,13 +798,13 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
         </div>
         <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
           {uploadAllowed ? (
-            <span>âœ“ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
+            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
           ) : (
-            <span>âš ï¸ Uploads are currently disabled. Available in {timeRemaining}</span>
+            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
           )}
         </div>
         <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
-          âœ¨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
+          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
         </div>
       </div>
 
@@ -1272,8 +1272,8 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                                   onClick={() => togglePopup(popupKey, 'productType')}
                                 >
                                   <span className="truncate">
-                                    {field.value === "Standard" ? "Standard (6Ã—6Ã—6) - <3lbs" :
-                                     field.value === "Large" ? "Large (10Ã—10Ã—10) - <6lbs" :
+                                    {field.value === "Standard" ? "Standard (6×6×6) - <3lbs" :
+                                     field.value === "Large" ? "Large (10×10×10) - <6lbs" :
                                      field.value === "Custom" ? "Custom" : "Select"}
                                   </span>
                                   <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
@@ -1293,7 +1293,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                                       closePopup(popupKey, 'productType');
                                     }}
                                   >
-                                    Standard (6Ã—6Ã—6) - &lt;3lbs
+                                    Standard (6×6×6) - &lt;3lbs
                                   </Button>
                                   <Button
                                     type="button"
@@ -1304,7 +1304,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                                       closePopup(popupKey, 'productType');
                                     }}
                                   >
-                                    Large (10Ã—10Ã—10) - &lt;6lbs
+                                    Large (10×10×10) - &lt;6lbs
                                   </Button>
                                   <Button
                                     type="button"

@@ -48,7 +48,7 @@ function InventoryContent() {
       const { clearFirestoreCache: clearCache } = await import("@/lib/firebase");
       const cleared = await clearCache();
       if (cleared) {
-        alert('âœ… Firestore cache cleared! Refreshing page in 2 seconds...');
+        alert('✅ Firestore cache cleared! Refreshing page in 2 seconds...');
         setTimeout(() => {
           window.location.reload();
         }, 2000);
@@ -215,7 +215,7 @@ function InventoryContent() {
                               {user.name || 'Unnamed User'} ({user.email})
                             </span>
                             {selectedUser?.uid === user.uid && (
-                              <span className="text-primary">âœ“</span>
+                              <span className="text-primary">✓</span>
                             )}
                           </div>
                         ))}

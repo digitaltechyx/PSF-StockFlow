@@ -64,7 +64,7 @@ export async function clearFirestoreCache() {
       }
     }
     
-    console.log('âœ… Firestore cache cleared! Please refresh the page.');
+    console.log('✅ Firestore cache cleared! Please refresh the page.');
     return true;
   } catch (error) {
     console.error('Error clearing Firestore cache:', error);

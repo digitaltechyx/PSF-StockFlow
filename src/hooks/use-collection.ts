@@ -53,7 +53,7 @@ export function useCollection<T>(path: string, firestoreQuery?: Query) {
             clearAttemptedRef.current = true;
             const cleared = await clearFirestoreCache();
             if (cleared) {
-              console.log('âœ… Cache cleared. Please refresh the page (F5) to reload.');
+              console.log('✅ Cache cleared. Please refresh the page (F5) to reload.');
               // Show alert to user
               if (typeof window !== 'undefined') {
                 alert('Firestore cache has been cleared. Please refresh the page (F5) to continue.');

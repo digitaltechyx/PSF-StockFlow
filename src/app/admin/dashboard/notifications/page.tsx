@@ -130,7 +130,7 @@ export default function AdminNotificationsPage() {
                 userId,
                 status: String((data as any).status || ""),
                 createdAtMs: dateMs,
-                title: `Shipment Request â€¢ ${shipTo ? shipTo.substring(0, 40) : "N/A"}`,
+                title: `Shipment Request • ${shipTo ? shipTo.substring(0, 40) : "N/A"}`,
                 subtitle: `Items: ${(data as any).shipments?.length ?? 0}`,
               };
             });
@@ -152,7 +152,7 @@ export default function AdminNotificationsPage() {
                   userId: uid,
                   status: String((data as any).status || ""),
                   createdAtMs: dateMs,
-                  title: `Shipment Request â€¢ ${shipTo ? shipTo.substring(0, 40) : "N/A"}`,
+                  title: `Shipment Request • ${shipTo ? shipTo.substring(0, 40) : "N/A"}`,
                   subtitle: `Items: ${(data as any).shipments?.length ?? 0}`,
                 };
                 return row;
@@ -179,7 +179,7 @@ export default function AdminNotificationsPage() {
                 userId,
                 status: String((data as any).status || ""),
                 createdAtMs: dateMs,
-                title: `Inventory Request â€¢ ${String(productName).substring(0, 50)}`,
+                title: `Inventory Request • ${String(productName).substring(0, 50)}`,
                 subtitle: `Qty: ${(data as any).quantity ?? (data as any).requestedQty ?? "N/A"}`,
               };
             });
@@ -200,7 +200,7 @@ export default function AdminNotificationsPage() {
                   userId: uid,
                   status: String((data as any).status || ""),
                   createdAtMs: dateMs,
-                  title: `Inventory Request â€¢ ${String(productName).substring(0, 50)}`,
+                  title: `Inventory Request • ${String(productName).substring(0, 50)}`,
                   subtitle: `Qty: ${(data as any).quantity ?? (data as any).requestedQty ?? "N/A"}`,
                 };
                 return row;
@@ -227,7 +227,7 @@ export default function AdminNotificationsPage() {
                 userId,
                 status: String((data as any).status || ""),
                 createdAtMs: dateMs,
-                title: `Product Return â€¢ ${String(productName).substring(0, 50)}`,
+                title: `Product Return • ${String(productName).substring(0, 50)}`,
                 subtitle: `Req: ${(data as any).requestedQuantity ?? "N/A"} | Rec: ${(data as any).receivedQuantity ?? 0}`,
               };
             });
@@ -248,7 +248,7 @@ export default function AdminNotificationsPage() {
                   userId: uid,
                   status: String((data as any).status || ""),
                   createdAtMs: dateMs,
-                  title: `Product Return â€¢ ${String(productName).substring(0, 50)}`,
+                  title: `Product Return • ${String(productName).substring(0, 50)}`,
                   subtitle: `Req: ${(data as any).requestedQuantity ?? "N/A"} | Rec: ${(data as any).receivedQuantity ?? 0}`,
                 };
                 return row;

@@ -1830,7 +1830,7 @@ export function ProductReturnsManagement({
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    Unit Price Ã— Quantity = Total. (Needed only if you generate an invoice.)
+                    Unit Price × Quantity = Total. (Needed only if you generate an invoice.)
                   </div>
                 </div>
                 <div>

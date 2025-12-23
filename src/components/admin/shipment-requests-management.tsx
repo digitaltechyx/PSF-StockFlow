@@ -1206,7 +1206,7 @@ function ReviewShipmentDialog({
                             )}
                             <div>
                               <span className="text-muted-foreground">Total Quantity (Quantity x Packs):</span>
-                              <span className="ml-1 font-medium">{shipment.quantity} Ã— {shipment.packOf} = {totalUnits} units</span>
+                              <span className="ml-1 font-medium">{shipment.quantity} × {shipment.packOf} = {totalUnits} units</span>
                             </div>
                           </div>
                         </div>
@@ -1277,7 +1277,7 @@ function ReviewShipmentDialog({
                               <div />
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              Total units: {shipment.quantity} Ã— {(customProductPricing[index]?.packOf || shipment.packOf || 1)} = {shipment.quantity * (customProductPricing[index]?.packOf || shipment.packOf || 1)}
+                              Total units: {shipment.quantity} × {(customProductPricing[index]?.packOf || shipment.packOf || 1)} = {shipment.quantity * (customProductPricing[index]?.packOf || shipment.packOf || 1)}
                             </div>
                             <div className="flex justify-between text-sm font-semibold border-t pt-2 mt-2">
                               <span>Total:</span>
@@ -1315,19 +1315,19 @@ function ReviewShipmentDialog({
                               </div>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              Total: (Unit Price Ã— Quantity) = ${(palletExistingUnitPrice[index] ?? shipment.unitPrice ?? 0).toFixed(2)} Ã— {shipment.quantity}
+                              Total: (Unit Price × Quantity) = ${(palletExistingUnitPrice[index] ?? shipment.unitPrice ?? 0).toFixed(2)} × {shipment.quantity}
                             </div>
                           </div>
                         ) : (
                           <div className="mt-3 p-3 bg-muted/50 rounded-lg space-y-1">
                             <div className="flex justify-between text-xs">
                               <span className="text-muted-foreground">Unit Price:</span>
-                              <span className="font-medium">${unitPrice.toFixed(2)} Ã— {shipment.quantity}</span>
+                              <span className="font-medium">${unitPrice.toFixed(2)} × {shipment.quantity}</span>
                             </div>
                             {packOfPrice > 0 && shipment.packOf > 1 && (
                               <div className="flex justify-between text-xs">
                                 <span className="text-muted-foreground">Pack Of Price:</span>
-                                <span className="font-medium">${packOfPrice.toFixed(2)} Ã— {shipment.packOf - 1} (packs)</span>
+                                <span className="font-medium">${packOfPrice.toFixed(2)} × {shipment.packOf - 1} (packs)</span>
                               </div>
                             )}
                             <div className="flex justify-between text-sm font-semibold border-t pt-1 mt-1">

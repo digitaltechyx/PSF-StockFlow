@@ -312,7 +312,7 @@ export function ShipInventoryForm({ userId, inventory, prefillData, onSuccess }:
                             {productMeta?.productName || "Selected product"}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            In Stock: {productMeta?.quantity ?? "â€”"}
+                            In Stock: {productMeta?.quantity ?? "—"}
                           </p>
                         </div>
                         <Button

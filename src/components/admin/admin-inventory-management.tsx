@@ -1865,7 +1865,7 @@ export function AdminInventoryManagement({
                                   <Package className="h-4 w-4 shrink-0" />
                                   <span className="truncate">
                                     {typeLabel ? `Type: ${typeLabel}` : ""}
-                                    {typeLabel && productType ? " Ã¢â‚¬Â¢ " : ""}
+                                    {typeLabel && productType ? " • " : ""}
                                     {productType ? `Product: ${productType}` : ""}
                                   </span>
                                 </div>
@@ -1925,7 +1925,7 @@ export function AdminInventoryManagement({
                                         ))}
                                       </ul>
                                     ) : (
-                                      <div className="text-xs text-muted-foreground mt-1">Ã¢â‚¬â€</div>
+                                      <div className="text-xs text-muted-foreground mt-1">—</div>
                                     )}
                                     {(add?.total || 0) > 0 && (
                                       <div className="text-xs mt-1">
@@ -2479,8 +2479,8 @@ export function AdminInventoryManagement({
                     <div className="flex-1">
                       <h4 className="font-semibold text-blue-800">{item.productName}</h4>
                       <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                        <span>Qty: {item.previousQuantity} Ã¢â€ â€™ {item.newQuantity}</span>
-                        <span>Status: {item.previousStatus} Ã¢â€ â€™ {item.newStatus}</span>
+                        <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
+                        <span>Status: {item.previousStatus} → {item.newStatus}</span>
                         <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
                         <span>By: {item.editedBy}</span>
                       </div>
@@ -2754,7 +2754,7 @@ export function AdminInventoryManagement({
             <form onSubmit={deleteForm.handleSubmit(onDeleteSubmit)} className="space-y-4">
               <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
                 <p className="text-sm text-red-800">
-                  <strong>Ã¢Å¡Â Ã¯Â¸Â Warning:</strong> This action will permanently delete the product from inventory.
+                  <strong>⚠️ Warning:</strong> This action will permanently delete the product from inventory.
                 </p>
                 <div className="mt-2 text-sm">
                   <p><strong>Product:</strong> {deletingProduct?.productName}</p>
@@ -2817,7 +2817,7 @@ export function AdminInventoryManagement({
             {/* Product Info Display */}
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
               <p className="text-sm text-blue-800">
-                <strong>Ã°Å¸â€œÂ Editing:</strong> {editingProductWithLog?.productName}
+                <strong>Editing:</strong> {editingProductWithLog?.productName}
               </p>
               <div className="mt-2 text-sm">
                 <p><strong>Current Quantity:</strong> {editingProductWithLog?.quantity} units</p>
