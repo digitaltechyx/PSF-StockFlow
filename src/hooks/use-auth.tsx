@@ -57,13 +57,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         doc(db, "users", user.uid),
         (docSnapshot) => {
           if (docSnapshot.exists()) {
-            setUserProfile({ uid: user.uid, ...docSnapshot.data() } as UserProfile);
-        } else {
-          setUserProfile(null);
-        }
-        setLoading(false);
+            const data = docSnapshot.data();
+            // Ensure required fields exist with safe defaults
+            const profile: UserProfile = {
+              uid: user.uid,
+              email: data.email || null,
+              name: data.name || null,
+              phone: data.phone || null,
+              role: data.role || "user", // Legacy field
+              roles: data.roles || (data.role ? [data.role] : []), // Ensure roles array exists
+              status: data.status || "approved", // Default to approved if missing
+              features: data.features || [], // Ensure features array exists
+              ...data, // Spread other fields
+            };
+            setUserProfile(profile);
+          } else {
+            setUserProfile(null);
+          }
+          setLoading(false);
         },
         (error) => {
+          // Handle abort errors gracefully - these happen when component unmounts or navigation occurs
+          if (error?.message?.includes('aborted') || 
+              error?.message?.includes('user aborted') ||
+              error?.code === 'cancelled') {
+            // This is normal - component unmounted or user navigated away
+            // Don't log as error, just silently ignore
+            return;
+          }
+          
           console.error("Error fetching user profile:", error);
           setUserProfile(null);
           setLoading(false);
@@ -97,3 +119,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

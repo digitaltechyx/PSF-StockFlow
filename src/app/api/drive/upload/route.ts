@@ -56,10 +56,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    if (file.type !== 'application/pdf') {
+    // Validate file type - allow PDFs and images
+    const isValidType = file.type === 'application/pdf' || file.type.startsWith('image/');
+    if (!isValidType) {
       return NextResponse.json(
-        { error: 'Only PDF files are allowed' },
+        { error: 'Only PDF files and images (JPG, PNG) are allowed' },
         { status: 400 }
       );
     }
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
     };
 
     const media = {
-      mimeType: 'application/pdf',
+      mimeType: file.type, // Use the actual file type (PDF or image)
       body: stream,
     };
 
@@ -173,4 +174,19 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

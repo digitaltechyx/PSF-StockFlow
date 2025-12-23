@@ -27,6 +27,7 @@ import { Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -41,6 +42,9 @@ const formSchema = z.object({
   country: z.string().min(1, { message: "Country is required." }),
   zipCode: z.string().min(5, { message: "Zip code must be at least 5 characters." }),
   referralCode: z.string().optional(),
+  storageType: z.enum(["product_base", "pallet_base"], {
+    required_error: "Please select a storage type.",
+  }),
   termsAccepted: z.boolean().refine((val) => val === true, {
     message: "You must accept the terms and conditions.",
   }),
@@ -66,6 +70,7 @@ export default function RegisterPage() {
       country: "",
       zipCode: "",
       referralCode: "",
+      storageType: "product_base",
       termsAccepted: false,
     },
   });
@@ -122,6 +127,7 @@ export default function RegisterPage() {
         roles: ["user"], // Set roles array
         features: getDefaultFeaturesForRole("user"), // Give all features by default
         status: "pending",
+        storageType: values.storageType, // Store selected storage type
         createdAt: new Date(),
       };
 
@@ -326,6 +332,30 @@ export default function RegisterPage() {
               />
               <FormField
                 control={form.control}
+                name="storageType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Storage Type *</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select storage type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="product_base">Product Base Storage</SelectItem>
+                        <SelectItem value="pallet_base">Pallet Base Storage</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Product Base: Charged per item in inventory. Pallet Base: Fixed monthly charge.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
@@ -404,3 +434,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+

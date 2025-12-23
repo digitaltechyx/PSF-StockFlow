@@ -117,4 +117,3 @@ export function getPrimaryRole(userProfile: UserProfile | null | undefined): Use
   return roles.length > 0 ? roles[0] : null;
 }
 
-

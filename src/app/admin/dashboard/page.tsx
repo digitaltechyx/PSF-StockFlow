@@ -2,17 +2,17 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useCollection } from "@/hooks/use-collection";
-import type { UserProfile, InventoryItem, ShippedItem, UploadedPDF, Invoice } from "@/types";
+import type { UserProfile, InventoryItem, ShippedItem, Invoice } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
-import { Search, Users, Package, FileText, Shield, Receipt, ChevronsUpDown, Check } from "lucide-react";
+import { Search, Users, Package, FileText, Shield, Receipt, ChevronsUpDown, Check, Bell } from "lucide-react";
 import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
 import { Skeleton } from "@/components/ui/skeleton";
-import { collection, getDocs, query } from "firebase/firestore";
+import { collection, collectionGroup, getCountFromServer, getDocs, query, Timestamp, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 
@@ -25,6 +25,9 @@ export default function AdminDashboardPage() {
 
   // Filter approved users (excluding deleted users), pin admin first, then sort A-Z
   const approvedUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
+    if (!adminUser?.uid) return users.filter((user) => user.status !== "deleted" && (user.status === "approved" || !user.status));
+    
     const filtered = users
       .filter((user) => user.status !== "deleted")
       .filter((user) => {
@@ -32,8 +35,8 @@ export default function AdminDashboardPage() {
       });
     
     // Separate admin and other users
-    const admin = filtered.find((user) => user.uid === adminUser?.uid);
-    const others = filtered.filter((user) => user.uid !== adminUser?.uid);
+    const admin = filtered.find((user) => user.uid === adminUser.uid);
+    const others = filtered.filter((user) => user.uid !== adminUser.uid);
     
     // Sort others A-Z
     const sortedOthers = others.sort((a, b) => {
@@ -70,69 +73,164 @@ export default function AdminDashboardPage() {
   const selectedUser = approvedUsers.find(u => u.uid === selectedUserId) || null;
   
   // Get inventory and shipped data for selected user
-  const { data: inventory, loading: inventoryLoading } = useCollection<InventoryItem>(
-    selectedUser ? `users/${selectedUser.uid}/inventory` : ""
-  );
-  const { data: shipped, loading: shippedLoading } = useCollection<ShippedItem>(
-    selectedUser ? `users/${selectedUser.uid}/shipped` : ""
-  );
-  const activeUsersCount = users.filter((user) => 
-    user.uid !== adminUser?.uid && (user.status === "approved" || !user.status) && user.status !== "deleted"
-  ).length;
-  const pendingUsersCount = users.filter((user) => 
-    user.uid !== adminUser?.uid && user.status === "pending"
-  ).length;
-
-  // Get all inventory and shipped items for stats
-  const { data: allUploadedPDFs } = useCollection<UploadedPDF>("uploadedPDFs");
+  // Ensure selectedUser has a valid uid before using it
+  const inventoryPath = selectedUser?.uid ? `users/${selectedUser.uid}/inventory` : "";
+  const shippedPath = selectedUser?.uid ? `users/${selectedUser.uid}/shipped` : "";
   
-  // Track current date to update when date changes
-  const [currentDate, setCurrentDate] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  });
+  const { data: inventory, loading: inventoryLoading } = useCollection<InventoryItem>(inventoryPath);
+  const { data: shipped, loading: shippedLoading } = useCollection<ShippedItem>(shippedPath);
+  const activeUsersCount = useMemo(() => {
+    if (!users || !adminUser?.uid) return 0;
+    return users.filter((user) => 
+      user.uid !== adminUser.uid && (user.status === "approved" || !user.status) && user.status !== "deleted"
+    ).length;
+  }, [users, adminUser]);
+  
+  const pendingUsersCount = useMemo(() => {
+    if (!users || !adminUser?.uid) return 0;
+    return users.filter((user) => 
+      user.uid !== adminUser.uid && user.status === "pending"
+    ).length;
+  }, [users, adminUser]);
 
-  // Update current date every minute to catch date changes
+  // Requests stats (all users)
+  const [todayRequestsCount, setTodayRequestsCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+
   useEffect(() => {
-    const updateDate = () => {
-      const today = new Date();
-      const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      setCurrentDate(todayString);
+    const run = async () => {
+      try {
+        setRequestsLoading(true);
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+        const startTs = Timestamp.fromDate(start);
+        const endTs = Timestamp.fromDate(end);
+
+        const toMs = (v: any): number => {
+          if (!v) return 0;
+          if (typeof v === "string") {
+            const t = new Date(v).getTime();
+            return Number.isNaN(t) ? 0 : t;
+          }
+          if (typeof v === "object" && typeof v.seconds === "number") return v.seconds * 1000;
+          if (v instanceof Date) return v.getTime();
+          return 0;
+        };
+
+        const countStatuses = async (collectionName: string, statuses: string[]) => {
+          const counts = await Promise.all(
+            statuses.map(async (status) => {
+              try {
+                const q = query(collectionGroup(db, collectionName), where("status", "==", status));
+                const snap = await getCountFromServer(q);
+                return snap.data().count || 0;
+              } catch (error) {
+                // Permission denied or other errors - return 0
+                console.warn(`Failed to count ${collectionName} with status ${status}:`, error);
+                return 0;
+              }
+            })
+          );
+          return counts.reduce((a, b) => a + b, 0);
+        };
+
+        // Today total requests (best-effort: uses timestamp fields)
+        const todayCounts = await Promise.all([
+          getCountFromServer(
+            query(collectionGroup(db, "shipmentRequests"), where("requestedAt", ">=", startTs), where("requestedAt", "<", endTs))
+          ).then((s) => s.data().count || 0).catch(() => 0),
+          getCountFromServer(
+            query(collectionGroup(db, "inventoryRequests"), where("requestedAt", ">=", startTs), where("requestedAt", "<", endTs))
+          ).then((s) => s.data().count || 0).catch(() => 0),
+          getCountFromServer(
+            query(collectionGroup(db, "productReturns"), where("createdAt", ">=", startTs), where("createdAt", "<", endTs))
+          ).then((s) => s.data().count || 0).catch(() => 0),
+        ]);
+        let todayTotal = todayCounts.reduce((a, b) => a + b, 0);
+
+        const userIdsForFallback = (users || [])
+          .map((u: any) => String(u?.uid || u?.id || ""))
+          .filter((id) => id && id.trim() !== "" && id !== adminUser?.uid);
+
+        // Fallback if timestamp-based counts don't match legacy data types or collectionGroup is blocked
+        if (todayTotal === 0 && userIdsForFallback.length > 0) {
+          try {
+            const inToday = (ms: number) => ms >= start.getTime() && ms < end.getTime();
+            const perUserCounts = await Promise.all(
+              userIdsForFallback.map(async (uid) => {
+                const [shipSnap, invSnap, prSnap] = await Promise.all([
+                  getDocs(query(collection(db, `users/${uid}/shipmentRequests`))),
+                  getDocs(query(collection(db, `users/${uid}/inventoryRequests`))),
+                  getDocs(query(collection(db, `users/${uid}/productReturns`))),
+                ]);
+                const shipCount = shipSnap.docs.filter((d) => {
+                  const data = d.data() as any;
+                  const ms = toMs(data.requestedAt) || toMs(data.date) || 0;
+                  return inToday(ms);
+                }).length;
+                const invCount = invSnap.docs.filter((d) => {
+                  const data = d.data() as any;
+                  const ms = toMs(data.requestedAt) || toMs(data.addDate) || 0;
+                  return inToday(ms);
+                }).length;
+                const prCount = prSnap.docs.filter((d) => {
+                  const data = d.data() as any;
+                  const ms = toMs(data.createdAt) || toMs(data.updatedAt) || 0;
+                  return inToday(ms);
+                }).length;
+                return shipCount + invCount + prCount;
+              })
+            );
+            todayTotal = perUserCounts.reduce((a, b) => a + b, 0);
+          } catch {
+            // ignore fallback errors
+          }
+        }
+
+        setTodayRequestsCount(todayTotal);
+
+        // Total pending requests (all types)
+        const pendingCounts = await Promise.all([
+          countStatuses("shipmentRequests", ["pending", "Pending"]).catch(() => 0),
+          countStatuses("inventoryRequests", ["pending", "Pending"]).catch(() => 0),
+          countStatuses("productReturns", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]).catch(() => 0),
+        ]);
+        let pendingTotal = pendingCounts.reduce((a, b) => a + b, 0);
+
+        // Fallback per-user if collectionGroup counts are blocked
+        if (pendingTotal === 0 && userIdsForFallback.length > 0) {
+          try {
+            const perUserPending = await Promise.all(
+              userIdsForFallback.map(async (uid) => {
+                const [shipSnap, invSnap, prSnap] = await Promise.all([
+                  getDocs(query(collection(db, `users/${uid}/shipmentRequests`), where("status", "in", ["pending", "Pending"]))),
+                  getDocs(query(collection(db, `users/${uid}/inventoryRequests`), where("status", "in", ["pending", "Pending"]))),
+                  getDocs(query(collection(db, `users/${uid}/productReturns`), where("status", "in", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]))),
+                ]);
+                return shipSnap.size + invSnap.size + prSnap.size;
+              })
+            );
+            pendingTotal = perUserPending.reduce((a, b) => a + b, 0);
+          } catch {
+            // ignore fallback errors
+          }
+        }
+
+        setPendingRequestsCount(pendingTotal);
+      } catch {
+        setTodayRequestsCount(0);
+        setPendingRequestsCount(0);
+      } finally {
+        setRequestsLoading(false);
+      }
     };
 
-    // Update immediately
-    updateDate();
-
-    // Update every minute to catch date changes
-    const interval = setInterval(updateDate, 60000);
-
+    run();
+    const interval = setInterval(run, 60000);
     return () => clearInterval(interval);
-  }, []);
-
-  // Filter labels by current date
-  const getTodayLabelsCount = useMemo(() => {
-    return allUploadedPDFs.filter((pdf) => {
-      // First try to use the date field if available
-      if (pdf.date) {
-        return pdf.date === currentDate;
-      }
-      
-      // Otherwise, parse uploadedAt
-      if (!pdf.uploadedAt) return false;
-      
-      let pdfDate: Date;
-      if (typeof pdf.uploadedAt === 'string') {
-        pdfDate = new Date(pdf.uploadedAt);
-      } else if (pdf.uploadedAt.seconds) {
-        pdfDate = new Date(pdf.uploadedAt.seconds * 1000);
-      } else {
-        return false;
-      }
-      
-      const pdfDateString = `${pdfDate.getFullYear()}-${String(pdfDate.getMonth() + 1).padStart(2, '0')}-${String(pdfDate.getDate()).padStart(2, '0')}`;
-      return pdfDateString === currentDate;
-    }).length;
-  }, [allUploadedPDFs, currentDate]);
+  }, [users, adminUser]);
 
   // Get pending invoices count and amount
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
@@ -146,10 +244,23 @@ export default function AdminDashboardPage() {
         let totalPending = 0;
         let totalPendingAmount = 0;
         
+        // Ensure users array is valid and not empty
+        if (!users || users.length === 0) {
+          setPendingInvoicesCount(0);
+          setPendingInvoicesAmount(0);
+          setInvoicesLoading(false);
+          return;
+        }
+        
         for (const user of users) {
-          if (user.uid === adminUser?.uid) continue;
+          // Normalize user ID - handle both uid and id fields
+          const userId = user?.uid || user?.id;
+          // Skip if no valid user ID or if it's the admin user
+          if (!userId || typeof userId !== 'string' || userId.trim() === '' || userId === adminUser?.uid) {
+            continue;
+          }
           try {
-            const invoicesRef = collection(db, `users/${user.uid}/invoices`);
+            const invoicesRef = collection(db, `users/${userId}/invoices`);
             const invoicesSnapshot = await getDocs(invoicesRef);
             const userInvoices = invoicesSnapshot.docs.map(doc => ({
               id: doc.id,
@@ -160,7 +271,8 @@ export default function AdminDashboardPage() {
             totalPending += pending.length;
             totalPendingAmount += pending.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
           } catch (error) {
-            console.error(`Error fetching invoices for user ${user.uid}:`, error);
+            console.error(`Error fetching invoices for user ${userId}:`, error);
+            // Continue with other users even if one fails
           }
         }
         
@@ -168,20 +280,25 @@ export default function AdminDashboardPage() {
         setPendingInvoicesAmount(totalPendingAmount);
       } catch (error) {
         console.error('Error fetching pending invoices:', error);
+        // Set defaults on error
+        setPendingInvoicesCount(0);
+        setPendingInvoicesAmount(0);
       } finally {
         setInvoicesLoading(false);
       }
     };
 
-    if (users.length > 0) {
+    if (users && users.length > 0) {
       fetchPendingInvoices();
+    } else {
+      setInvoicesLoading(false);
     }
   }, [users, adminUser]);
 
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-2 border-orange-200/50 bg-gradient-to-br from-orange-50 to-orange-100/50 shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-orange-900">Pending Users</CardTitle>
@@ -229,14 +346,39 @@ export default function AdminDashboardPage() {
 
         <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50 to-purple-100/50 shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-purple-900">Today's Labels</CardTitle>
+            <CardTitle className="text-sm font-medium text-purple-900">Today's Total Requests</CardTitle>
             <div className="h-10 w-10 rounded-full bg-purple-500 flex items-center justify-center shadow-md">
               <FileText className="h-5 w-5 text-white" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-900">{getTodayLabelsCount}</div>
-            <p className="text-xs text-purple-700 mt-1">Uploaded today</p>
+            {requestsLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-purple-900">{todayRequestsCount}</div>
+                <p className="text-xs text-purple-700 mt-1">All requests created today</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-indigo-200/50 bg-gradient-to-br from-indigo-50 to-indigo-100/50 shadow-lg md:col-span-1">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-indigo-900">Total Pending Requests</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-indigo-500 flex items-center justify-center shadow-md">
+              <Bell className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {requestsLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-indigo-900">{pendingRequestsCount}</div>
+                <p className="text-xs text-indigo-700 mt-1">Across all request types</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -383,3 +525,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+

@@ -197,7 +197,7 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
           })}
           {selectedRoles.length === 0 && (
             <p className="text-sm text-muted-foreground italic">
-              ⚠️ User must have at least one role. Select a role to continue.
+              âš ï¸ User must have at least one role. Select a role to continue.
             </p>
           )}
         </CardContent>
@@ -293,7 +293,7 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
                !selectedFeatures.some(f => ADMIN_FEATURES.some(af => af.value === f)) && (
                 <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
-                    ⚠️ No Admin Features Selected
+                    âš ï¸ No Admin Features Selected
                   </p>
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     This sub admin will not have access to any admin pages. Please select at least one admin feature above.

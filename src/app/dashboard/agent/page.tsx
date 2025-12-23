@@ -232,13 +232,13 @@ export default function AgentDashboardPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-xl font-bold">
                     <div className="h-10 w-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <UserCheck className="h-5 w-5" />
+                <UserCheck className="h-5 w-5" />
                     </div>
-                    Active Clients
-                  </CardTitle>
+                Active Clients
+              </CardTitle>
                   <CardDescription className="text-green-100 mt-1">
-                    Clients you referred with approved status ({activeClients.length})
-                  </CardDescription>
+                Clients you referred with approved status ({activeClients.length})
+              </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -280,13 +280,13 @@ export default function AgentDashboardPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-xl font-bold">
                     <div className="h-10 w-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <Users className="h-5 w-5" />
+                <Users className="h-5 w-5" />
                     </div>
-                    Pending Clients
-                  </CardTitle>
+                Pending Clients
+              </CardTitle>
                   <CardDescription className="text-amber-100 mt-1">
-                    Clients awaiting approval ({pendingClients.length})
-                  </CardDescription>
+                Clients awaiting approval ({pendingClients.length})
+              </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -328,13 +328,13 @@ export default function AgentDashboardPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-xl font-bold">
                     <div className="h-10 w-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <XCircle className="h-5 w-5" />
+                <XCircle className="h-5 w-5" />
                     </div>
-                    Rejected Clients
-                  </CardTitle>
+                Rejected Clients
+              </CardTitle>
                   <CardDescription className="text-red-100 mt-1">
-                    Clients that were rejected ({rejectedClients.length})
-                  </CardDescription>
+                Clients that were rejected ({rejectedClients.length})
+              </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -376,13 +376,13 @@ export default function AgentDashboardPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-xl font-bold">
                     <div className="h-10 w-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <FileText className="h-5 w-5" />
+                <FileText className="h-5 w-5" />
                     </div>
-                    Paid Invoices
-                  </CardTitle>
+                Paid Invoices
+              </CardTitle>
                   <CardDescription className="text-blue-100 mt-1">
-                    Invoices paid by your onboarded clients ({paidInvoices.length})
-                  </CardDescription>
+                Invoices paid by your onboarded clients ({paidInvoices.length})
+              </CardDescription>
                 </div>
               </div>
             </CardHeader>

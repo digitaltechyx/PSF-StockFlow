@@ -83,6 +83,9 @@ export function AdminInventoryManagement({
   const [activeSection, setActiveSection] = useState<string>("current-inventory");
   const [selectedRemarks, setSelectedRemarks] = useState<string>("");
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
+  const [detailsTitle, setDetailsTitle] = useState<string>("");
+  const [detailsLines, setDetailsLines] = useState<string[]>([]);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [deleteLogsSearch, setDeleteLogsSearch] = useState("");
   const [editLogsSearch, setEditLogsSearch] = useState("");
   const [recycleSearch, setRecycleSearch] = useState("");
@@ -98,8 +101,8 @@ export function AdminInventoryManagement({
   const [editLogsPage, setEditLogsPage] = useState(1);
   const [recyclePage, setRecyclePage] = useState(1);
   const itemsPerPage = 10;
-  const inventoryItemsPerPage = 12; // 3 cards per row × 4 rows = 12 items per page for current inventory card view
-  const shippedItemsPerPage = 12; // 3 cards per row × 4 rows = 12 items per page for shipped inventory card view
+  const inventoryItemsPerPage = 12; // 3 cards per row Ãƒâ€” 4 rows = 12 items per page for current inventory card view
+  const shippedItemsPerPage = 12; // 3 cards per row Ãƒâ€” 4 rows = 12 items per page for shipped inventory card view
 
   // Invoice range selection for generating invoice over specific dates
   const [invoiceFromDate, setInvoiceFromDate] = useState<Date | undefined>();
@@ -213,6 +216,12 @@ export function AdminInventoryManagement({
   const handleRemarksClick = (remarks: string) => {
     setSelectedRemarks(remarks);
     setIsRemarksDialogOpen(true);
+  };
+
+  const handleDetailsClick = (title: string, lines: string[]) => {
+    setDetailsTitle(title);
+    setDetailsLines(lines);
+    setIsDetailsDialogOpen(true);
   };
 
   const onEditSubmit = async (values: z.infer<typeof editProductSchema>) => {
@@ -767,6 +776,55 @@ export function AdminInventoryManagement({
     });
   };
 
+  const aggregateAdditionalServices = (shipments: any[]) => {
+    let totalBubbleWrapFeet = 0;
+    let totalStickerRemovalItems = 0;
+    let totalWarningLabels = 0;
+    let pricePerFoot = 0;
+    let pricePerItem = 0;
+    let pricePerLabel = 0;
+    let total = 0;
+    let hasStoredTotal = false;
+
+    shipments.forEach((shipment) => {
+      const add = shipment?.additionalServices;
+      if (!add) return;
+
+      totalBubbleWrapFeet += Number(add.bubbleWrapFeet || 0);
+      totalStickerRemovalItems += Number(add.stickerRemovalItems || 0);
+      totalWarningLabels += Number(add.warningLabels || 0);
+
+      if (!pricePerFoot && add.pricePerFoot) pricePerFoot = Number(add.pricePerFoot);
+      if (!pricePerItem && add.pricePerItem) pricePerItem = Number(add.pricePerItem);
+      if (!pricePerLabel && add.pricePerLabel) pricePerLabel = Number(add.pricePerLabel);
+
+      if (typeof add.total === "number" && Number.isFinite(add.total)) {
+        total += add.total;
+        hasStoredTotal = true;
+      }
+    });
+
+    if (!hasStoredTotal) {
+      total =
+        totalBubbleWrapFeet * (pricePerFoot || 0) +
+        totalStickerRemovalItems * (pricePerItem || 0) +
+        totalWarningLabels * (pricePerLabel || 0);
+    }
+
+    total = Number.isFinite(total) ? Math.max(0, total) : 0;
+    if (total <= 0.0001) return null;
+
+    return {
+      bubbleWrapFeet: totalBubbleWrapFeet,
+      stickerRemovalItems: totalStickerRemovalItems,
+      warningLabels: totalWarningLabels,
+      pricePerFoot,
+      pricePerItem,
+      pricePerLabel,
+      total,
+    };
+  };
+
   const handleGenerateInvoice = async () => {
     if (!selectedUser) {
       toast({
@@ -803,6 +861,9 @@ export function AdminInventoryManagement({
 
     // Create invoice data
     const invoiceNumber = generateInvoiceNumber();
+    const additionalServices = aggregateAdditionalServices(todayShipments);
+    const additionalServicesTotal = Number(additionalServices?.total || 0);
+
     const invoiceData = {
       invoiceNumber,
       date: format(today, 'dd/MM/yyyy'),
@@ -815,8 +876,8 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: todayShipments.map(shipped => ({
-        quantity: (shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty,
-        productName: shipped.productName,
+        quantity: Number((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty ?? 0),
+        productName: shipped.productName || "Unknown Product",
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
           : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
@@ -825,14 +886,15 @@ export function AdminInventoryManagement({
         unitPrice: shipped.unitPrice || 0,
         amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
+      additionalServices: additionalServices || undefined,
     };
 
     // Calculate totals
     const subtotal = invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
-    const grandTotal = subtotal; // No tax added
+    const grandTotal = subtotal + additionalServicesTotal; // No tax added
     
     // Save invoice to Firestore
-    const invoiceDoc = {
+    const invoiceDoc: any = {
       invoiceNumber,
       date: invoiceData.date,
       orderNumber: invoiceData.orderNumber,
@@ -845,11 +907,15 @@ export function AdminInventoryManagement({
       createdAt: new Date(),
       userId: selectedUser.uid,
     };
+
+    if (additionalServices) {
+      invoiceDoc.additionalServices = additionalServices;
+    }
     
     await addDoc(collection(db, `users/${selectedUser.uid}/invoices`), invoiceDoc);
     
     // Generate PDF
-    await generateInvoicePDF(invoiceData);
+    await generateInvoicePDF({ ...invoiceData, subtotal, grandTotal });
     
     toast({
       title: "Invoice Generated",
@@ -868,9 +934,9 @@ export function AdminInventoryManagement({
     }
 
     const csvData: ShippedCSVRow[] = filteredShipped.map(item => ({
-      'Product Name': item.productName,
-      'Shipped Quantity': item.shippedQty,
-      'Pack Of': item.packOf,
+      'Product Name': item.productName || "Unknown Product",
+      'Shipped Quantity': item.shippedQty ?? 0,
+      'Pack Of': item.packOf ?? 0,
       'Date Shipped': formatDateForCSV(item.date),
       'Remarks': item.remarks || '',
     }));
@@ -919,6 +985,9 @@ export function AdminInventoryManagement({
 
     const invoiceNumber = generateInvoiceNumber();
     const invoiceDate = format(new Date(), 'dd/MM/yyyy');
+    const additionalServices = aggregateAdditionalServices(rangeShipments);
+    const additionalServicesTotal = Number(additionalServices?.total || 0);
+
     const invoiceData = {
       invoiceNumber,
       date: invoiceDate,
@@ -931,8 +1000,8 @@ export function AdminInventoryManagement({
       },
       fbm: 'Standard Shipping',
       items: rangeShipments.map(shipped => ({
-        quantity: (shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty,
-        productName: shipped.productName,
+        quantity: Number((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty ?? 0),
+        productName: shipped.productName || "Unknown Product",
         shipDate: (typeof shipped.date === 'string')
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
           : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
@@ -941,12 +1010,13 @@ export function AdminInventoryManagement({
         unitPrice: shipped.unitPrice || 0,
         amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
+      additionalServices: additionalServices || undefined,
     } as const;
 
     const subtotal = invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
-    const grandTotal = subtotal;
+    const grandTotal = subtotal + additionalServicesTotal;
 
-    const invoiceDoc = {
+    const invoiceDoc: any = {
       invoiceNumber,
       date: invoiceData.date,
       orderNumber: invoiceData.orderNumber,
@@ -961,8 +1031,12 @@ export function AdminInventoryManagement({
       range: { from: start, to: end },
     };
 
+    if (additionalServices) {
+      invoiceDoc.additionalServices = additionalServices;
+    }
+
     await addDoc(collection(db, `users/${selectedUser.uid}/invoices`), invoiceDoc);
-    await generateInvoicePDF(invoiceData);
+    await generateInvoicePDF({ ...invoiceData, subtotal, grandTotal });
     toast({ title: "Invoice Generated", description: `Range invoice ${invoiceNumber} created for ${selectedUser.name}.` });
   };
 
@@ -1026,7 +1100,7 @@ export function AdminInventoryManagement({
   // Filtered shipped data
   const filteredShipped = useMemo(() => {
     const filtered = shipped.filter((item) => {
-      const matchesSearch = item.productName.toLowerCase().includes(shippedSearch.toLowerCase());
+      const matchesSearch = (item.productName || "").toLowerCase().includes(shippedSearch.toLowerCase());
       const matchesDate = matchesDateFilter(item.date, shippedDateFilter);
       return matchesSearch && matchesDate;
     });
@@ -1749,6 +1823,122 @@ export function AdminInventoryManagement({
                         </AlertDialog>
                       </div>
                       <div className="space-y-2 mb-4 flex-1">
+                        {(() => {
+                          const svc = (item as any).service as string | undefined;
+                          const shipmentType = (item as any).shipmentType as string | undefined;
+                          const productType = (item as any).productType as string | undefined;
+                          const palletSubType = (item as any).palletSubType as string | undefined;
+                          const itemsCount = Array.isArray((item as any).items) ? (item as any).items.length : 0;
+                          const add = (item as any).additionalServices as any | undefined;
+                          const hasAdd =
+                            !!add &&
+                            ((add.bubbleWrapFeet || 0) > 0 ||
+                              (add.stickerRemovalItems || 0) > 0 ||
+                              (add.warningLabels || 0) > 0 ||
+                              (add.total || 0) > 0);
+
+                          if (!svc && !shipmentType && !productType && !palletSubType && !itemsCount && !hasAdd) return null;
+
+                          const typeLabel =
+                            shipmentType === "pallet" && palletSubType
+                              ? `Pallet (${palletSubType})`
+                              : shipmentType
+                                ? shipmentType
+                                : undefined;
+
+                          const addParts = [
+                            (add?.bubbleWrapFeet || 0) > 0 ? `Bubble Wrap: ${add.bubbleWrapFeet}` : null,
+                            (add?.stickerRemovalItems || 0) > 0 ? `Sticker Removal: ${add.stickerRemovalItems}` : null,
+                            (add?.warningLabels || 0) > 0 ? `Warning Labels: ${add.warningLabels}` : null,
+                          ].filter(Boolean) as string[];
+
+                          return (
+                            <>
+                              {svc && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <List className="h-4 w-4 shrink-0" />
+                                  <span className="truncate" title={svc}>Service: {svc}</span>
+                                </div>
+                              )}
+                              {(typeLabel || productType) && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Package className="h-4 w-4 shrink-0" />
+                                  <span className="truncate">
+                                    {typeLabel ? `Type: ${typeLabel}` : ""}
+                                    {typeLabel && productType ? " Ã¢â‚¬Â¢ " : ""}
+                                    {productType ? `Product: ${productType}` : ""}
+                                  </span>
+                                </div>
+                              )}
+                              {itemsCount > 1 && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <FileText className="h-4 w-4 shrink-0" />
+                                  <span>Items: <span className="font-semibold text-foreground">{itemsCount}</span></span>
+                                </div>
+                              )}
+                              {hasAdd && (
+                                <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                                  <FileText className="h-4 w-4 shrink-0 mt-0.5" />
+                                  <div className="min-w-0 w-full">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="font-medium text-foreground/90">Additional Services</span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs shrink-0"
+                                        onClick={() => {
+                                          const lines: string[] = [];
+                                          if ((add?.bubbleWrapFeet || 0) > 0) {
+                                            lines.push(
+                                              `Bubble Wrap: ${add.bubbleWrapFeet} feet` +
+                                                (add?.pricePerFoot ? ` (x $${Number(add.pricePerFoot).toFixed(2)})` : "")
+                                            );
+                                          }
+                                          if ((add?.stickerRemovalItems || 0) > 0) {
+                                            lines.push(
+                                              `Sticker Removal: ${add.stickerRemovalItems} items` +
+                                                (add?.pricePerItem ? ` (x $${Number(add.pricePerItem).toFixed(2)})` : "")
+                                            );
+                                          }
+                                          if ((add?.warningLabels || 0) > 0) {
+                                            lines.push(
+                                              `Warning Labels: ${add.warningLabels}` +
+                                                (add?.pricePerLabel ? ` (x $${Number(add.pricePerLabel).toFixed(2)})` : "")
+                                            );
+                                          }
+                                          if ((add?.total || 0) > 0) {
+                                            lines.push(`Total Additional: $${Number(add.total || 0).toFixed(2)}`);
+                                          }
+                                          if (lines.length === 0) lines.push("No additional services.");
+                                          handleDetailsClick("Additional Services", lines);
+                                        }}
+                                      >
+                                        <Eye className="h-3 w-3 mr-1" />
+                                        View
+                                      </Button>
+                                    </div>
+                                    {addParts.length > 0 ? (
+                                      <ul className="mt-1 ml-4 list-disc text-xs text-muted-foreground space-y-0.5">
+                                        {addParts.map((p) => (
+                                          <li key={p} className="break-words overflow-wrap-anywhere">{p}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <div className="text-xs text-muted-foreground mt-1">Ã¢â‚¬â€</div>
+                                    )}
+                                    {(add?.total || 0) > 0 && (
+                                      <div className="text-xs mt-1">
+                                        Total Additional:{" "}
+                                        <span className="font-semibold text-foreground">${Number(add.total || 0).toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Truck className="h-4 w-4 shrink-0" />
                           <span>Shipped: <span className="font-semibold text-foreground">{(item as any).boxesShipped ?? item.shippedQty}</span></span>
@@ -2289,8 +2479,8 @@ export function AdminInventoryManagement({
                     <div className="flex-1">
                       <h4 className="font-semibold text-blue-800">{item.productName}</h4>
                       <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                        <span>Qty: {item.previousQuantity} → {item.newQuantity}</span>
-                        <span>Status: {item.previousStatus} → {item.newStatus}</span>
+                        <span>Qty: {item.previousQuantity} Ã¢â€ â€™ {item.newQuantity}</span>
+                        <span>Status: {item.previousStatus} Ã¢â€ â€™ {item.newStatus}</span>
                         <span className="text-blue-600">Edited: {formatDate(item.editedAt)}</span>
                         <span>By: {item.editedBy}</span>
                       </div>
@@ -2564,7 +2754,7 @@ export function AdminInventoryManagement({
             <form onSubmit={deleteForm.handleSubmit(onDeleteSubmit)} className="space-y-4">
               <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
                 <p className="text-sm text-red-800">
-                  <strong>⚠️ Warning:</strong> This action will permanently delete the product from inventory.
+                  <strong>Ã¢Å¡Â Ã¯Â¸Â Warning:</strong> This action will permanently delete the product from inventory.
                 </p>
                 <div className="mt-2 text-sm">
                   <p><strong>Product:</strong> {deletingProduct?.productName}</p>
@@ -2627,7 +2817,7 @@ export function AdminInventoryManagement({
             {/* Product Info Display */}
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
               <p className="text-sm text-blue-800">
-                <strong>📝 Editing:</strong> {editingProductWithLog?.productName}
+                <strong>Ã°Å¸â€œÂ Editing:</strong> {editingProductWithLog?.productName}
               </p>
               <div className="mt-2 text-sm">
                 <p><strong>Current Quantity:</strong> {editingProductWithLog?.quantity} units</p>
@@ -2743,3 +2933,4 @@ export function AdminInventoryManagement({
     </TooltipProvider>
   );
 }
+

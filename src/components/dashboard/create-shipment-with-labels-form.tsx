@@ -1,0 +1,7190 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useFieldArray, useForm } from "react-hook-form";
+import * as z from "zod";
+import { collection, doc, Timestamp, writeBatch } from "firebase/firestore";
+import { useMemo, useState, useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, X, Plus, ChevronDown } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { isUploadTimeAllowed, getTimeUntilNextUploadWindow, formatTimeRemaining, getNewJerseyTimeString, getUploadWindowDescription } from "@/lib/time-utils";
+import type { InventoryItem, ServiceType, ProductType, UserPricing, UserBoxForwardingPricing, UserPalletForwardingPricing, UserAdditionalServicesPricing } from "@/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCollection } from "@/hooks/use-collection";
+import { calculatePrepUnitPrice } from "@/lib/pricing-utils";
+import imageCompression from "browser-image-compression";
+import { ImageIcon } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+const shipmentItemSchema = z.object({
+  productId: z.string().min(1, "Select a product."),
+  quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
+  packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  // Custom products use placeholder pricing until admin sets final pricing.
+  unitPrice: z.coerce.number().nonnegative("Unit price must be a non-negative number."),
+  totalPrice: z.coerce.number().nonnegative("Total price must be a non-negative number."),
+  // Additional Services per product - user only selects which services they want (boolean flags)
+  // Admin will add quantities during approval
+  selectedAdditionalServices: z.array(z.enum(["bubbleWrap", "stickerRemoval", "warningLabels"])).optional(),
+});
+
+const shipmentGroupSchema = z.object({
+  shipmentType: z.enum(["product", "box", "pallet"], { required_error: "Shipment type is required." }),
+  palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
+  shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
+  date: z.date({ required_error: "A shipping date is required." }),
+  shipTo: z.string().min(1, "Ship to destination is required."),
+  service: z.enum(["FBA/WFS/TFS", "FBM"]).optional(),
+  productType: z.enum(["Standard", "Large", "Custom"]).optional(),
+  customDimensions: z.string().optional(),
+}).refine((data) => {
+  if (data.shipmentType === "product") {
+    return data.service && data.productType;
+  }
+  return true;
+}, {
+  message: "Service and product type are required for product shipments.",
+  path: ["service"],
+}).refine((data) => {
+  if (data.shipmentType === "product" && data.productType === "Custom") {
+    return typeof data.customDimensions === "string" && data.customDimensions.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Custom dimensions are required for Custom product type.",
+  path: ["customDimensions"],
+}).refine((data) => {
+  // For non-custom products, unit price must be > 0 for every item.
+  if (data.shipmentType === "product" && data.productType && data.productType !== "Custom") {
+    return (data.shipments || []).every((s) => typeof s?.unitPrice === "number" && s.unitPrice > 0);
+  }
+  return true;
+}, {
+  message: "Unit price must be a positive number.",
+  path: ["shipments"],
+}).refine((data) => {
+  if (data.shipmentType === "pallet") {
+    return data.palletSubType;
+  }
+  return true;
+}, {
+  message: "Please select pallet sub-type.",
+  path: ["palletSubType"],
+});
+
+const formSchema = z.object({
+  shipmentGroups: z.array(shipmentGroupSchema).min(1, "Create at least one shipment."),
+});
+
+interface CreateShipmentWithLabelsFormProps {
+  inventory: InventoryItem[];
+}
+
+interface LabelUploadState {
+  file: File | null;
+  preview: string | null;
+  uploadedUrl: string | null;
+  isUploading: boolean;
+}
+
+export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLabelsFormProps) {
+  const { toast } = useToast();
+  const { user, userProfile } = useAuth();
+  
+  // Early return if user is not loaded
+  if (!user || !userProfile) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Loading user data...
+      </div>
+    );
+  }
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  
+  // Label upload states for each shipment group
+  const [labelStates, setLabelStates] = useState<Record<number, LabelUploadState>>({});
+  
+  // Time restriction state
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [uploadAllowed, setUploadAllowed] = useState<boolean>(true);
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+  
+  // Popup states for each group
+  const [openPopups, setOpenPopups] = useState<Record<string, boolean>>({});
+  
+  // Accordion state - only one shipment open at a time
+  const [openAccordionValue, setOpenAccordionValue] = useState<string | undefined>(undefined);
+  
+  const togglePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+  
+  const closePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: false
+    }));
+  };
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      shipmentGroups: [],
+    },
+  });
+
+  const { fields: shipmentGroups, append: appendGroup, remove: removeGroup } = useFieldArray({
+    control: form.control,
+    name: "shipmentGroups",
+  });
+
+  // Fetch user's pricing rules
+  const { data: pricingRules } = useCollection<UserPricing>(
+    userProfile ? `users/${userProfile.uid}/pricing` : ""
+  );
+  
+  // Fetch forwarding pricing
+  const { data: boxForwardingPricing } = useCollection<UserBoxForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/boxForwardingPricing` : ""
+  );
+  
+  const { data: palletForwardingPricing } = useCollection<UserPalletForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/palletForwardingPricing` : ""
+  );
+  
+  // Fetch additional services pricing
+  const { data: additionalServicesPricing } = useCollection<UserAdditionalServicesPricing>(
+    userProfile ? `users/${userProfile.uid}/additionalServicesPricing` : ""
+  );
+
+  // Update time display every second
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(getNewJerseyTimeString());
+      setUploadAllowed(isUploadTimeAllowed());
+      setTimeRemaining(formatTimeRemaining(getTimeUntilNextUploadWindow()));
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-calculate pricing for all shipment groups
+  const watchedGroups = form.watch("shipmentGroups");
+  useEffect(() => {
+    try {
+      const allGroups = watchedGroups || [];
+      
+      if (!Array.isArray(allGroups)) return;
+      
+      allGroups.forEach((group, groupIndex) => {
+        if (!group) return;
+        
+        const shipmentType = group.shipmentType;
+        const palletSubType = group.palletSubType;
+        const service = group.service;
+        const productType = group.productType;
+        const shipments = group.shipments || [];
+        
+        if (!Array.isArray(shipments)) return;
+        
+        shipments.forEach((shipment, shipmentIndex) => {
+          if (!shipment) return;
+        const quantity = shipment.quantity || 0;
+        // Keep packOf for Custom too (admin needs full detail). Pricing stays placeholder for Custom.
+        const packOf = shipmentType === "product" ? (shipment.packOf || 1) : 1;
+        const totalUnits = quantity * packOf;
+        
+        let finalUnitPrice = 0;
+        
+        // Custom product pricing is a placeholder ($1). Admin will set final pricing during approval.
+        if (shipmentType === "product" && productType === "Custom") {
+          finalUnitPrice = 1;
+        } else if (shipmentType === "product" && service && productType && pricingRules && pricingRules.length > 0) {
+          // Use quantity (not totalUnits) to determine unit price
+          // This ensures unit price stays consistent regardless of packOf value
+          const calculatedPrice = calculatePrepUnitPrice(
+            pricingRules,
+            service,
+            productType,
+            quantity // Use quantity, not totalUnits, to get consistent unit price
+          );
+          if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+            finalUnitPrice = calculatedPrice.rate;
+          }
+        } else if (shipmentType === "box") {
+          if (boxForwardingPricing && boxForwardingPricing.length > 0) {
+            const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+              const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+              const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+              return bUpdated - aUpdated;
+            })[0];
+            if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+              // Ensure price is a number
+              const priceValue = typeof latestBoxPricing.price === 'string' 
+                ? parseFloat(latestBoxPricing.price) 
+                : latestBoxPricing.price;
+              if (!isNaN(priceValue) && priceValue > 0) {
+                finalUnitPrice = priceValue;
+              }
+            }
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        } else if (shipmentType === "pallet") {
+          if (palletSubType === "forwarding") {
+            if (palletForwardingPricing && palletForwardingPricing.length > 0) {
+              const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                return bUpdated - aUpdated;
+              })[0];
+              if (latestPalletForwarding && latestPalletForwarding.price !== undefined && latestPalletForwarding.price !== null) {
+                // Ensure price is a number
+                const priceValue = typeof latestPalletForwarding.price === 'string' 
+                  ? parseFloat(latestPalletForwarding.price) 
+                  : latestPalletForwarding.price;
+                if (!isNaN(priceValue) && priceValue > 0) {
+                  finalUnitPrice = priceValue;
+                }
+              }
+            }
+          } else if (palletSubType === "existing_inventory") {
+            // Existing Inventory pallets are priced manually by admin at approval time.
+            // Keep pricing at 0 as a placeholder.
+            finalUnitPrice = 0;
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        }
+
+        // Calculate total price
+        // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+        // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+        // Example: Rate = 0.10, Pack Of Price = 1.00, Quantity = 10
+        //   Pack Of = 1: (0.10 × 10) + (1.00 × 0) = 1.00 + 0.00 = 1.00 (first pack is free)
+        //   Pack Of = 2: (0.10 × 10) + (1.00 × 1) = 1.00 + 1.00 = 2.00 (charge for 2nd pack)
+        //   Pack Of = 3: (0.10 × 10) + (1.00 × 2) = 1.00 + 2.00 = 3.00 (charge for 2nd and 3rd pack)
+        //   Pack Of = 5: (0.10 × 10) + (1.00 × 4) = 1.00 + 4.00 = 5.00 (charge for 2nd, 3rd, 4th, 5th pack)
+        let calculatedTotal = 0;
+        // Custom product total shown to user is a placeholder ($1).
+        if (shipmentType === "product" && productType === "Custom") {
+          calculatedTotal = 1;
+        } else if (shipmentType === "product" && finalUnitPrice > 0 && quantity > 0) {
+          const baseTotal = finalUnitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+          let packOfPrice = 0;
+          if (service && productType && pricingRules && pricingRules.length > 0) {
+            // Look up packOfPrice based on quantity only, not totalUnits
+            // This ensures packOfPrice doesn't change when packOf changes
+            const calculatedPriceForPackOf = calculatePrepUnitPrice(
+              pricingRules,
+              service,
+              productType,
+              quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+            );
+            if (calculatedPriceForPackOf) {
+              packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+            }
+          }
+          // Pack charge: packOfPrice × (packOf - 1)
+          // First pack is free, charge applies from 2nd pack onwards
+          // When packOf = 1, charge = 0 (no additional packs)
+          // When packOf = 2, charge = packOfPrice × 1 (charge for 2nd pack)
+          // When packOf = 3, charge = packOfPrice × 2 (charge for 2nd and 3rd pack)
+          // When packOf = 5, charge = packOfPrice × 4 (charge for 2nd, 3rd, 4th, 5th pack)
+          const packCharge = packOfPrice * Math.max(0, packOf - 1);
+          calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+        } else if (finalUnitPrice > 0 && quantity > 0) {
+          calculatedTotal = parseFloat((finalUnitPrice * quantity).toFixed(2));
+        }
+
+        // Always update to ensure pricing is calculated correctly
+        const currentUnitPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`);
+        const currentTotalPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`);
+        
+        // Update unit price if it changed - always update when we have a calculated price (even if it's 0.10)
+        // Use a small epsilon for floating point comparison
+        if (Math.abs((currentUnitPrice || 0) - finalUnitPrice) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, finalUnitPrice, { shouldValidate: false });
+        }
+        
+        // Update total price if it changed
+        if (currentTotalPrice !== calculatedTotal) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`, calculatedTotal, { shouldValidate: false });
+        }
+
+        // For Custom products, ensure unitPrice is always set to 1 in form state (prevents submit validation issues)
+        if (shipmentType === "product" && productType === "Custom" && Math.abs((currentUnitPrice || 0) - 1) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, 1, { shouldValidate: false });
+        }
+        });
+      });
+    } catch (error) {
+      console.error("Error calculating pricing:", error);
+    }
+  }, [watchedGroups, pricingRules, boxForwardingPricing, palletForwardingPricing, form]);
+
+  // Initialize label state when a new group is added
+  const handleAddShipmentGroup = () => {
+    const newIndex = shipmentGroups.length;
+    appendGroup({
+      shipmentType: "product",
+      palletSubType: undefined,
+      shipments: [],
+      date: new Date(),
+      shipTo: "",
+      service: "FBA/WFS/TFS",
+      productType: "Standard",
+    });
+    setLabelStates(prev => ({
+      ...prev,
+      [newIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+    }));
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleLabelSelect = async (groupIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
+      if (!isValidType) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: "Please select an image (JPG, PNG) or PDF file.",
+        });
+        return;
+      }
+
+      const maxSizeBytes = 10 * 1024 * 1024;
+      if (file.size > maxSizeBytes) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: "Please select a file smaller than 10 MB.",
+        });
+        return;
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          file,
+          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+          uploadedUrl: null,
+          isUploading: false
+        }
+      }));
+    } catch (error: any) {
+      console.error("Error selecting label file:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to select file. Please try again.",
+      });
+    }
+  };
+
+  const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
+    const labelState = labelStates[groupIndex];
+    if (!labelState?.file || !userProfile) return null;
+
+    if (!isUploadTimeAllowed()) {
+      const timeUntil = getTimeUntilNextUploadWindow();
+      toast({
+        variant: "destructive",
+        title: "Upload Time Restricted",
+        description: `${getUploadWindowDescription()}. ${timeUntil}`,
+      });
+      return null;
+    }
+
+    try {
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: true }
+      }));
+
+      let fileToUpload = labelState.file;
+
+      if (labelState.file.type.startsWith("image/")) {
+        const compressedFile = await compressImage(labelState.file);
+        if (compressedFile.size > 1024 * 1024) {
+          toast({
+            variant: "destructive",
+            title: "Compression Failed",
+            description: "Unable to compress image below 1 MB. Please try a different image.",
+          });
+          return null;
+        }
+        fileToUpload = compressedFile;
+      }
+
+      const currentDate = new Date();
+      const clientName = userProfile.name || "Unknown User";
+      const fileName = `${Date.now()}_${fileToUpload.name}`;
+      
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('clientName', clientName);
+      
+      const year = currentDate.getFullYear().toString();
+      const month = currentDate.toLocaleString('en-US', { month: 'long' });
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const folderPath = `${year}/${month}/${clientName}/${dateStr}`;
+      formData.append('folderPath', folderPath);
+
+      const response = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        let errorMessage = errorData.error || 'Failed to upload label to Google Drive';
+        
+        if (errorMessage.includes('refresh access token') || errorMessage.includes('Failed to get access token')) {
+          errorMessage = 'Google Drive authentication failed. Please contact admin to re-authenticate Google Drive.';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      const downloadURL = result.downloadURL || result.webUrl;
+      
+      if (!downloadURL) {
+        throw new Error('No download URL received from Google Drive');
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          uploadedUrl: downloadURL,
+          isUploading: false
+        }
+      }));
+      
+      toast({
+        title: "Success",
+        description: "Label uploaded successfully to Google Drive!",
+      });
+
+      return downloadURL;
+    } catch (error: any) {
+      console.error("Error uploading label:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload label. Please try again.",
+      });
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: false }
+      }));
+      return null;
+    }
+  };
+
+  const handleRemoveLabel = (groupIndex: number) => {
+    setLabelStates(prev => {
+      const state = prev[groupIndex];
+      if (state?.preview) {
+        URL.revokeObjectURL(state.preview);
+      }
+      return {
+        ...prev,
+        [groupIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+      };
+    });
+  };
+
+  const handleRemoveGroup = (index: number) => {
+    handleRemoveLabel(index);
+    removeGroup(index);
+    // Reindex label states
+    const newStates: Record<number, LabelUploadState> = {};
+    shipmentGroups.forEach((_, i) => {
+      if (i !== index) {
+        const oldIndex = i > index ? i - 1 : i;
+        newStates[oldIndex] = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+      }
+    });
+    setLabelStates(newStates);
+  };
+
+  // Helper function to remove undefined values from objects (Firestore doesn't allow undefined)
+  const removeUndefined = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    // Preserve Firestore Timestamp objects
+    if (obj && typeof obj === 'object' && ('seconds' in obj || 'toDate' in obj || obj.constructor?.name === 'Timestamp')) {
+      return obj;
+    }
+    // Preserve Date objects
+    if (obj instanceof Date) {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefined).filter(item => item !== undefined);
+    }
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          cleaned[key] = removeUndefined(obj[key]);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user || !userProfile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You must be logged in to create shipment requests.",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const batch = writeBatch(db);
+      const requestedAt = Timestamp.now();
+
+      // Process each shipment group
+      for (let i = 0; i < values.shipmentGroups.length; i++) {
+        const group = values.shipmentGroups[i];
+        // Get the current label state - check both the index and ensure we have the latest state
+        const labelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+        // Validate stock availability for this group
+        const stockErrors: string[] = [];
+        group.shipments.forEach((shipment) => {
+          const product = inventory.find(item => item.id === shipment.productId);
+          if (product) {
+            const packOf = group.shipmentType === "product" ? (shipment.packOf || 1) : 1;
+            const totalUnits = shipment.quantity * packOf;
+            if (totalUnits > product.quantity) {
+              const unitType = group.shipmentType === "box" ? "boxes" : group.shipmentType === "pallet" ? "pallets" : "units";
+              stockErrors.push(
+                `${product.productName}: Requested ${totalUnits} ${unitType} but only ${product.quantity} available.`
+              );
+            }
+          }
+        });
+
+        if (stockErrors.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Insufficient Stock",
+            description: `Group ${i + 1}: ${stockErrors.join(" ")}`,
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Upload label if selected (optional) - get fresh state to ensure we have the latest
+        const currentLabelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        let labelUrl = "";
+        
+        // Check if label is already uploaded (priority check)
+        if (currentLabelState.uploadedUrl) {
+          // Label already uploaded, use existing URL
+          labelUrl = currentLabelState.uploadedUrl;
+          console.log(`[Group ${i + 1}] Using existing label URL:`, labelUrl);
+        } else if (currentLabelState.file) {
+          // File selected but not uploaded yet, upload it now
+          console.log(`[Group ${i + 1}] Uploading label file:`, currentLabelState.file.name);
+          const uploadedUrl = await handleLabelUpload(i);
+          if (uploadedUrl) {
+            labelUrl = uploadedUrl;
+            console.log(`[Group ${i + 1}] Label uploaded successfully:`, labelUrl);
+          } else {
+            // Upload failed, but label is optional so we continue without it
+            console.warn(`[Group ${i + 1}] Label upload failed, continuing without label`);
+            labelUrl = "";
+          }
+        } else {
+          // No label provided for this group - that's okay, label is optional
+          console.log(`[Group ${i + 1}] No label provided (optional)`);
+          labelUrl = "";
+        }
+
+        // Create shipment request
+        const dateTimestamp = Timestamp.fromDate(group.date);
+        const requestRef = doc(collection(db, `users/${user.uid}/shipmentRequests`));
+        
+        // Build the document data, only including fields that are applicable
+        const requestData: any = {
+          userId: user.uid,
+          userName: userProfile.name || "Unknown User",
+          date: dateTimestamp,
+          shipTo: group.shipTo || "",
+          shipmentType: group.shipmentType,
+          labelUrl: labelUrl || "",
+          status: "pending",
+          requestedBy: user.uid,
+          requestedAt,
+        };
+        
+        // Set service based on shipment type
+        if (group.shipmentType === "box") {
+          requestData.service = "Box Forwarding";
+        } else if (group.shipmentType === "pallet") {
+          if (group.palletSubType === "forwarding") {
+            requestData.service = "Pallet Forwarding";
+          } else if (group.palletSubType === "existing_inventory") {
+            requestData.service = "Pallet Existing Inventory";
+          }
+          if (group.palletSubType) {
+            requestData.palletSubType = group.palletSubType;
+          }
+        } else if (group.shipmentType === "product") {
+          // For product shipments, use the selected service
+          if (group.service) {
+            requestData.service = group.service;
+          }
+          if (group.productType) {
+            requestData.productType = group.productType;
+          }
+        }
+        
+        // Clean shipments array to remove undefined values
+        requestData.shipments = group.shipments.map((shipment: any) => {
+          const cleaned: any = {
+            productId: shipment.productId,
+            quantity: shipment.quantity,
+            packOf: shipment.packOf || 1,
+            unitPrice: shipment.unitPrice || 0,
+          };
+          // Only include optional fields
+          if (shipment.selectedAdditionalServices && shipment.selectedAdditionalServices.length > 0) {
+            cleaned.selectedAdditionalServices = shipment.selectedAdditionalServices;
+          }
+          return cleaned;
+        });
+        
+        // Remove all undefined values before saving to Firestore
+        const cleanedRequestData = removeUndefined(requestData);
+        
+        batch.set(requestRef, cleanedRequestData);
+      }
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `${values.shipmentGroups.length} shipment request(s) with labels submitted successfully. Admin will review them.`,
+      });
+
+      form.reset({
+        shipmentGroups: [],
+      });
+      setQuery("");
+      setLabelStates({});
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to submit shipment requests.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const onInvalidSubmit = (errors: any) => {
+    // Open the first shipment accordion that has an error so the user can see the field messages.
+    const groups = errors?.shipmentGroups;
+    if (Array.isArray(groups)) {
+      const firstBadIndex = groups.findIndex((g) => g && Object.keys(g).length > 0);
+      if (firstBadIndex >= 0) {
+        setOpenAccordionValue(`shipment-${firstBadIndex}`);
+      }
+    }
+
+    const findFirstMessage = (err: any): string | undefined => {
+      if (!err) return undefined;
+      if (typeof err?.message === "string" && err.message.length > 0) return err.message;
+      if (Array.isArray(err)) {
+        for (const item of err) {
+          const msg = findFirstMessage(item);
+          if (msg) return msg;
+        }
+        return undefined;
+      }
+      if (typeof err === "object") {
+        for (const key of Object.keys(err)) {
+          const msg = findFirstMessage(err[key]);
+          if (msg) return msg;
+        }
+      }
+      return undefined;
+    };
+
+    const firstMessage =
+      findFirstMessage(errors?.shipmentGroups) ||
+      "Please fill all required fields before submitting.";
+
+    toast({
+      variant: "destructive",
+      title: "Fix required fields",
+      description: firstMessage,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Time Display */}
+      <div className="p-4 border rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
+          <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
+            {uploadAllowed ? (
+              <>
+                <span className="font-medium">✓ Allowed</span>
+                <span className="font-mono">({timeRemaining} remaining)</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">⚠️ Disabled</span>
+                <span className="font-mono">({timeRemaining} until available)</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+          {uploadAllowed ? (
+            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
+          ) : (
+            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
+          )}
+        </div>
+        <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
+          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)} className="space-y-6">
+          {/* Add Shipment Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Create Shipment</h3>
+              <p className="text-sm text-muted-foreground">Create multiple shipments, each with its own label</p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleAddShipmentGroup}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Shipment
+            </Button>
+          </div>
+
+          {/* Shipments */}
+          {shipmentGroups.length === 0 && (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">No shipments yet. Click "Add Shipment" to get started.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Accordion 
+            type="single" 
+            collapsible 
+            value={openAccordionValue} 
+            onValueChange={setOpenAccordionValue}
+            className="space-y-4"
+          >
+          {shipmentGroups.map((group, groupIndex) => {
+            const groupShipmentType = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const groupPalletSubType = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            const groupService = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const groupProductType = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const groupShipments = form.watch(`shipmentGroups.${groupIndex}.shipments`);
+            
+            // Calculate available inventory without useMemo (inside map)
+            const normalizedQuery = query.trim().toLowerCase();
+            const availableInventory = inventory
+              .filter((item) => item.quantity > 0)
+              .filter((item) => {
+                const inventoryType = (item as any).inventoryType;
+                if (groupShipmentType === "box") {
+                  return inventoryType === "box";
+                } else if (groupShipmentType === "pallet") {
+                  if (groupPalletSubType === "forwarding") {
+                    return inventoryType === "pallet";
+                  } else if (groupPalletSubType === "existing_inventory") {
+                    // Show all products (inventoryType === "product" or undefined/missing)
+                    const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                    return !isExcludedType;
+                  }
+                  return false;
+                } else {
+                  // Product type - show all products (inventoryType === "product" or undefined/missing)
+                  const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                  return !isExcludedType;
+                }
+              })
+              .filter((item) => item.productName.toLowerCase().includes(normalizedQuery));
+
+            const labelState = labelStates[groupIndex] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+            const popupKey = group.id;
+            const shipmentTypeValue = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const serviceValue = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const productTypeValue = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const palletSubTypeValue = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            
+            return (
+              <AccordionItem key={group.id} value={`shipment-${groupIndex}`} className="border-2 rounded-lg px-4 mb-4">
+                <div className="relative">
+                  <AccordionTrigger className="hover:no-underline pr-12 [&>svg]:hidden">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="text-left">
+                        <div className="text-lg font-semibold">Shipment {groupIndex + 1}</div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Each shipment creates a separate shipment request with its own label
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveGroup(groupIndex);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <AccordionContent>
+                  <div className="pt-4">
+                    {/* Horizontal Entry-Type View (single line) */}
+                    <div className="overflow-x-auto">
+                      <div className="flex flex-nowrap items-end gap-3 min-w-max pb-4 border-b">
+                    {/* Shipment Type - Popup */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipmentType`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipment Type *</FormLabel>
+                          <Dialog open={openPopups[`${popupKey}_shipmentType`] || false} onOpenChange={(open) => {
+                            if (open) {
+                              setOpenPopups(prev => ({ ...prev, [`${popupKey}_shipmentType`]: true }));
+                            } else {
+                              closePopup(popupKey, 'shipmentType');
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-[120px] justify-between"
+                                onClick={() => togglePopup(popupKey, 'shipmentType')}
+                              >
+                                <span className="truncate">{field.value ? field.value.charAt(0).toUpperCase() + field.value.slice(1) : "Select"}</span>
+                                <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Select Shipment Type</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-2 py-4">
+                                {["product", "box", "pallet"].map((type) => (
+                                  <Button
+                                    key={type}
+                                    type="button"
+                                    variant={field.value === type ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange(type);
+                                      if (type !== "pallet") {
+                                        form.setValue(`shipmentGroups.${groupIndex}.palletSubType`, undefined);
+                                      }
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'shipmentType');
+                                    }}
+                                  >
+                                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                                  </Button>
+                                ))}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Pallet Sub-Type - Popup */}
+                    {groupShipmentType === "pallet" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.palletSubType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Pallet Type *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_palletType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_palletType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'palletType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[150px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'palletType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "existing_inventory" ? "Existing Inventory" :
+                                     field.value === "forwarding" ? "Pallet Forwarding" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Pallet Type</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "existing_inventory" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("existing_inventory");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Existing Inventory
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "forwarding" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("forwarding");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Pallet Forwarding
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Products - Popup (FIRST) */}
+                    <FormItem className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Products</FormLabel>
+                      <Dialog open={openPopups[`${popupKey}_products`] || false} onOpenChange={(open) => {
+                        if (open) {
+                          setOpenPopups(prev => ({ ...prev, [`${popupKey}_products`]: true }));
+                        } else {
+                          closePopup(popupKey, 'products');
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-[160px] justify-between"
+                            onClick={() => togglePopup(popupKey, 'products')}
+                          >
+                            <span className="truncate">
+                              {groupShipments.length > 0 
+                                ? `${groupShipments.length} product${groupShipments.length > 1 ? 's' : ''} selected`
+                                : "Search products..."}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Select Products</DialogTitle>
+                            <DialogDescription>
+                              Search and select products for this shipment
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <Input
+                              placeholder="Search products..."
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                            <ScrollArea className="h-[300px]">
+                              <div className="space-y-2">
+                                {availableInventory.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground text-center py-4">
+                                    No products available for this shipment type.
+                                  </p>
+                                ) : (
+                                  availableInventory.map((item) => {
+                                    const isSelected = groupShipments.some((shipment) => shipment.productId === item.id);
+                                    return (
+                                      <div key={item.id} className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                            if (checked) {
+                                              // Calculate initial price based on shipment type
+                                              let initialUnitPrice = 0;
+                                              let initialTotalPrice = 0;
+                                              
+                                              const group = form.getValues(`shipmentGroups.${groupIndex}`);
+                                              const shipmentType = group?.shipmentType;
+                                              const palletSubType = group?.palletSubType;
+                                              
+                                              if (shipmentType === "box" && boxForwardingPricing && boxForwardingPricing.length > 0) {
+                                                const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+                                                  const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                  const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                  return bUpdated - aUpdated;
+                                                })[0];
+                                                if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+                                                  const priceValue = typeof latestBoxPricing.price === 'string' 
+                                                    ? parseFloat(latestBoxPricing.price) 
+                                                    : latestBoxPricing.price;
+                                                  if (!isNaN(priceValue) && priceValue > 0) {
+                                                    initialUnitPrice = priceValue;
+                                                    initialTotalPrice = priceValue; // quantity is 1 by default
+                                                  }
+                                                }
+                                              } else if (shipmentType === "pallet") {
+                                                if (palletSubType === "forwarding" && palletForwardingPricing && palletForwardingPricing.length > 0) {
+                                                  const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                                                    const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                    const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                    return bUpdated - aUpdated;
+                                                  })[0];
+                                                  if (latestPalletForwarding && latestPalletForwarding.price) {
+                                                    const priceValue = typeof latestPalletForwarding.price === 'string' 
+                                                      ? parseFloat(latestPalletForwarding.price) 
+                                                      : latestPalletForwarding.price;
+                                                    if (!isNaN(priceValue) && priceValue > 0) {
+                                                      initialUnitPrice = priceValue;
+                                                      initialTotalPrice = priceValue;
+                                                    }
+                                                  }
+                                                } else if (palletSubType === "existing_inventory") {
+                                                  // Existing Inventory pallets are priced manually by admin at approval time.
+                                                  // Keep pricing at 0 as a placeholder.
+                                                  initialUnitPrice = 0;
+                                                  initialTotalPrice = 0;
+                                                }
+                                              }
+                                              // For product shipments:
+                                              // - Custom: placeholder pricing ($1) until admin sets final price
+                                              // - Others: calculated by useEffect based on pricing rules
+                                              if (shipmentType === "product" && group?.productType === "Custom") {
+                                                initialUnitPrice = 1;
+                                                initialTotalPrice = 1;
+                                              }
+                                              
+                                              form.setValue(`shipmentGroups.${groupIndex}.shipments`, [
+                                                ...currentShipments,
+                                                {
+                                                  productId: item.id,
+                                                  quantity: 1,
+                                                  packOf: 1,
+                                                  unitPrice: initialUnitPrice,
+                                                  totalPrice: initialTotalPrice,
+                                                  selectedAdditionalServices: undefined,
+                                                }
+                                              ]);
+                                            } else {
+                                              const index = currentShipments.findIndex(s => s.productId === item.id);
+                                              if (index !== -1) {
+                                                const updated = [...currentShipments];
+                                                updated.splice(index, 1);
+                                                form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <label className="flex-1 text-sm cursor-pointer">
+                                          {item.productName} (In Stock: {item.quantity})
+                                        </label>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                onClick={() => closePopup(popupKey, 'products')}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </FormItem>
+
+                    {/* Service - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.service`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Service *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_service`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_service`]: true }));
+                              } else {
+                                closePopup(popupKey, 'service');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[130px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'service')}
+                                >
+                                  <span className="truncate">{field.value || "Select"}</span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Service</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBA/WFS/TFS" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBA/WFS/TFS");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBA/WFS/TFS
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBM" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBM");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBM
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Product Type / Dimension - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.productType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Product Type / Dimension *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_productType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_productType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'productType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[180px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'productType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "Standard" ? "Standard (6×6×6) - <3lbs" :
+                                     field.value === "Large" ? "Large (10×10×10) - <6lbs" :
+                                     field.value === "Custom" ? "Custom" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Product Type / Dimension</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Standard" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Standard");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Standard (6×6×6) - &lt;3lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Large" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Large");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Large (10×10×10) - &lt;6lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Custom" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Custom");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Custom
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Date */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.date`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipping Date</FormLabel>
+                          <DatePicker date={field.value} setDate={field.onChange} />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Ship To */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipTo`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1 min-w-[160px]">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Ship To</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter destination" {...field} className="w-full" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Label Upload - Inline */}
+                    <div className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label (Optional)</FormLabel>
+                      <div className="flex items-center gap-2">
+                        {!labelState.preview && !labelState.uploadedUrl && (
+                          <Input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => {
+                              handleLabelSelect(groupIndex, e).catch((error) => {
+                                console.error("Unhandled error in handleLabelSelect:", error);
+                                toast({
+                                  variant: "destructive",
+                                  title: "Error",
+                                  description: "Failed to process file selection. Please try again.",
+                                });
+                              });
+                            }}
+                            className="w-[170px]"
+                            disabled={labelState.isUploading || isLoading}
+                          />
+                        )}
+                        
+                        {(labelState.preview || labelState.uploadedUrl) && (
+                          <div className="flex items-center gap-2">
+                            {labelState.preview ? (
+                              <img
+                                src={labelState.preview}
+                                alt="Label preview"
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            ) : labelState.uploadedUrl ? (
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            ) : null}
+                            <span className="text-xs text-muted-foreground">Uploaded</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleRemoveLabel(groupIndex)}
+                              disabled={labelState.isUploading || isLoading}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {labelState.isUploading && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                      </div>
+                    </div>
+
+                  {/* Custom Dimensions Field - Only show when Custom is selected */}
+                  {groupShipmentType === "product" && groupProductType === "Custom" && (
+                    <div className="mt-4">
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.customDimensions`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Custom Dimensions *</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Enter your custom dimensions (e.g., Length x Width x Height in inches, Weight in lbs)"
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Please provide detailed dimensions and weight for your custom product.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {/* Selected Products Details */}
+                  {groupShipments.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-sm font-medium mb-2">Selected Products:</div>
+                      {groupShipments.map((shipment, shipmentIndex) => {
+                        const product = inventory.find((item) => item.id === shipment.productId);
+                        const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                        const packOf = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1;
+                        const totalUnits = quantity * packOf;
+                        const availableStock = product?.quantity || 0;
+
+                        return (
+                          <div key={shipment.productId || shipmentIndex} className="border rounded-lg p-3 bg-muted/30">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{product?.productName}</div>
+                                <div className="text-xs text-muted-foreground">In Stock: {availableStock}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                  const updated = currentShipments.filter((_, i) => i !== shipmentIndex);
+                                  form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex gap-2">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity` as const}
+                                render={({ field }) => (
+                                  <FormItem className="flex-1">
+                                    <FormLabel className="text-xs">Qty</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        className="h-8"
+                                        {...field}
+                                        onChange={(e) => {
+                                          const value = parseInt(e.target.value) || 0;
+                                          field.onChange(value);
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {totalUnits > availableStock && (
+                                      <p className="text-xs font-medium text-destructive">
+                                        Insufficient stock!
+                                      </p>
+                                    )}
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {groupShipmentType === "product" && (
+                                <FormField
+                                  control={form.control}
+                                  name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf` as const}
+                                  render={({ field }) => (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Pack Of</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          className="h-8"
+                                          {...field}
+                                          onChange={(e) => {
+                                            const value = parseInt(e.target.value) || 1;
+                                            field.onChange(value);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
+
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice` as const}
+                                render={({ field }) => {
+                                  // Custom: show placeholder $1 and admin message; admin sets final pricing on approval.
+                                  if (groupShipmentType === "product" && groupProductType === "Custom") {
+                                    return (
+                                      <FormItem className="flex-1">
+                                        <FormLabel className="text-xs">Price ($)</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type="text"
+                                            className="h-8 [appearance:textfield]"
+                                            readOnly
+                                            value={"1.00"}
+                                          />
+                                        </FormControl>
+                                        <div className="mt-2 rounded-md border-2 border-blue-200 border-dashed bg-blue-50 p-2">
+                                          <p className="text-xs font-medium text-blue-700 text-center">
+                                            Admin can review your request and then charge
+                                          </p>
+                                        </div>
+                                        <FormMessage />
+                                      </FormItem>
+                                    );
+                                  }
+
+                                  const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                                  const packOf = groupShipmentType === "product" ? (form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1) : 1;
+                                  const totalUnits = quantity * packOf;
+                                  let unitPrice = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`) || 0;
+                                  
+                                  // Recalculate unit price if not set or if we have pricing rules
+                                  // Use quantity (not totalUnits) to determine unit price
+                                  // This ensures unit price stays consistent regardless of packOf value
+                                  if (groupShipmentType === "product" && groupService && groupProductType && pricingRules && pricingRules.length > 0 && quantity > 0) {
+                                    const calculatedPrice = calculatePrepUnitPrice(
+                                      pricingRules,
+                                      groupService,
+                                      groupProductType,
+                                      quantity // Use quantity, not totalUnits, to get consistent unit price
+                                    );
+                                    // Always use calculated rate if available (even if it's 0.10)
+                                    if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+                                      unitPrice = calculatedPrice.rate;
+                                    }
+                                  }
+                                  
+                                  // Calculate total price with pack of charge
+                                  // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+                                  // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+                                  let calculatedTotal = 0;
+                                  if (groupShipmentType === "product" && unitPrice > 0 && quantity > 0) {
+                                    const baseTotal = unitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+                                    let packOfPrice = 0;
+                                    if (groupService && groupProductType && pricingRules && pricingRules.length > 0) {
+                                      // Look up packOfPrice based on quantity only, not totalUnits
+                                      // This ensures packOfPrice doesn't change when packOf changes
+                                      const calculatedPriceForPackOf = calculatePrepUnitPrice(
+                                        pricingRules,
+                                        groupService,
+                                        groupProductType,
+                                        quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+                                      );
+                                      if (calculatedPriceForPackOf) {
+                                        packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+                                      }
+                                    }
+                                    // Pack charge: packOfPrice × (packOf - 1)
+                                    // First pack is free, charge applies from 2nd pack onwards
+                                    const packCharge = packOfPrice * Math.max(0, packOf - 1);
+                                    calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+                                  } else if (unitPrice > 0 && quantity > 0) {
+                                    calculatedTotal = parseFloat((unitPrice * quantity).toFixed(2));
+                                  }
+                                  
+                                  // Always show calculated total if available, otherwise show field value
+                                  const displayValue = calculatedTotal > 0 ? calculatedTotal : (field.value || 0);
+                                  // Format to always show 2 decimal places (e.g., 0.10 instead of 0.1)
+                                  const formattedValue = typeof displayValue === 'number' ? displayValue.toFixed(2) : parseFloat(displayValue || 0).toFixed(2);
+                                  
+                                  return (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Price ($)</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="text"
+                                          placeholder="Auto"
+                                          className="h-8 [appearance:textfield]"
+                                          readOnly
+                                          value={formattedValue}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                              {/* Hidden unitPrice field: required by schema even though we don't show it in the UI */}
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice` as const}
+                                render={({ field }) => (
+                                  <input type="hidden" {...field} value={field.value ?? ""} />
+                                )}
+                              />
+                            </div>
+                            
+                            {/* Additional Services - Per Product */}
+                            <div className="mt-3 pt-3 border-t">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.selectedAdditionalServices` as const}
+                                render={({ field }) => {
+                                  const selectedServices = field.value || [];
+                                  const hasBubbleWrap = selectedServices.includes("bubbleWrap");
+                                  const hasStickerRemoval = selectedServices.includes("stickerRemoval");
+                                  const hasWarningLabels = selectedServices.includes("warningLabels");
+                                  const selectedServicesDisplay: string[] = [];
+                                  if (hasBubbleWrap) selectedServicesDisplay.push("Bubble Wrap");
+                                  if (hasStickerRemoval) selectedServicesDisplay.push("Sticker Removal");
+                                  if (hasWarningLabels) selectedServicesDisplay.push("Warning Labels");
+                                  const displayText = selectedServicesDisplay.length > 0 
+                                    ? selectedServicesDisplay.join(", ")
+                                    : "Select (optional)";
+                                  const productPopupKey = `${popupKey}_product_${shipmentIndex}_additionalServices`;
+
+                                  return (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-medium">Additional Services (Optional)</FormLabel>
+                                      <Dialog
+                                        open={openPopups[productPopupKey] || false}
+                                        onOpenChange={(open) => {
+                                          if (open) {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: true }));
+                                          } else {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                          }
+                                        }}
+                                      >
+                                        <DialogTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="w-full justify-between"
+                                            onClick={() => {
+                                              setOpenPopups(prev => ({ ...prev, [productPopupKey]: !prev[productPopupKey] }));
+                                            }}
+                                          >
+                                            <span className="truncate">
+                                              {displayText}
+                                            </span>
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                          <DialogHeader>
+                                            <DialogTitle>Additional Services for {product?.productName}</DialogTitle>
+                                            <DialogDescription>
+                                              Select which additional services you need for this product. Admin will add quantities and calculate pricing during approval.
+                                            </DialogDescription>
+                                          </DialogHeader>
+                                          <div className="space-y-4 py-2">
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasBubbleWrap}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "bubbleWrap"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "bubbleWrap"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Bubble Wrap</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (feet) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasStickerRemoval}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "stickerRemoval"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "stickerRemoval"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Sticker Removal</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (items) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasWarningLabels}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "warningLabels"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "warningLabels"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Warning Labels</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (count) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                onClick={() => {
+                                                  field.onChange([]);
+                                                  setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                                }}
+                                              >
+                                                Clear All
+                                              </Button>
+                                              <Button type="button" onClick={() => setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }))}>
+                                                Done
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+          </Accordion>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              type="submit"
+              disabled={isLoading || shipmentGroups.length === 0}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Submit All Shipment Requests
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
+
+import { useFieldArray, useForm } from "react-hook-form";
+import * as z from "zod";
+import { collection, doc, Timestamp, writeBatch } from "firebase/firestore";
+import { useMemo, useState, useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, X, Plus, ChevronDown } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { isUploadTimeAllowed, getTimeUntilNextUploadWindow, formatTimeRemaining, getNewJerseyTimeString, getUploadWindowDescription } from "@/lib/time-utils";
+import type { InventoryItem, ServiceType, ProductType, UserPricing, UserBoxForwardingPricing, UserPalletForwardingPricing, UserAdditionalServicesPricing } from "@/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCollection } from "@/hooks/use-collection";
+import { calculatePrepUnitPrice } from "@/lib/pricing-utils";
+import imageCompression from "browser-image-compression";
+import { ImageIcon } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+const shipmentItemSchema = z.object({
+  productId: z.string().min(1, "Select a product."),
+  quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
+  packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  // Custom products use placeholder pricing until admin sets final pricing.
+  unitPrice: z.coerce.number().nonnegative("Unit price must be a non-negative number."),
+  totalPrice: z.coerce.number().nonnegative("Total price must be a non-negative number."),
+  // Additional Services per product - user only selects which services they want (boolean flags)
+  // Admin will add quantities during approval
+  selectedAdditionalServices: z.array(z.enum(["bubbleWrap", "stickerRemoval", "warningLabels"])).optional(),
+});
+
+const shipmentGroupSchema = z.object({
+  shipmentType: z.enum(["product", "box", "pallet"], { required_error: "Shipment type is required." }),
+  palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
+  shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
+  date: z.date({ required_error: "A shipping date is required." }),
+  shipTo: z.string().min(1, "Ship to destination is required."),
+  service: z.enum(["FBA/WFS/TFS", "FBM"]).optional(),
+  productType: z.enum(["Standard", "Large", "Custom"]).optional(),
+  customDimensions: z.string().optional(),
+}).refine((data) => {
+  if (data.shipmentType === "product") {
+    return data.service && data.productType;
+  }
+  return true;
+}, {
+  message: "Service and product type are required for product shipments.",
+  path: ["service"],
+}).refine((data) => {
+  if (data.shipmentType === "product" && data.productType === "Custom") {
+    return typeof data.customDimensions === "string" && data.customDimensions.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Custom dimensions are required for Custom product type.",
+  path: ["customDimensions"],
+}).refine((data) => {
+  // For non-custom products, unit price must be > 0 for every item.
+  if (data.shipmentType === "product" && data.productType && data.productType !== "Custom") {
+    return (data.shipments || []).every((s) => typeof s?.unitPrice === "number" && s.unitPrice > 0);
+  }
+  return true;
+}, {
+  message: "Unit price must be a positive number.",
+  path: ["shipments"],
+}).refine((data) => {
+  if (data.shipmentType === "pallet") {
+    return data.palletSubType;
+  }
+  return true;
+}, {
+  message: "Please select pallet sub-type.",
+  path: ["palletSubType"],
+});
+
+const formSchema = z.object({
+  shipmentGroups: z.array(shipmentGroupSchema).min(1, "Create at least one shipment."),
+});
+
+interface CreateShipmentWithLabelsFormProps {
+  inventory: InventoryItem[];
+}
+
+interface LabelUploadState {
+  file: File | null;
+  preview: string | null;
+  uploadedUrl: string | null;
+  isUploading: boolean;
+}
+
+export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLabelsFormProps) {
+  const { toast } = useToast();
+  const { user, userProfile } = useAuth();
+  
+  // Early return if user is not loaded
+  if (!user || !userProfile) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Loading user data...
+      </div>
+    );
+  }
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  
+  // Label upload states for each shipment group
+  const [labelStates, setLabelStates] = useState<Record<number, LabelUploadState>>({});
+  
+  // Time restriction state
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [uploadAllowed, setUploadAllowed] = useState<boolean>(true);
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+  
+  // Popup states for each group
+  const [openPopups, setOpenPopups] = useState<Record<string, boolean>>({});
+  
+  // Accordion state - only one shipment open at a time
+  const [openAccordionValue, setOpenAccordionValue] = useState<string | undefined>(undefined);
+  
+  const togglePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+  
+  const closePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: false
+    }));
+  };
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      shipmentGroups: [],
+    },
+  });
+
+  const { fields: shipmentGroups, append: appendGroup, remove: removeGroup } = useFieldArray({
+    control: form.control,
+    name: "shipmentGroups",
+  });
+
+  // Fetch user's pricing rules
+  const { data: pricingRules } = useCollection<UserPricing>(
+    userProfile ? `users/${userProfile.uid}/pricing` : ""
+  );
+  
+  // Fetch forwarding pricing
+  const { data: boxForwardingPricing } = useCollection<UserBoxForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/boxForwardingPricing` : ""
+  );
+  
+  const { data: palletForwardingPricing } = useCollection<UserPalletForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/palletForwardingPricing` : ""
+  );
+  
+  // Fetch additional services pricing
+  const { data: additionalServicesPricing } = useCollection<UserAdditionalServicesPricing>(
+    userProfile ? `users/${userProfile.uid}/additionalServicesPricing` : ""
+  );
+
+  // Update time display every second
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(getNewJerseyTimeString());
+      setUploadAllowed(isUploadTimeAllowed());
+      setTimeRemaining(formatTimeRemaining(getTimeUntilNextUploadWindow()));
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-calculate pricing for all shipment groups
+  const watchedGroups = form.watch("shipmentGroups");
+  useEffect(() => {
+    try {
+      const allGroups = watchedGroups || [];
+      
+      if (!Array.isArray(allGroups)) return;
+      
+      allGroups.forEach((group, groupIndex) => {
+        if (!group) return;
+        
+        const shipmentType = group.shipmentType;
+        const palletSubType = group.palletSubType;
+        const service = group.service;
+        const productType = group.productType;
+        const shipments = group.shipments || [];
+        
+        if (!Array.isArray(shipments)) return;
+        
+        shipments.forEach((shipment, shipmentIndex) => {
+          if (!shipment) return;
+        const quantity = shipment.quantity || 0;
+        // Keep packOf for Custom too (admin needs full detail). Pricing stays placeholder for Custom.
+        const packOf = shipmentType === "product" ? (shipment.packOf || 1) : 1;
+        const totalUnits = quantity * packOf;
+        
+        let finalUnitPrice = 0;
+        
+        // Custom product pricing is a placeholder ($1). Admin will set final pricing during approval.
+        if (shipmentType === "product" && productType === "Custom") {
+          finalUnitPrice = 1;
+        } else if (shipmentType === "product" && service && productType && pricingRules && pricingRules.length > 0) {
+          // Use quantity (not totalUnits) to determine unit price
+          // This ensures unit price stays consistent regardless of packOf value
+          const calculatedPrice = calculatePrepUnitPrice(
+            pricingRules,
+            service,
+            productType,
+            quantity // Use quantity, not totalUnits, to get consistent unit price
+          );
+          if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+            finalUnitPrice = calculatedPrice.rate;
+          }
+        } else if (shipmentType === "box") {
+          if (boxForwardingPricing && boxForwardingPricing.length > 0) {
+            const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+              const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+              const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+              return bUpdated - aUpdated;
+            })[0];
+            if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+              // Ensure price is a number
+              const priceValue = typeof latestBoxPricing.price === 'string' 
+                ? parseFloat(latestBoxPricing.price) 
+                : latestBoxPricing.price;
+              if (!isNaN(priceValue) && priceValue > 0) {
+                finalUnitPrice = priceValue;
+              }
+            }
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        } else if (shipmentType === "pallet") {
+          if (palletSubType === "forwarding") {
+            if (palletForwardingPricing && palletForwardingPricing.length > 0) {
+              const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                return bUpdated - aUpdated;
+              })[0];
+              if (latestPalletForwarding && latestPalletForwarding.price !== undefined && latestPalletForwarding.price !== null) {
+                // Ensure price is a number
+                const priceValue = typeof latestPalletForwarding.price === 'string' 
+                  ? parseFloat(latestPalletForwarding.price) 
+                  : latestPalletForwarding.price;
+                if (!isNaN(priceValue) && priceValue > 0) {
+                  finalUnitPrice = priceValue;
+                }
+              }
+            }
+          } else if (palletSubType === "existing_inventory") {
+            // Existing Inventory pallets are priced manually by admin at approval time.
+            // Keep pricing at 0 as a placeholder.
+            finalUnitPrice = 0;
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        }
+
+        // Calculate total price
+        // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+        // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+        // Example: Rate = 0.10, Pack Of Price = 1.00, Quantity = 10
+        //   Pack Of = 1: (0.10 × 10) + (1.00 × 0) = 1.00 + 0.00 = 1.00 (first pack is free)
+        //   Pack Of = 2: (0.10 × 10) + (1.00 × 1) = 1.00 + 1.00 = 2.00 (charge for 2nd pack)
+        //   Pack Of = 3: (0.10 × 10) + (1.00 × 2) = 1.00 + 2.00 = 3.00 (charge for 2nd and 3rd pack)
+        //   Pack Of = 5: (0.10 × 10) + (1.00 × 4) = 1.00 + 4.00 = 5.00 (charge for 2nd, 3rd, 4th, 5th pack)
+        let calculatedTotal = 0;
+        // Custom product total shown to user is a placeholder ($1).
+        if (shipmentType === "product" && productType === "Custom") {
+          calculatedTotal = 1;
+        } else if (shipmentType === "product" && finalUnitPrice > 0 && quantity > 0) {
+          const baseTotal = finalUnitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+          let packOfPrice = 0;
+          if (service && productType && pricingRules && pricingRules.length > 0) {
+            // Look up packOfPrice based on quantity only, not totalUnits
+            // This ensures packOfPrice doesn't change when packOf changes
+            const calculatedPriceForPackOf = calculatePrepUnitPrice(
+              pricingRules,
+              service,
+              productType,
+              quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+            );
+            if (calculatedPriceForPackOf) {
+              packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+            }
+          }
+          // Pack charge: packOfPrice × (packOf - 1)
+          // First pack is free, charge applies from 2nd pack onwards
+          // When packOf = 1, charge = 0 (no additional packs)
+          // When packOf = 2, charge = packOfPrice × 1 (charge for 2nd pack)
+          // When packOf = 3, charge = packOfPrice × 2 (charge for 2nd and 3rd pack)
+          // When packOf = 5, charge = packOfPrice × 4 (charge for 2nd, 3rd, 4th, 5th pack)
+          const packCharge = packOfPrice * Math.max(0, packOf - 1);
+          calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+        } else if (finalUnitPrice > 0 && quantity > 0) {
+          calculatedTotal = parseFloat((finalUnitPrice * quantity).toFixed(2));
+        }
+
+        // Always update to ensure pricing is calculated correctly
+        const currentUnitPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`);
+        const currentTotalPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`);
+        
+        // Update unit price if it changed - always update when we have a calculated price (even if it's 0.10)
+        // Use a small epsilon for floating point comparison
+        if (Math.abs((currentUnitPrice || 0) - finalUnitPrice) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, finalUnitPrice, { shouldValidate: false });
+        }
+        
+        // Update total price if it changed
+        if (currentTotalPrice !== calculatedTotal) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`, calculatedTotal, { shouldValidate: false });
+        }
+
+        // For Custom products, ensure unitPrice is always set to 1 in form state (prevents submit validation issues)
+        if (shipmentType === "product" && productType === "Custom" && Math.abs((currentUnitPrice || 0) - 1) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, 1, { shouldValidate: false });
+        }
+        });
+      });
+    } catch (error) {
+      console.error("Error calculating pricing:", error);
+    }
+  }, [watchedGroups, pricingRules, boxForwardingPricing, palletForwardingPricing, form]);
+
+  // Initialize label state when a new group is added
+  const handleAddShipmentGroup = () => {
+    const newIndex = shipmentGroups.length;
+    appendGroup({
+      shipmentType: "product",
+      palletSubType: undefined,
+      shipments: [],
+      date: new Date(),
+      shipTo: "",
+      service: "FBA/WFS/TFS",
+      productType: "Standard",
+    });
+    setLabelStates(prev => ({
+      ...prev,
+      [newIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+    }));
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleLabelSelect = async (groupIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
+      if (!isValidType) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: "Please select an image (JPG, PNG) or PDF file.",
+        });
+        return;
+      }
+
+      const maxSizeBytes = 10 * 1024 * 1024;
+      if (file.size > maxSizeBytes) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: "Please select a file smaller than 10 MB.",
+        });
+        return;
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          file,
+          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+          uploadedUrl: null,
+          isUploading: false
+        }
+      }));
+    } catch (error: any) {
+      console.error("Error selecting label file:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to select file. Please try again.",
+      });
+    }
+  };
+
+  const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
+    const labelState = labelStates[groupIndex];
+    if (!labelState?.file || !userProfile) return null;
+
+    if (!isUploadTimeAllowed()) {
+      const timeUntil = getTimeUntilNextUploadWindow();
+      toast({
+        variant: "destructive",
+        title: "Upload Time Restricted",
+        description: `${getUploadWindowDescription()}. ${timeUntil}`,
+      });
+      return null;
+    }
+
+    try {
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: true }
+      }));
+
+      let fileToUpload = labelState.file;
+
+      if (labelState.file.type.startsWith("image/")) {
+        const compressedFile = await compressImage(labelState.file);
+        if (compressedFile.size > 1024 * 1024) {
+          toast({
+            variant: "destructive",
+            title: "Compression Failed",
+            description: "Unable to compress image below 1 MB. Please try a different image.",
+          });
+          return null;
+        }
+        fileToUpload = compressedFile;
+      }
+
+      const currentDate = new Date();
+      const clientName = userProfile.name || "Unknown User";
+      const fileName = `${Date.now()}_${fileToUpload.name}`;
+      
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('clientName', clientName);
+      
+      const year = currentDate.getFullYear().toString();
+      const month = currentDate.toLocaleString('en-US', { month: 'long' });
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const folderPath = `${year}/${month}/${clientName}/${dateStr}`;
+      formData.append('folderPath', folderPath);
+
+      const response = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        let errorMessage = errorData.error || 'Failed to upload label to Google Drive';
+        
+        if (errorMessage.includes('refresh access token') || errorMessage.includes('Failed to get access token')) {
+          errorMessage = 'Google Drive authentication failed. Please contact admin to re-authenticate Google Drive.';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      const downloadURL = result.downloadURL || result.webUrl;
+      
+      if (!downloadURL) {
+        throw new Error('No download URL received from Google Drive');
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          uploadedUrl: downloadURL,
+          isUploading: false
+        }
+      }));
+      
+      toast({
+        title: "Success",
+        description: "Label uploaded successfully to Google Drive!",
+      });
+
+      return downloadURL;
+    } catch (error: any) {
+      console.error("Error uploading label:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload label. Please try again.",
+      });
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: false }
+      }));
+      return null;
+    }
+  };
+
+  const handleRemoveLabel = (groupIndex: number) => {
+    setLabelStates(prev => {
+      const state = prev[groupIndex];
+      if (state?.preview) {
+        URL.revokeObjectURL(state.preview);
+      }
+      return {
+        ...prev,
+        [groupIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+      };
+    });
+  };
+
+  const handleRemoveGroup = (index: number) => {
+    handleRemoveLabel(index);
+    removeGroup(index);
+    // Reindex label states
+    const newStates: Record<number, LabelUploadState> = {};
+    shipmentGroups.forEach((_, i) => {
+      if (i !== index) {
+        const oldIndex = i > index ? i - 1 : i;
+        newStates[oldIndex] = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+      }
+    });
+    setLabelStates(newStates);
+  };
+
+  // Helper function to remove undefined values from objects (Firestore doesn't allow undefined)
+  const removeUndefined = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    // Preserve Firestore Timestamp objects
+    if (obj && typeof obj === 'object' && ('seconds' in obj || 'toDate' in obj || obj.constructor?.name === 'Timestamp')) {
+      return obj;
+    }
+    // Preserve Date objects
+    if (obj instanceof Date) {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefined).filter(item => item !== undefined);
+    }
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          cleaned[key] = removeUndefined(obj[key]);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user || !userProfile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You must be logged in to create shipment requests.",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const batch = writeBatch(db);
+      const requestedAt = Timestamp.now();
+
+      // Process each shipment group
+      for (let i = 0; i < values.shipmentGroups.length; i++) {
+        const group = values.shipmentGroups[i];
+        // Get the current label state - check both the index and ensure we have the latest state
+        const labelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+        // Validate stock availability for this group
+        const stockErrors: string[] = [];
+        group.shipments.forEach((shipment) => {
+          const product = inventory.find(item => item.id === shipment.productId);
+          if (product) {
+            const packOf = group.shipmentType === "product" ? (shipment.packOf || 1) : 1;
+            const totalUnits = shipment.quantity * packOf;
+            if (totalUnits > product.quantity) {
+              const unitType = group.shipmentType === "box" ? "boxes" : group.shipmentType === "pallet" ? "pallets" : "units";
+              stockErrors.push(
+                `${product.productName}: Requested ${totalUnits} ${unitType} but only ${product.quantity} available.`
+              );
+            }
+          }
+        });
+
+        if (stockErrors.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Insufficient Stock",
+            description: `Group ${i + 1}: ${stockErrors.join(" ")}`,
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Upload label if selected (optional) - get fresh state to ensure we have the latest
+        const currentLabelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        let labelUrl = "";
+        
+        // Check if label is already uploaded (priority check)
+        if (currentLabelState.uploadedUrl) {
+          // Label already uploaded, use existing URL
+          labelUrl = currentLabelState.uploadedUrl;
+          console.log(`[Group ${i + 1}] Using existing label URL:`, labelUrl);
+        } else if (currentLabelState.file) {
+          // File selected but not uploaded yet, upload it now
+          console.log(`[Group ${i + 1}] Uploading label file:`, currentLabelState.file.name);
+          const uploadedUrl = await handleLabelUpload(i);
+          if (uploadedUrl) {
+            labelUrl = uploadedUrl;
+            console.log(`[Group ${i + 1}] Label uploaded successfully:`, labelUrl);
+          } else {
+            // Upload failed, but label is optional so we continue without it
+            console.warn(`[Group ${i + 1}] Label upload failed, continuing without label`);
+            labelUrl = "";
+          }
+        } else {
+          // No label provided for this group - that's okay, label is optional
+          console.log(`[Group ${i + 1}] No label provided (optional)`);
+          labelUrl = "";
+        }
+
+        // Create shipment request
+        const dateTimestamp = Timestamp.fromDate(group.date);
+        const requestRef = doc(collection(db, `users/${user.uid}/shipmentRequests`));
+        
+        // Build the document data, only including fields that are applicable
+        const requestData: any = {
+          userId: user.uid,
+          userName: userProfile.name || "Unknown User",
+          date: dateTimestamp,
+          shipTo: group.shipTo || "",
+          shipmentType: group.shipmentType,
+          labelUrl: labelUrl || "",
+          status: "pending",
+          requestedBy: user.uid,
+          requestedAt,
+        };
+        
+        // Set service based on shipment type
+        if (group.shipmentType === "box") {
+          requestData.service = "Box Forwarding";
+        } else if (group.shipmentType === "pallet") {
+          if (group.palletSubType === "forwarding") {
+            requestData.service = "Pallet Forwarding";
+          } else if (group.palletSubType === "existing_inventory") {
+            requestData.service = "Pallet Existing Inventory";
+          }
+          if (group.palletSubType) {
+            requestData.palletSubType = group.palletSubType;
+          }
+        } else if (group.shipmentType === "product") {
+          // For product shipments, use the selected service
+          if (group.service) {
+            requestData.service = group.service;
+          }
+          if (group.productType) {
+            requestData.productType = group.productType;
+          }
+        }
+        
+        // Clean shipments array to remove undefined values
+        requestData.shipments = group.shipments.map((shipment: any) => {
+          const cleaned: any = {
+            productId: shipment.productId,
+            quantity: shipment.quantity,
+            packOf: shipment.packOf || 1,
+            unitPrice: shipment.unitPrice || 0,
+          };
+          // Only include optional fields
+          if (shipment.selectedAdditionalServices && shipment.selectedAdditionalServices.length > 0) {
+            cleaned.selectedAdditionalServices = shipment.selectedAdditionalServices;
+          }
+          return cleaned;
+        });
+        
+        // Remove all undefined values before saving to Firestore
+        const cleanedRequestData = removeUndefined(requestData);
+        
+        batch.set(requestRef, cleanedRequestData);
+      }
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `${values.shipmentGroups.length} shipment request(s) with labels submitted successfully. Admin will review them.`,
+      });
+
+      form.reset({
+        shipmentGroups: [],
+      });
+      setQuery("");
+      setLabelStates({});
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to submit shipment requests.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const onInvalidSubmit = (errors: any) => {
+    // Open the first shipment accordion that has an error so the user can see the field messages.
+    const groups = errors?.shipmentGroups;
+    if (Array.isArray(groups)) {
+      const firstBadIndex = groups.findIndex((g) => g && Object.keys(g).length > 0);
+      if (firstBadIndex >= 0) {
+        setOpenAccordionValue(`shipment-${firstBadIndex}`);
+      }
+    }
+
+    const findFirstMessage = (err: any): string | undefined => {
+      if (!err) return undefined;
+      if (typeof err?.message === "string" && err.message.length > 0) return err.message;
+      if (Array.isArray(err)) {
+        for (const item of err) {
+          const msg = findFirstMessage(item);
+          if (msg) return msg;
+        }
+        return undefined;
+      }
+      if (typeof err === "object") {
+        for (const key of Object.keys(err)) {
+          const msg = findFirstMessage(err[key]);
+          if (msg) return msg;
+        }
+      }
+      return undefined;
+    };
+
+    const firstMessage =
+      findFirstMessage(errors?.shipmentGroups) ||
+      "Please fill all required fields before submitting.";
+
+    toast({
+      variant: "destructive",
+      title: "Fix required fields",
+      description: firstMessage,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Time Display */}
+      <div className="p-4 border rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
+          <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
+            {uploadAllowed ? (
+              <>
+                <span className="font-medium">✓ Allowed</span>
+                <span className="font-mono">({timeRemaining} remaining)</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">⚠️ Disabled</span>
+                <span className="font-mono">({timeRemaining} until available)</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+          {uploadAllowed ? (
+            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
+          ) : (
+            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
+          )}
+        </div>
+        <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
+          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)} className="space-y-6">
+          {/* Add Shipment Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Create Shipment</h3>
+              <p className="text-sm text-muted-foreground">Create multiple shipments, each with its own label</p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleAddShipmentGroup}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Shipment
+            </Button>
+          </div>
+
+          {/* Shipments */}
+          {shipmentGroups.length === 0 && (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">No shipments yet. Click "Add Shipment" to get started.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Accordion 
+            type="single" 
+            collapsible 
+            value={openAccordionValue} 
+            onValueChange={setOpenAccordionValue}
+            className="space-y-4"
+          >
+          {shipmentGroups.map((group, groupIndex) => {
+            const groupShipmentType = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const groupPalletSubType = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            const groupService = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const groupProductType = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const groupShipments = form.watch(`shipmentGroups.${groupIndex}.shipments`);
+            
+            // Calculate available inventory without useMemo (inside map)
+            const normalizedQuery = query.trim().toLowerCase();
+            const availableInventory = inventory
+              .filter((item) => item.quantity > 0)
+              .filter((item) => {
+                const inventoryType = (item as any).inventoryType;
+                if (groupShipmentType === "box") {
+                  return inventoryType === "box";
+                } else if (groupShipmentType === "pallet") {
+                  if (groupPalletSubType === "forwarding") {
+                    return inventoryType === "pallet";
+                  } else if (groupPalletSubType === "existing_inventory") {
+                    // Show all products (inventoryType === "product" or undefined/missing)
+                    const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                    return !isExcludedType;
+                  }
+                  return false;
+                } else {
+                  // Product type - show all products (inventoryType === "product" or undefined/missing)
+                  const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                  return !isExcludedType;
+                }
+              })
+              .filter((item) => item.productName.toLowerCase().includes(normalizedQuery));
+
+            const labelState = labelStates[groupIndex] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+            const popupKey = group.id;
+            const shipmentTypeValue = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const serviceValue = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const productTypeValue = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const palletSubTypeValue = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            
+            return (
+              <AccordionItem key={group.id} value={`shipment-${groupIndex}`} className="border-2 rounded-lg px-4 mb-4">
+                <div className="relative">
+                  <AccordionTrigger className="hover:no-underline pr-12 [&>svg]:hidden">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="text-left">
+                        <div className="text-lg font-semibold">Shipment {groupIndex + 1}</div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Each shipment creates a separate shipment request with its own label
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveGroup(groupIndex);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <AccordionContent>
+                  <div className="pt-4">
+                    {/* Horizontal Entry-Type View (single line) */}
+                    <div className="overflow-x-auto">
+                      <div className="flex flex-nowrap items-end gap-3 min-w-max pb-4 border-b">
+                    {/* Shipment Type - Popup */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipmentType`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipment Type *</FormLabel>
+                          <Dialog open={openPopups[`${popupKey}_shipmentType`] || false} onOpenChange={(open) => {
+                            if (open) {
+                              setOpenPopups(prev => ({ ...prev, [`${popupKey}_shipmentType`]: true }));
+                            } else {
+                              closePopup(popupKey, 'shipmentType');
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-[120px] justify-between"
+                                onClick={() => togglePopup(popupKey, 'shipmentType')}
+                              >
+                                <span className="truncate">{field.value ? field.value.charAt(0).toUpperCase() + field.value.slice(1) : "Select"}</span>
+                                <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Select Shipment Type</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-2 py-4">
+                                {["product", "box", "pallet"].map((type) => (
+                                  <Button
+                                    key={type}
+                                    type="button"
+                                    variant={field.value === type ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange(type);
+                                      if (type !== "pallet") {
+                                        form.setValue(`shipmentGroups.${groupIndex}.palletSubType`, undefined);
+                                      }
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'shipmentType');
+                                    }}
+                                  >
+                                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                                  </Button>
+                                ))}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Pallet Sub-Type - Popup */}
+                    {groupShipmentType === "pallet" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.palletSubType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Pallet Type *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_palletType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_palletType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'palletType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[150px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'palletType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "existing_inventory" ? "Existing Inventory" :
+                                     field.value === "forwarding" ? "Pallet Forwarding" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Pallet Type</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "existing_inventory" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("existing_inventory");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Existing Inventory
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "forwarding" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("forwarding");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Pallet Forwarding
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Products - Popup (FIRST) */}
+                    <FormItem className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Products</FormLabel>
+                      <Dialog open={openPopups[`${popupKey}_products`] || false} onOpenChange={(open) => {
+                        if (open) {
+                          setOpenPopups(prev => ({ ...prev, [`${popupKey}_products`]: true }));
+                        } else {
+                          closePopup(popupKey, 'products');
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-[160px] justify-between"
+                            onClick={() => togglePopup(popupKey, 'products')}
+                          >
+                            <span className="truncate">
+                              {groupShipments.length > 0 
+                                ? `${groupShipments.length} product${groupShipments.length > 1 ? 's' : ''} selected`
+                                : "Search products..."}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Select Products</DialogTitle>
+                            <DialogDescription>
+                              Search and select products for this shipment
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <Input
+                              placeholder="Search products..."
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                            <ScrollArea className="h-[300px]">
+                              <div className="space-y-2">
+                                {availableInventory.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground text-center py-4">
+                                    No products available for this shipment type.
+                                  </p>
+                                ) : (
+                                  availableInventory.map((item) => {
+                                    const isSelected = groupShipments.some((shipment) => shipment.productId === item.id);
+                                    return (
+                                      <div key={item.id} className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                            if (checked) {
+                                              // Calculate initial price based on shipment type
+                                              let initialUnitPrice = 0;
+                                              let initialTotalPrice = 0;
+                                              
+                                              const group = form.getValues(`shipmentGroups.${groupIndex}`);
+                                              const shipmentType = group?.shipmentType;
+                                              const palletSubType = group?.palletSubType;
+                                              
+                                              if (shipmentType === "box" && boxForwardingPricing && boxForwardingPricing.length > 0) {
+                                                const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+                                                  const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                  const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                  return bUpdated - aUpdated;
+                                                })[0];
+                                                if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+                                                  const priceValue = typeof latestBoxPricing.price === 'string' 
+                                                    ? parseFloat(latestBoxPricing.price) 
+                                                    : latestBoxPricing.price;
+                                                  if (!isNaN(priceValue) && priceValue > 0) {
+                                                    initialUnitPrice = priceValue;
+                                                    initialTotalPrice = priceValue; // quantity is 1 by default
+                                                  }
+                                                }
+                                              } else if (shipmentType === "pallet") {
+                                                if (palletSubType === "forwarding" && palletForwardingPricing && palletForwardingPricing.length > 0) {
+                                                  const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                                                    const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                    const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                    return bUpdated - aUpdated;
+                                                  })[0];
+                                                  if (latestPalletForwarding && latestPalletForwarding.price) {
+                                                    const priceValue = typeof latestPalletForwarding.price === 'string' 
+                                                      ? parseFloat(latestPalletForwarding.price) 
+                                                      : latestPalletForwarding.price;
+                                                    if (!isNaN(priceValue) && priceValue > 0) {
+                                                      initialUnitPrice = priceValue;
+                                                      initialTotalPrice = priceValue;
+                                                    }
+                                                  }
+                                                } else if (palletSubType === "existing_inventory") {
+                                                  // Existing Inventory pallets are priced manually by admin at approval time.
+                                                  // Keep pricing at 0 as a placeholder.
+                                                  initialUnitPrice = 0;
+                                                  initialTotalPrice = 0;
+                                                }
+                                              }
+                                              // For product shipments:
+                                              // - Custom: placeholder pricing ($1) until admin sets final price
+                                              // - Others: calculated by useEffect based on pricing rules
+                                              if (shipmentType === "product" && group?.productType === "Custom") {
+                                                initialUnitPrice = 1;
+                                                initialTotalPrice = 1;
+                                              }
+                                              
+                                              form.setValue(`shipmentGroups.${groupIndex}.shipments`, [
+                                                ...currentShipments,
+                                                {
+                                                  productId: item.id,
+                                                  quantity: 1,
+                                                  packOf: 1,
+                                                  unitPrice: initialUnitPrice,
+                                                  totalPrice: initialTotalPrice,
+                                                  selectedAdditionalServices: undefined,
+                                                }
+                                              ]);
+                                            } else {
+                                              const index = currentShipments.findIndex(s => s.productId === item.id);
+                                              if (index !== -1) {
+                                                const updated = [...currentShipments];
+                                                updated.splice(index, 1);
+                                                form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <label className="flex-1 text-sm cursor-pointer">
+                                          {item.productName} (In Stock: {item.quantity})
+                                        </label>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                onClick={() => closePopup(popupKey, 'products')}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </FormItem>
+
+                    {/* Service - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.service`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Service *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_service`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_service`]: true }));
+                              } else {
+                                closePopup(popupKey, 'service');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[130px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'service')}
+                                >
+                                  <span className="truncate">{field.value || "Select"}</span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Service</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBA/WFS/TFS" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBA/WFS/TFS");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBA/WFS/TFS
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBM" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBM");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBM
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Product Type / Dimension - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.productType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Product Type / Dimension *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_productType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_productType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'productType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[180px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'productType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "Standard" ? "Standard (6×6×6) - <3lbs" :
+                                     field.value === "Large" ? "Large (10×10×10) - <6lbs" :
+                                     field.value === "Custom" ? "Custom" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Product Type / Dimension</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Standard" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Standard");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Standard (6×6×6) - &lt;3lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Large" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Large");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Large (10×10×10) - &lt;6lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Custom" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Custom");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Custom
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Date */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.date`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipping Date</FormLabel>
+                          <DatePicker date={field.value} setDate={field.onChange} />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Ship To */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipTo`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1 min-w-[160px]">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Ship To</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter destination" {...field} className="w-full" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Label Upload - Inline */}
+                    <div className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label (Optional)</FormLabel>
+                      <div className="flex items-center gap-2">
+                        {!labelState.preview && !labelState.uploadedUrl && (
+                          <Input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => {
+                              handleLabelSelect(groupIndex, e).catch((error) => {
+                                console.error("Unhandled error in handleLabelSelect:", error);
+                                toast({
+                                  variant: "destructive",
+                                  title: "Error",
+                                  description: "Failed to process file selection. Please try again.",
+                                });
+                              });
+                            }}
+                            className="w-[170px]"
+                            disabled={labelState.isUploading || isLoading}
+                          />
+                        )}
+                        
+                        {(labelState.preview || labelState.uploadedUrl) && (
+                          <div className="flex items-center gap-2">
+                            {labelState.preview ? (
+                              <img
+                                src={labelState.preview}
+                                alt="Label preview"
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            ) : labelState.uploadedUrl ? (
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            ) : null}
+                            <span className="text-xs text-muted-foreground">Uploaded</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleRemoveLabel(groupIndex)}
+                              disabled={labelState.isUploading || isLoading}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {labelState.isUploading && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                      </div>
+                    </div>
+
+                  {/* Custom Dimensions Field - Only show when Custom is selected */}
+                  {groupShipmentType === "product" && groupProductType === "Custom" && (
+                    <div className="mt-4">
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.customDimensions`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Custom Dimensions *</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Enter your custom dimensions (e.g., Length x Width x Height in inches, Weight in lbs)"
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Please provide detailed dimensions and weight for your custom product.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {/* Selected Products Details */}
+                  {groupShipments.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-sm font-medium mb-2">Selected Products:</div>
+                      {groupShipments.map((shipment, shipmentIndex) => {
+                        const product = inventory.find((item) => item.id === shipment.productId);
+                        const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                        const packOf = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1;
+                        const totalUnits = quantity * packOf;
+                        const availableStock = product?.quantity || 0;
+
+                        return (
+                          <div key={shipment.productId || shipmentIndex} className="border rounded-lg p-3 bg-muted/30">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{product?.productName}</div>
+                                <div className="text-xs text-muted-foreground">In Stock: {availableStock}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                  const updated = currentShipments.filter((_, i) => i !== shipmentIndex);
+                                  form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex gap-2">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity` as const}
+                                render={({ field }) => (
+                                  <FormItem className="flex-1">
+                                    <FormLabel className="text-xs">Qty</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        className="h-8"
+                                        {...field}
+                                        onChange={(e) => {
+                                          const value = parseInt(e.target.value) || 0;
+                                          field.onChange(value);
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {totalUnits > availableStock && (
+                                      <p className="text-xs font-medium text-destructive">
+                                        Insufficient stock!
+                                      </p>
+                                    )}
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {groupShipmentType === "product" && (
+                                <FormField
+                                  control={form.control}
+                                  name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf` as const}
+                                  render={({ field }) => (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Pack Of</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          className="h-8"
+                                          {...field}
+                                          onChange={(e) => {
+                                            const value = parseInt(e.target.value) || 1;
+                                            field.onChange(value);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
+
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice` as const}
+                                render={({ field }) => {
+                                  // Custom: show placeholder $1 and admin message; admin sets final pricing on approval.
+                                  if (groupShipmentType === "product" && groupProductType === "Custom") {
+                                    return (
+                                      <FormItem className="flex-1">
+                                        <FormLabel className="text-xs">Price ($)</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type="text"
+                                            className="h-8 [appearance:textfield]"
+                                            readOnly
+                                            value={"1.00"}
+                                          />
+                                        </FormControl>
+                                        <div className="mt-2 rounded-md border-2 border-blue-200 border-dashed bg-blue-50 p-2">
+                                          <p className="text-xs font-medium text-blue-700 text-center">
+                                            Admin can review your request and then charge
+                                          </p>
+                                        </div>
+                                        <FormMessage />
+                                      </FormItem>
+                                    );
+                                  }
+
+                                  const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                                  const packOf = groupShipmentType === "product" ? (form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1) : 1;
+                                  const totalUnits = quantity * packOf;
+                                  let unitPrice = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`) || 0;
+                                  
+                                  // Recalculate unit price if not set or if we have pricing rules
+                                  // Use quantity (not totalUnits) to determine unit price
+                                  // This ensures unit price stays consistent regardless of packOf value
+                                  if (groupShipmentType === "product" && groupService && groupProductType && pricingRules && pricingRules.length > 0 && quantity > 0) {
+                                    const calculatedPrice = calculatePrepUnitPrice(
+                                      pricingRules,
+                                      groupService,
+                                      groupProductType,
+                                      quantity // Use quantity, not totalUnits, to get consistent unit price
+                                    );
+                                    // Always use calculated rate if available (even if it's 0.10)
+                                    if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+                                      unitPrice = calculatedPrice.rate;
+                                    }
+                                  }
+                                  
+                                  // Calculate total price with pack of charge
+                                  // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+                                  // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+                                  let calculatedTotal = 0;
+                                  if (groupShipmentType === "product" && unitPrice > 0 && quantity > 0) {
+                                    const baseTotal = unitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+                                    let packOfPrice = 0;
+                                    if (groupService && groupProductType && pricingRules && pricingRules.length > 0) {
+                                      // Look up packOfPrice based on quantity only, not totalUnits
+                                      // This ensures packOfPrice doesn't change when packOf changes
+                                      const calculatedPriceForPackOf = calculatePrepUnitPrice(
+                                        pricingRules,
+                                        groupService,
+                                        groupProductType,
+                                        quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+                                      );
+                                      if (calculatedPriceForPackOf) {
+                                        packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+                                      }
+                                    }
+                                    // Pack charge: packOfPrice × (packOf - 1)
+                                    // First pack is free, charge applies from 2nd pack onwards
+                                    const packCharge = packOfPrice * Math.max(0, packOf - 1);
+                                    calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+                                  } else if (unitPrice > 0 && quantity > 0) {
+                                    calculatedTotal = parseFloat((unitPrice * quantity).toFixed(2));
+                                  }
+                                  
+                                  // Always show calculated total if available, otherwise show field value
+                                  const displayValue = calculatedTotal > 0 ? calculatedTotal : (field.value || 0);
+                                  // Format to always show 2 decimal places (e.g., 0.10 instead of 0.1)
+                                  const formattedValue = typeof displayValue === 'number' ? displayValue.toFixed(2) : parseFloat(displayValue || 0).toFixed(2);
+                                  
+                                  return (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Price ($)</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="text"
+                                          placeholder="Auto"
+                                          className="h-8 [appearance:textfield]"
+                                          readOnly
+                                          value={formattedValue}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                              {/* Hidden unitPrice field: required by schema even though we don't show it in the UI */}
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice` as const}
+                                render={({ field }) => (
+                                  <input type="hidden" {...field} value={field.value ?? ""} />
+                                )}
+                              />
+                            </div>
+                            
+                            {/* Additional Services - Per Product */}
+                            <div className="mt-3 pt-3 border-t">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.selectedAdditionalServices` as const}
+                                render={({ field }) => {
+                                  const selectedServices = field.value || [];
+                                  const hasBubbleWrap = selectedServices.includes("bubbleWrap");
+                                  const hasStickerRemoval = selectedServices.includes("stickerRemoval");
+                                  const hasWarningLabels = selectedServices.includes("warningLabels");
+                                  const selectedServicesDisplay: string[] = [];
+                                  if (hasBubbleWrap) selectedServicesDisplay.push("Bubble Wrap");
+                                  if (hasStickerRemoval) selectedServicesDisplay.push("Sticker Removal");
+                                  if (hasWarningLabels) selectedServicesDisplay.push("Warning Labels");
+                                  const displayText = selectedServicesDisplay.length > 0 
+                                    ? selectedServicesDisplay.join(", ")
+                                    : "Select (optional)";
+                                  const productPopupKey = `${popupKey}_product_${shipmentIndex}_additionalServices`;
+
+                                  return (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-medium">Additional Services (Optional)</FormLabel>
+                                      <Dialog
+                                        open={openPopups[productPopupKey] || false}
+                                        onOpenChange={(open) => {
+                                          if (open) {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: true }));
+                                          } else {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                          }
+                                        }}
+                                      >
+                                        <DialogTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="w-full justify-between"
+                                            onClick={() => {
+                                              setOpenPopups(prev => ({ ...prev, [productPopupKey]: !prev[productPopupKey] }));
+                                            }}
+                                          >
+                                            <span className="truncate">
+                                              {displayText}
+                                            </span>
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                          <DialogHeader>
+                                            <DialogTitle>Additional Services for {product?.productName}</DialogTitle>
+                                            <DialogDescription>
+                                              Select which additional services you need for this product. Admin will add quantities and calculate pricing during approval.
+                                            </DialogDescription>
+                                          </DialogHeader>
+                                          <div className="space-y-4 py-2">
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasBubbleWrap}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "bubbleWrap"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "bubbleWrap"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Bubble Wrap</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (feet) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasStickerRemoval}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "stickerRemoval"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "stickerRemoval"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Sticker Removal</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (items) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasWarningLabels}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "warningLabels"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "warningLabels"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Warning Labels</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (count) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                onClick={() => {
+                                                  field.onChange([]);
+                                                  setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                                }}
+                                              >
+                                                Clear All
+                                              </Button>
+                                              <Button type="button" onClick={() => setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }))}>
+                                                Done
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+          </Accordion>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              type="submit"
+              disabled={isLoading || shipmentGroups.length === 0}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Submit All Shipment Requests
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
+
+import { useFieldArray, useForm } from "react-hook-form";
+import * as z from "zod";
+import { collection, doc, Timestamp, writeBatch } from "firebase/firestore";
+import { useMemo, useState, useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, X, Plus, ChevronDown } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { isUploadTimeAllowed, getTimeUntilNextUploadWindow, formatTimeRemaining, getNewJerseyTimeString, getUploadWindowDescription } from "@/lib/time-utils";
+import type { InventoryItem, ServiceType, ProductType, UserPricing, UserBoxForwardingPricing, UserPalletForwardingPricing, UserAdditionalServicesPricing } from "@/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCollection } from "@/hooks/use-collection";
+import { calculatePrepUnitPrice } from "@/lib/pricing-utils";
+import imageCompression from "browser-image-compression";
+import { ImageIcon } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+const shipmentItemSchema = z.object({
+  productId: z.string().min(1, "Select a product."),
+  quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
+  packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  // Custom products use placeholder pricing until admin sets final pricing.
+  unitPrice: z.coerce.number().nonnegative("Unit price must be a non-negative number."),
+  totalPrice: z.coerce.number().nonnegative("Total price must be a non-negative number."),
+  // Additional Services per product - user only selects which services they want (boolean flags)
+  // Admin will add quantities during approval
+  selectedAdditionalServices: z.array(z.enum(["bubbleWrap", "stickerRemoval", "warningLabels"])).optional(),
+});
+
+const shipmentGroupSchema = z.object({
+  shipmentType: z.enum(["product", "box", "pallet"], { required_error: "Shipment type is required." }),
+  palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
+  shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
+  date: z.date({ required_error: "A shipping date is required." }),
+  shipTo: z.string().min(1, "Ship to destination is required."),
+  service: z.enum(["FBA/WFS/TFS", "FBM"]).optional(),
+  productType: z.enum(["Standard", "Large", "Custom"]).optional(),
+  customDimensions: z.string().optional(),
+}).refine((data) => {
+  if (data.shipmentType === "product") {
+    return data.service && data.productType;
+  }
+  return true;
+}, {
+  message: "Service and product type are required for product shipments.",
+  path: ["service"],
+}).refine((data) => {
+  if (data.shipmentType === "product" && data.productType === "Custom") {
+    return typeof data.customDimensions === "string" && data.customDimensions.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Custom dimensions are required for Custom product type.",
+  path: ["customDimensions"],
+}).refine((data) => {
+  // For non-custom products, unit price must be > 0 for every item.
+  if (data.shipmentType === "product" && data.productType && data.productType !== "Custom") {
+    return (data.shipments || []).every((s) => typeof s?.unitPrice === "number" && s.unitPrice > 0);
+  }
+  return true;
+}, {
+  message: "Unit price must be a positive number.",
+  path: ["shipments"],
+}).refine((data) => {
+  if (data.shipmentType === "pallet") {
+    return data.palletSubType;
+  }
+  return true;
+}, {
+  message: "Please select pallet sub-type.",
+  path: ["palletSubType"],
+});
+
+const formSchema = z.object({
+  shipmentGroups: z.array(shipmentGroupSchema).min(1, "Create at least one shipment."),
+});
+
+interface CreateShipmentWithLabelsFormProps {
+  inventory: InventoryItem[];
+}
+
+interface LabelUploadState {
+  file: File | null;
+  preview: string | null;
+  uploadedUrl: string | null;
+  isUploading: boolean;
+}
+
+export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLabelsFormProps) {
+  const { toast } = useToast();
+  const { user, userProfile } = useAuth();
+  
+  // Early return if user is not loaded
+  if (!user || !userProfile) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Loading user data...
+      </div>
+    );
+  }
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  
+  // Label upload states for each shipment group
+  const [labelStates, setLabelStates] = useState<Record<number, LabelUploadState>>({});
+  
+  // Time restriction state
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [uploadAllowed, setUploadAllowed] = useState<boolean>(true);
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+  
+  // Popup states for each group
+  const [openPopups, setOpenPopups] = useState<Record<string, boolean>>({});
+  
+  // Accordion state - only one shipment open at a time
+  const [openAccordionValue, setOpenAccordionValue] = useState<string | undefined>(undefined);
+  
+  const togglePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+  
+  const closePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: false
+    }));
+  };
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      shipmentGroups: [],
+    },
+  });
+
+  const { fields: shipmentGroups, append: appendGroup, remove: removeGroup } = useFieldArray({
+    control: form.control,
+    name: "shipmentGroups",
+  });
+
+  // Fetch user's pricing rules
+  const { data: pricingRules } = useCollection<UserPricing>(
+    userProfile ? `users/${userProfile.uid}/pricing` : ""
+  );
+  
+  // Fetch forwarding pricing
+  const { data: boxForwardingPricing } = useCollection<UserBoxForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/boxForwardingPricing` : ""
+  );
+  
+  const { data: palletForwardingPricing } = useCollection<UserPalletForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/palletForwardingPricing` : ""
+  );
+  
+  // Fetch additional services pricing
+  const { data: additionalServicesPricing } = useCollection<UserAdditionalServicesPricing>(
+    userProfile ? `users/${userProfile.uid}/additionalServicesPricing` : ""
+  );
+
+  // Update time display every second
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(getNewJerseyTimeString());
+      setUploadAllowed(isUploadTimeAllowed());
+      setTimeRemaining(formatTimeRemaining(getTimeUntilNextUploadWindow()));
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-calculate pricing for all shipment groups
+  const watchedGroups = form.watch("shipmentGroups");
+  useEffect(() => {
+    try {
+      const allGroups = watchedGroups || [];
+      
+      if (!Array.isArray(allGroups)) return;
+      
+      allGroups.forEach((group, groupIndex) => {
+        if (!group) return;
+        
+        const shipmentType = group.shipmentType;
+        const palletSubType = group.palletSubType;
+        const service = group.service;
+        const productType = group.productType;
+        const shipments = group.shipments || [];
+        
+        if (!Array.isArray(shipments)) return;
+        
+        shipments.forEach((shipment, shipmentIndex) => {
+          if (!shipment) return;
+        const quantity = shipment.quantity || 0;
+        // Keep packOf for Custom too (admin needs full detail). Pricing stays placeholder for Custom.
+        const packOf = shipmentType === "product" ? (shipment.packOf || 1) : 1;
+        const totalUnits = quantity * packOf;
+        
+        let finalUnitPrice = 0;
+        
+        // Custom product pricing is a placeholder ($1). Admin will set final pricing during approval.
+        if (shipmentType === "product" && productType === "Custom") {
+          finalUnitPrice = 1;
+        } else if (shipmentType === "product" && service && productType && pricingRules && pricingRules.length > 0) {
+          // Use quantity (not totalUnits) to determine unit price
+          // This ensures unit price stays consistent regardless of packOf value
+          const calculatedPrice = calculatePrepUnitPrice(
+            pricingRules,
+            service,
+            productType,
+            quantity // Use quantity, not totalUnits, to get consistent unit price
+          );
+          if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+            finalUnitPrice = calculatedPrice.rate;
+          }
+        } else if (shipmentType === "box") {
+          if (boxForwardingPricing && boxForwardingPricing.length > 0) {
+            const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+              const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+              const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+              return bUpdated - aUpdated;
+            })[0];
+            if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+              // Ensure price is a number
+              const priceValue = typeof latestBoxPricing.price === 'string' 
+                ? parseFloat(latestBoxPricing.price) 
+                : latestBoxPricing.price;
+              if (!isNaN(priceValue) && priceValue > 0) {
+                finalUnitPrice = priceValue;
+              }
+            }
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        } else if (shipmentType === "pallet") {
+          if (palletSubType === "forwarding") {
+            if (palletForwardingPricing && palletForwardingPricing.length > 0) {
+              const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                return bUpdated - aUpdated;
+              })[0];
+              if (latestPalletForwarding && latestPalletForwarding.price !== undefined && latestPalletForwarding.price !== null) {
+                // Ensure price is a number
+                const priceValue = typeof latestPalletForwarding.price === 'string' 
+                  ? parseFloat(latestPalletForwarding.price) 
+                  : latestPalletForwarding.price;
+                if (!isNaN(priceValue) && priceValue > 0) {
+                  finalUnitPrice = priceValue;
+                }
+              }
+            }
+          } else if (palletSubType === "existing_inventory") {
+            // Existing Inventory pallets are priced manually by admin at approval time.
+            // Keep pricing at 0 as a placeholder.
+            finalUnitPrice = 0;
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        }
+
+        // Calculate total price
+        // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+        // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+        // Example: Rate = 0.10, Pack Of Price = 1.00, Quantity = 10
+        //   Pack Of = 1: (0.10 × 10) + (1.00 × 0) = 1.00 + 0.00 = 1.00 (first pack is free)
+        //   Pack Of = 2: (0.10 × 10) + (1.00 × 1) = 1.00 + 1.00 = 2.00 (charge for 2nd pack)
+        //   Pack Of = 3: (0.10 × 10) + (1.00 × 2) = 1.00 + 2.00 = 3.00 (charge for 2nd and 3rd pack)
+        //   Pack Of = 5: (0.10 × 10) + (1.00 × 4) = 1.00 + 4.00 = 5.00 (charge for 2nd, 3rd, 4th, 5th pack)
+        let calculatedTotal = 0;
+        // Custom product total shown to user is a placeholder ($1).
+        if (shipmentType === "product" && productType === "Custom") {
+          calculatedTotal = 1;
+        } else if (shipmentType === "product" && finalUnitPrice > 0 && quantity > 0) {
+          const baseTotal = finalUnitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+          let packOfPrice = 0;
+          if (service && productType && pricingRules && pricingRules.length > 0) {
+            // Look up packOfPrice based on quantity only, not totalUnits
+            // This ensures packOfPrice doesn't change when packOf changes
+            const calculatedPriceForPackOf = calculatePrepUnitPrice(
+              pricingRules,
+              service,
+              productType,
+              quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+            );
+            if (calculatedPriceForPackOf) {
+              packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+            }
+          }
+          // Pack charge: packOfPrice × (packOf - 1)
+          // First pack is free, charge applies from 2nd pack onwards
+          // When packOf = 1, charge = 0 (no additional packs)
+          // When packOf = 2, charge = packOfPrice × 1 (charge for 2nd pack)
+          // When packOf = 3, charge = packOfPrice × 2 (charge for 2nd and 3rd pack)
+          // When packOf = 5, charge = packOfPrice × 4 (charge for 2nd, 3rd, 4th, 5th pack)
+          const packCharge = packOfPrice * Math.max(0, packOf - 1);
+          calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+        } else if (finalUnitPrice > 0 && quantity > 0) {
+          calculatedTotal = parseFloat((finalUnitPrice * quantity).toFixed(2));
+        }
+
+        // Always update to ensure pricing is calculated correctly
+        const currentUnitPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`);
+        const currentTotalPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`);
+        
+        // Update unit price if it changed - always update when we have a calculated price (even if it's 0.10)
+        // Use a small epsilon for floating point comparison
+        if (Math.abs((currentUnitPrice || 0) - finalUnitPrice) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, finalUnitPrice, { shouldValidate: false });
+        }
+        
+        // Update total price if it changed
+        if (currentTotalPrice !== calculatedTotal) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`, calculatedTotal, { shouldValidate: false });
+        }
+
+        // For Custom products, ensure unitPrice is always set to 1 in form state (prevents submit validation issues)
+        if (shipmentType === "product" && productType === "Custom" && Math.abs((currentUnitPrice || 0) - 1) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, 1, { shouldValidate: false });
+        }
+        });
+      });
+    } catch (error) {
+      console.error("Error calculating pricing:", error);
+    }
+  }, [watchedGroups, pricingRules, boxForwardingPricing, palletForwardingPricing, form]);
+
+  // Initialize label state when a new group is added
+  const handleAddShipmentGroup = () => {
+    const newIndex = shipmentGroups.length;
+    appendGroup({
+      shipmentType: "product",
+      palletSubType: undefined,
+      shipments: [],
+      date: new Date(),
+      shipTo: "",
+      service: "FBA/WFS/TFS",
+      productType: "Standard",
+    });
+    setLabelStates(prev => ({
+      ...prev,
+      [newIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+    }));
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleLabelSelect = async (groupIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
+      if (!isValidType) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: "Please select an image (JPG, PNG) or PDF file.",
+        });
+        return;
+      }
+
+      const maxSizeBytes = 10 * 1024 * 1024;
+      if (file.size > maxSizeBytes) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: "Please select a file smaller than 10 MB.",
+        });
+        return;
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          file,
+          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+          uploadedUrl: null,
+          isUploading: false
+        }
+      }));
+    } catch (error: any) {
+      console.error("Error selecting label file:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to select file. Please try again.",
+      });
+    }
+  };
+
+  const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
+    const labelState = labelStates[groupIndex];
+    if (!labelState?.file || !userProfile) return null;
+
+    if (!isUploadTimeAllowed()) {
+      const timeUntil = getTimeUntilNextUploadWindow();
+      toast({
+        variant: "destructive",
+        title: "Upload Time Restricted",
+        description: `${getUploadWindowDescription()}. ${timeUntil}`,
+      });
+      return null;
+    }
+
+    try {
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: true }
+      }));
+
+      let fileToUpload = labelState.file;
+
+      if (labelState.file.type.startsWith("image/")) {
+        const compressedFile = await compressImage(labelState.file);
+        if (compressedFile.size > 1024 * 1024) {
+          toast({
+            variant: "destructive",
+            title: "Compression Failed",
+            description: "Unable to compress image below 1 MB. Please try a different image.",
+          });
+          return null;
+        }
+        fileToUpload = compressedFile;
+      }
+
+      const currentDate = new Date();
+      const clientName = userProfile.name || "Unknown User";
+      const fileName = `${Date.now()}_${fileToUpload.name}`;
+      
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('clientName', clientName);
+      
+      const year = currentDate.getFullYear().toString();
+      const month = currentDate.toLocaleString('en-US', { month: 'long' });
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const folderPath = `${year}/${month}/${clientName}/${dateStr}`;
+      formData.append('folderPath', folderPath);
+
+      const response = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        let errorMessage = errorData.error || 'Failed to upload label to Google Drive';
+        
+        if (errorMessage.includes('refresh access token') || errorMessage.includes('Failed to get access token')) {
+          errorMessage = 'Google Drive authentication failed. Please contact admin to re-authenticate Google Drive.';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      const downloadURL = result.downloadURL || result.webUrl;
+      
+      if (!downloadURL) {
+        throw new Error('No download URL received from Google Drive');
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          uploadedUrl: downloadURL,
+          isUploading: false
+        }
+      }));
+      
+      toast({
+        title: "Success",
+        description: "Label uploaded successfully to Google Drive!",
+      });
+
+      return downloadURL;
+    } catch (error: any) {
+      console.error("Error uploading label:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload label. Please try again.",
+      });
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: false }
+      }));
+      return null;
+    }
+  };
+
+  const handleRemoveLabel = (groupIndex: number) => {
+    setLabelStates(prev => {
+      const state = prev[groupIndex];
+      if (state?.preview) {
+        URL.revokeObjectURL(state.preview);
+      }
+      return {
+        ...prev,
+        [groupIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+      };
+    });
+  };
+
+  const handleRemoveGroup = (index: number) => {
+    handleRemoveLabel(index);
+    removeGroup(index);
+    // Reindex label states
+    const newStates: Record<number, LabelUploadState> = {};
+    shipmentGroups.forEach((_, i) => {
+      if (i !== index) {
+        const oldIndex = i > index ? i - 1 : i;
+        newStates[oldIndex] = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+      }
+    });
+    setLabelStates(newStates);
+  };
+
+  // Helper function to remove undefined values from objects (Firestore doesn't allow undefined)
+  const removeUndefined = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    // Preserve Firestore Timestamp objects
+    if (obj && typeof obj === 'object' && ('seconds' in obj || 'toDate' in obj || obj.constructor?.name === 'Timestamp')) {
+      return obj;
+    }
+    // Preserve Date objects
+    if (obj instanceof Date) {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefined).filter(item => item !== undefined);
+    }
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          cleaned[key] = removeUndefined(obj[key]);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user || !userProfile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You must be logged in to create shipment requests.",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const batch = writeBatch(db);
+      const requestedAt = Timestamp.now();
+
+      // Process each shipment group
+      for (let i = 0; i < values.shipmentGroups.length; i++) {
+        const group = values.shipmentGroups[i];
+        // Get the current label state - check both the index and ensure we have the latest state
+        const labelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+        // Validate stock availability for this group
+        const stockErrors: string[] = [];
+        group.shipments.forEach((shipment) => {
+          const product = inventory.find(item => item.id === shipment.productId);
+          if (product) {
+            const packOf = group.shipmentType === "product" ? (shipment.packOf || 1) : 1;
+            const totalUnits = shipment.quantity * packOf;
+            if (totalUnits > product.quantity) {
+              const unitType = group.shipmentType === "box" ? "boxes" : group.shipmentType === "pallet" ? "pallets" : "units";
+              stockErrors.push(
+                `${product.productName}: Requested ${totalUnits} ${unitType} but only ${product.quantity} available.`
+              );
+            }
+          }
+        });
+
+        if (stockErrors.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Insufficient Stock",
+            description: `Group ${i + 1}: ${stockErrors.join(" ")}`,
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Upload label if selected (optional) - get fresh state to ensure we have the latest
+        const currentLabelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        let labelUrl = "";
+        
+        // Check if label is already uploaded (priority check)
+        if (currentLabelState.uploadedUrl) {
+          // Label already uploaded, use existing URL
+          labelUrl = currentLabelState.uploadedUrl;
+          console.log(`[Group ${i + 1}] Using existing label URL:`, labelUrl);
+        } else if (currentLabelState.file) {
+          // File selected but not uploaded yet, upload it now
+          console.log(`[Group ${i + 1}] Uploading label file:`, currentLabelState.file.name);
+          const uploadedUrl = await handleLabelUpload(i);
+          if (uploadedUrl) {
+            labelUrl = uploadedUrl;
+            console.log(`[Group ${i + 1}] Label uploaded successfully:`, labelUrl);
+          } else {
+            // Upload failed, but label is optional so we continue without it
+            console.warn(`[Group ${i + 1}] Label upload failed, continuing without label`);
+            labelUrl = "";
+          }
+        } else {
+          // No label provided for this group - that's okay, label is optional
+          console.log(`[Group ${i + 1}] No label provided (optional)`);
+          labelUrl = "";
+        }
+
+        // Create shipment request
+        const dateTimestamp = Timestamp.fromDate(group.date);
+        const requestRef = doc(collection(db, `users/${user.uid}/shipmentRequests`));
+        
+        // Build the document data, only including fields that are applicable
+        const requestData: any = {
+          userId: user.uid,
+          userName: userProfile.name || "Unknown User",
+          date: dateTimestamp,
+          shipTo: group.shipTo || "",
+          shipmentType: group.shipmentType,
+          labelUrl: labelUrl || "",
+          status: "pending",
+          requestedBy: user.uid,
+          requestedAt,
+        };
+        
+        // Set service based on shipment type
+        if (group.shipmentType === "box") {
+          requestData.service = "Box Forwarding";
+        } else if (group.shipmentType === "pallet") {
+          if (group.palletSubType === "forwarding") {
+            requestData.service = "Pallet Forwarding";
+          } else if (group.palletSubType === "existing_inventory") {
+            requestData.service = "Pallet Existing Inventory";
+          }
+          if (group.palletSubType) {
+            requestData.palletSubType = group.palletSubType;
+          }
+        } else if (group.shipmentType === "product") {
+          // For product shipments, use the selected service
+          if (group.service) {
+            requestData.service = group.service;
+          }
+          if (group.productType) {
+            requestData.productType = group.productType;
+          }
+        }
+        
+        // Clean shipments array to remove undefined values
+        requestData.shipments = group.shipments.map((shipment: any) => {
+          const cleaned: any = {
+            productId: shipment.productId,
+            quantity: shipment.quantity,
+            packOf: shipment.packOf || 1,
+            unitPrice: shipment.unitPrice || 0,
+          };
+          // Only include optional fields
+          if (shipment.selectedAdditionalServices && shipment.selectedAdditionalServices.length > 0) {
+            cleaned.selectedAdditionalServices = shipment.selectedAdditionalServices;
+          }
+          return cleaned;
+        });
+        
+        // Remove all undefined values before saving to Firestore
+        const cleanedRequestData = removeUndefined(requestData);
+        
+        batch.set(requestRef, cleanedRequestData);
+      }
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `${values.shipmentGroups.length} shipment request(s) with labels submitted successfully. Admin will review them.`,
+      });
+
+      form.reset({
+        shipmentGroups: [],
+      });
+      setQuery("");
+      setLabelStates({});
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to submit shipment requests.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const onInvalidSubmit = (errors: any) => {
+    // Open the first shipment accordion that has an error so the user can see the field messages.
+    const groups = errors?.shipmentGroups;
+    if (Array.isArray(groups)) {
+      const firstBadIndex = groups.findIndex((g) => g && Object.keys(g).length > 0);
+      if (firstBadIndex >= 0) {
+        setOpenAccordionValue(`shipment-${firstBadIndex}`);
+      }
+    }
+
+    const findFirstMessage = (err: any): string | undefined => {
+      if (!err) return undefined;
+      if (typeof err?.message === "string" && err.message.length > 0) return err.message;
+      if (Array.isArray(err)) {
+        for (const item of err) {
+          const msg = findFirstMessage(item);
+          if (msg) return msg;
+        }
+        return undefined;
+      }
+      if (typeof err === "object") {
+        for (const key of Object.keys(err)) {
+          const msg = findFirstMessage(err[key]);
+          if (msg) return msg;
+        }
+      }
+      return undefined;
+    };
+
+    const firstMessage =
+      findFirstMessage(errors?.shipmentGroups) ||
+      "Please fill all required fields before submitting.";
+
+    toast({
+      variant: "destructive",
+      title: "Fix required fields",
+      description: firstMessage,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Time Display */}
+      <div className="p-4 border rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
+          <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
+            {uploadAllowed ? (
+              <>
+                <span className="font-medium">✓ Allowed</span>
+                <span className="font-mono">({timeRemaining} remaining)</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">⚠️ Disabled</span>
+                <span className="font-mono">({timeRemaining} until available)</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+          {uploadAllowed ? (
+            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
+          ) : (
+            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
+          )}
+        </div>
+        <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
+          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)} className="space-y-6">
+          {/* Add Shipment Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Create Shipment</h3>
+              <p className="text-sm text-muted-foreground">Create multiple shipments, each with its own label</p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleAddShipmentGroup}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Shipment
+            </Button>
+          </div>
+
+          {/* Shipments */}
+          {shipmentGroups.length === 0 && (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">No shipments yet. Click "Add Shipment" to get started.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Accordion 
+            type="single" 
+            collapsible 
+            value={openAccordionValue} 
+            onValueChange={setOpenAccordionValue}
+            className="space-y-4"
+          >
+          {shipmentGroups.map((group, groupIndex) => {
+            const groupShipmentType = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const groupPalletSubType = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            const groupService = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const groupProductType = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const groupShipments = form.watch(`shipmentGroups.${groupIndex}.shipments`);
+            
+            // Calculate available inventory without useMemo (inside map)
+            const normalizedQuery = query.trim().toLowerCase();
+            const availableInventory = inventory
+              .filter((item) => item.quantity > 0)
+              .filter((item) => {
+                const inventoryType = (item as any).inventoryType;
+                if (groupShipmentType === "box") {
+                  return inventoryType === "box";
+                } else if (groupShipmentType === "pallet") {
+                  if (groupPalletSubType === "forwarding") {
+                    return inventoryType === "pallet";
+                  } else if (groupPalletSubType === "existing_inventory") {
+                    // Show all products (inventoryType === "product" or undefined/missing)
+                    const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                    return !isExcludedType;
+                  }
+                  return false;
+                } else {
+                  // Product type - show all products (inventoryType === "product" or undefined/missing)
+                  const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                  return !isExcludedType;
+                }
+              })
+              .filter((item) => item.productName.toLowerCase().includes(normalizedQuery));
+
+            const labelState = labelStates[groupIndex] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+            const popupKey = group.id;
+            const shipmentTypeValue = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const serviceValue = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const productTypeValue = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const palletSubTypeValue = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            
+            return (
+              <AccordionItem key={group.id} value={`shipment-${groupIndex}`} className="border-2 rounded-lg px-4 mb-4">
+                <div className="relative">
+                  <AccordionTrigger className="hover:no-underline pr-12 [&>svg]:hidden">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="text-left">
+                        <div className="text-lg font-semibold">Shipment {groupIndex + 1}</div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Each shipment creates a separate shipment request with its own label
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveGroup(groupIndex);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <AccordionContent>
+                  <div className="pt-4">
+                    {/* Horizontal Entry-Type View (single line) */}
+                    <div className="overflow-x-auto">
+                      <div className="flex flex-nowrap items-end gap-3 min-w-max pb-4 border-b">
+                    {/* Shipment Type - Popup */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipmentType`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipment Type *</FormLabel>
+                          <Dialog open={openPopups[`${popupKey}_shipmentType`] || false} onOpenChange={(open) => {
+                            if (open) {
+                              setOpenPopups(prev => ({ ...prev, [`${popupKey}_shipmentType`]: true }));
+                            } else {
+                              closePopup(popupKey, 'shipmentType');
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-[120px] justify-between"
+                                onClick={() => togglePopup(popupKey, 'shipmentType')}
+                              >
+                                <span className="truncate">{field.value ? field.value.charAt(0).toUpperCase() + field.value.slice(1) : "Select"}</span>
+                                <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Select Shipment Type</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-2 py-4">
+                                {["product", "box", "pallet"].map((type) => (
+                                  <Button
+                                    key={type}
+                                    type="button"
+                                    variant={field.value === type ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange(type);
+                                      if (type !== "pallet") {
+                                        form.setValue(`shipmentGroups.${groupIndex}.palletSubType`, undefined);
+                                      }
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'shipmentType');
+                                    }}
+                                  >
+                                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                                  </Button>
+                                ))}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Pallet Sub-Type - Popup */}
+                    {groupShipmentType === "pallet" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.palletSubType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Pallet Type *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_palletType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_palletType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'palletType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[150px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'palletType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "existing_inventory" ? "Existing Inventory" :
+                                     field.value === "forwarding" ? "Pallet Forwarding" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Pallet Type</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "existing_inventory" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("existing_inventory");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Existing Inventory
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "forwarding" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("forwarding");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Pallet Forwarding
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Products - Popup (FIRST) */}
+                    <FormItem className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Products</FormLabel>
+                      <Dialog open={openPopups[`${popupKey}_products`] || false} onOpenChange={(open) => {
+                        if (open) {
+                          setOpenPopups(prev => ({ ...prev, [`${popupKey}_products`]: true }));
+                        } else {
+                          closePopup(popupKey, 'products');
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-[160px] justify-between"
+                            onClick={() => togglePopup(popupKey, 'products')}
+                          >
+                            <span className="truncate">
+                              {groupShipments.length > 0 
+                                ? `${groupShipments.length} product${groupShipments.length > 1 ? 's' : ''} selected`
+                                : "Search products..."}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Select Products</DialogTitle>
+                            <DialogDescription>
+                              Search and select products for this shipment
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <Input
+                              placeholder="Search products..."
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                            <ScrollArea className="h-[300px]">
+                              <div className="space-y-2">
+                                {availableInventory.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground text-center py-4">
+                                    No products available for this shipment type.
+                                  </p>
+                                ) : (
+                                  availableInventory.map((item) => {
+                                    const isSelected = groupShipments.some((shipment) => shipment.productId === item.id);
+                                    return (
+                                      <div key={item.id} className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                            if (checked) {
+                                              // Calculate initial price based on shipment type
+                                              let initialUnitPrice = 0;
+                                              let initialTotalPrice = 0;
+                                              
+                                              const group = form.getValues(`shipmentGroups.${groupIndex}`);
+                                              const shipmentType = group?.shipmentType;
+                                              const palletSubType = group?.palletSubType;
+                                              
+                                              if (shipmentType === "box" && boxForwardingPricing && boxForwardingPricing.length > 0) {
+                                                const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+                                                  const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                  const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                  return bUpdated - aUpdated;
+                                                })[0];
+                                                if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+                                                  const priceValue = typeof latestBoxPricing.price === 'string' 
+                                                    ? parseFloat(latestBoxPricing.price) 
+                                                    : latestBoxPricing.price;
+                                                  if (!isNaN(priceValue) && priceValue > 0) {
+                                                    initialUnitPrice = priceValue;
+                                                    initialTotalPrice = priceValue; // quantity is 1 by default
+                                                  }
+                                                }
+                                              } else if (shipmentType === "pallet") {
+                                                if (palletSubType === "forwarding" && palletForwardingPricing && palletForwardingPricing.length > 0) {
+                                                  const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                                                    const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                    const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                    return bUpdated - aUpdated;
+                                                  })[0];
+                                                  if (latestPalletForwarding && latestPalletForwarding.price) {
+                                                    const priceValue = typeof latestPalletForwarding.price === 'string' 
+                                                      ? parseFloat(latestPalletForwarding.price) 
+                                                      : latestPalletForwarding.price;
+                                                    if (!isNaN(priceValue) && priceValue > 0) {
+                                                      initialUnitPrice = priceValue;
+                                                      initialTotalPrice = priceValue;
+                                                    }
+                                                  }
+                                                } else if (palletSubType === "existing_inventory") {
+                                                  // Existing Inventory pallets are priced manually by admin at approval time.
+                                                  // Keep pricing at 0 as a placeholder.
+                                                  initialUnitPrice = 0;
+                                                  initialTotalPrice = 0;
+                                                }
+                                              }
+                                              // For product shipments:
+                                              // - Custom: placeholder pricing ($1) until admin sets final price
+                                              // - Others: calculated by useEffect based on pricing rules
+                                              if (shipmentType === "product" && group?.productType === "Custom") {
+                                                initialUnitPrice = 1;
+                                                initialTotalPrice = 1;
+                                              }
+                                              
+                                              form.setValue(`shipmentGroups.${groupIndex}.shipments`, [
+                                                ...currentShipments,
+                                                {
+                                                  productId: item.id,
+                                                  quantity: 1,
+                                                  packOf: 1,
+                                                  unitPrice: initialUnitPrice,
+                                                  totalPrice: initialTotalPrice,
+                                                  selectedAdditionalServices: undefined,
+                                                }
+                                              ]);
+                                            } else {
+                                              const index = currentShipments.findIndex(s => s.productId === item.id);
+                                              if (index !== -1) {
+                                                const updated = [...currentShipments];
+                                                updated.splice(index, 1);
+                                                form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <label className="flex-1 text-sm cursor-pointer">
+                                          {item.productName} (In Stock: {item.quantity})
+                                        </label>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                onClick={() => closePopup(popupKey, 'products')}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </FormItem>
+
+                    {/* Service - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.service`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Service *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_service`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_service`]: true }));
+                              } else {
+                                closePopup(popupKey, 'service');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[130px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'service')}
+                                >
+                                  <span className="truncate">{field.value || "Select"}</span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Service</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBA/WFS/TFS" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBA/WFS/TFS");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBA/WFS/TFS
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBM" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBM");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBM
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Product Type / Dimension - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.productType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Product Type / Dimension *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_productType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_productType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'productType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[180px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'productType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "Standard" ? "Standard (6×6×6) - <3lbs" :
+                                     field.value === "Large" ? "Large (10×10×10) - <6lbs" :
+                                     field.value === "Custom" ? "Custom" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Product Type / Dimension</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Standard" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Standard");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Standard (6×6×6) - &lt;3lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Large" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Large");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Large (10×10×10) - &lt;6lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Custom" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Custom");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Custom
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Date */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.date`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipping Date</FormLabel>
+                          <DatePicker date={field.value} setDate={field.onChange} />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Ship To */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipTo`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1 min-w-[160px]">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Ship To</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter destination" {...field} className="w-full" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Label Upload - Inline */}
+                    <div className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label (Optional)</FormLabel>
+                      <div className="flex items-center gap-2">
+                        {!labelState.preview && !labelState.uploadedUrl && (
+                          <Input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => {
+                              handleLabelSelect(groupIndex, e).catch((error) => {
+                                console.error("Unhandled error in handleLabelSelect:", error);
+                                toast({
+                                  variant: "destructive",
+                                  title: "Error",
+                                  description: "Failed to process file selection. Please try again.",
+                                });
+                              });
+                            }}
+                            className="w-[170px]"
+                            disabled={labelState.isUploading || isLoading}
+                          />
+                        )}
+                        
+                        {(labelState.preview || labelState.uploadedUrl) && (
+                          <div className="flex items-center gap-2">
+                            {labelState.preview ? (
+                              <img
+                                src={labelState.preview}
+                                alt="Label preview"
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            ) : labelState.uploadedUrl ? (
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            ) : null}
+                            <span className="text-xs text-muted-foreground">Uploaded</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleRemoveLabel(groupIndex)}
+                              disabled={labelState.isUploading || isLoading}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {labelState.isUploading && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                      </div>
+                    </div>
+
+                  {/* Custom Dimensions Field - Only show when Custom is selected */}
+                  {groupShipmentType === "product" && groupProductType === "Custom" && (
+                    <div className="mt-4">
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.customDimensions`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Custom Dimensions *</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Enter your custom dimensions (e.g., Length x Width x Height in inches, Weight in lbs)"
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Please provide detailed dimensions and weight for your custom product.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {/* Selected Products Details */}
+                  {groupShipments.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-sm font-medium mb-2">Selected Products:</div>
+                      {groupShipments.map((shipment, shipmentIndex) => {
+                        const product = inventory.find((item) => item.id === shipment.productId);
+                        const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                        const packOf = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1;
+                        const totalUnits = quantity * packOf;
+                        const availableStock = product?.quantity || 0;
+
+                        return (
+                          <div key={shipment.productId || shipmentIndex} className="border rounded-lg p-3 bg-muted/30">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{product?.productName}</div>
+                                <div className="text-xs text-muted-foreground">In Stock: {availableStock}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                  const updated = currentShipments.filter((_, i) => i !== shipmentIndex);
+                                  form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex gap-2">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity` as const}
+                                render={({ field }) => (
+                                  <FormItem className="flex-1">
+                                    <FormLabel className="text-xs">Qty</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        className="h-8"
+                                        {...field}
+                                        onChange={(e) => {
+                                          const value = parseInt(e.target.value) || 0;
+                                          field.onChange(value);
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {totalUnits > availableStock && (
+                                      <p className="text-xs font-medium text-destructive">
+                                        Insufficient stock!
+                                      </p>
+                                    )}
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {groupShipmentType === "product" && (
+                                <FormField
+                                  control={form.control}
+                                  name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf` as const}
+                                  render={({ field }) => (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Pack Of</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          className="h-8"
+                                          {...field}
+                                          onChange={(e) => {
+                                            const value = parseInt(e.target.value) || 1;
+                                            field.onChange(value);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
+
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice` as const}
+                                render={({ field }) => {
+                                  // Custom: show placeholder $1 and admin message; admin sets final pricing on approval.
+                                  if (groupShipmentType === "product" && groupProductType === "Custom") {
+                                    return (
+                                      <FormItem className="flex-1">
+                                        <FormLabel className="text-xs">Price ($)</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type="text"
+                                            className="h-8 [appearance:textfield]"
+                                            readOnly
+                                            value={"1.00"}
+                                          />
+                                        </FormControl>
+                                        <div className="mt-2 rounded-md border-2 border-blue-200 border-dashed bg-blue-50 p-2">
+                                          <p className="text-xs font-medium text-blue-700 text-center">
+                                            Admin can review your request and then charge
+                                          </p>
+                                        </div>
+                                        <FormMessage />
+                                      </FormItem>
+                                    );
+                                  }
+
+                                  const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                                  const packOf = groupShipmentType === "product" ? (form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1) : 1;
+                                  const totalUnits = quantity * packOf;
+                                  let unitPrice = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`) || 0;
+                                  
+                                  // Recalculate unit price if not set or if we have pricing rules
+                                  // Use quantity (not totalUnits) to determine unit price
+                                  // This ensures unit price stays consistent regardless of packOf value
+                                  if (groupShipmentType === "product" && groupService && groupProductType && pricingRules && pricingRules.length > 0 && quantity > 0) {
+                                    const calculatedPrice = calculatePrepUnitPrice(
+                                      pricingRules,
+                                      groupService,
+                                      groupProductType,
+                                      quantity // Use quantity, not totalUnits, to get consistent unit price
+                                    );
+                                    // Always use calculated rate if available (even if it's 0.10)
+                                    if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+                                      unitPrice = calculatedPrice.rate;
+                                    }
+                                  }
+                                  
+                                  // Calculate total price with pack of charge
+                                  // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+                                  // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+                                  let calculatedTotal = 0;
+                                  if (groupShipmentType === "product" && unitPrice > 0 && quantity > 0) {
+                                    const baseTotal = unitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+                                    let packOfPrice = 0;
+                                    if (groupService && groupProductType && pricingRules && pricingRules.length > 0) {
+                                      // Look up packOfPrice based on quantity only, not totalUnits
+                                      // This ensures packOfPrice doesn't change when packOf changes
+                                      const calculatedPriceForPackOf = calculatePrepUnitPrice(
+                                        pricingRules,
+                                        groupService,
+                                        groupProductType,
+                                        quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+                                      );
+                                      if (calculatedPriceForPackOf) {
+                                        packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+                                      }
+                                    }
+                                    // Pack charge: packOfPrice × (packOf - 1)
+                                    // First pack is free, charge applies from 2nd pack onwards
+                                    const packCharge = packOfPrice * Math.max(0, packOf - 1);
+                                    calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+                                  } else if (unitPrice > 0 && quantity > 0) {
+                                    calculatedTotal = parseFloat((unitPrice * quantity).toFixed(2));
+                                  }
+                                  
+                                  // Always show calculated total if available, otherwise show field value
+                                  const displayValue = calculatedTotal > 0 ? calculatedTotal : (field.value || 0);
+                                  // Format to always show 2 decimal places (e.g., 0.10 instead of 0.1)
+                                  const formattedValue = typeof displayValue === 'number' ? displayValue.toFixed(2) : parseFloat(displayValue || 0).toFixed(2);
+                                  
+                                  return (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Price ($)</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="text"
+                                          placeholder="Auto"
+                                          className="h-8 [appearance:textfield]"
+                                          readOnly
+                                          value={formattedValue}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                              {/* Hidden unitPrice field: required by schema even though we don't show it in the UI */}
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice` as const}
+                                render={({ field }) => (
+                                  <input type="hidden" {...field} value={field.value ?? ""} />
+                                )}
+                              />
+                            </div>
+                            
+                            {/* Additional Services - Per Product */}
+                            <div className="mt-3 pt-3 border-t">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.selectedAdditionalServices` as const}
+                                render={({ field }) => {
+                                  const selectedServices = field.value || [];
+                                  const hasBubbleWrap = selectedServices.includes("bubbleWrap");
+                                  const hasStickerRemoval = selectedServices.includes("stickerRemoval");
+                                  const hasWarningLabels = selectedServices.includes("warningLabels");
+                                  const selectedServicesDisplay: string[] = [];
+                                  if (hasBubbleWrap) selectedServicesDisplay.push("Bubble Wrap");
+                                  if (hasStickerRemoval) selectedServicesDisplay.push("Sticker Removal");
+                                  if (hasWarningLabels) selectedServicesDisplay.push("Warning Labels");
+                                  const displayText = selectedServicesDisplay.length > 0 
+                                    ? selectedServicesDisplay.join(", ")
+                                    : "Select (optional)";
+                                  const productPopupKey = `${popupKey}_product_${shipmentIndex}_additionalServices`;
+
+                                  return (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-medium">Additional Services (Optional)</FormLabel>
+                                      <Dialog
+                                        open={openPopups[productPopupKey] || false}
+                                        onOpenChange={(open) => {
+                                          if (open) {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: true }));
+                                          } else {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                          }
+                                        }}
+                                      >
+                                        <DialogTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="w-full justify-between"
+                                            onClick={() => {
+                                              setOpenPopups(prev => ({ ...prev, [productPopupKey]: !prev[productPopupKey] }));
+                                            }}
+                                          >
+                                            <span className="truncate">
+                                              {displayText}
+                                            </span>
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                          <DialogHeader>
+                                            <DialogTitle>Additional Services for {product?.productName}</DialogTitle>
+                                            <DialogDescription>
+                                              Select which additional services you need for this product. Admin will add quantities and calculate pricing during approval.
+                                            </DialogDescription>
+                                          </DialogHeader>
+                                          <div className="space-y-4 py-2">
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasBubbleWrap}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "bubbleWrap"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "bubbleWrap"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Bubble Wrap</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (feet) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasStickerRemoval}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "stickerRemoval"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "stickerRemoval"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Sticker Removal</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (items) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasWarningLabels}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "warningLabels"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "warningLabels"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Warning Labels</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (count) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                onClick={() => {
+                                                  field.onChange([]);
+                                                  setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                                }}
+                                              >
+                                                Clear All
+                                              </Button>
+                                              <Button type="button" onClick={() => setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }))}>
+                                                Done
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+          </Accordion>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              type="submit"
+              disabled={isLoading || shipmentGroups.length === 0}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Submit All Shipment Requests
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
+
+import { useFieldArray, useForm } from "react-hook-form";
+import * as z from "zod";
+import { collection, doc, Timestamp, writeBatch } from "firebase/firestore";
+import { useMemo, useState, useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, X, Plus, ChevronDown } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { isUploadTimeAllowed, getTimeUntilNextUploadWindow, formatTimeRemaining, getNewJerseyTimeString, getUploadWindowDescription } from "@/lib/time-utils";
+import type { InventoryItem, ServiceType, ProductType, UserPricing, UserBoxForwardingPricing, UserPalletForwardingPricing, UserAdditionalServicesPricing } from "@/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCollection } from "@/hooks/use-collection";
+import { calculatePrepUnitPrice } from "@/lib/pricing-utils";
+import imageCompression from "browser-image-compression";
+import { ImageIcon } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+const shipmentItemSchema = z.object({
+  productId: z.string().min(1, "Select a product."),
+  quantity: z.coerce.number().int().positive("Shipped quantity must be a positive number."),
+  packOf: z.coerce.number().int().positive("Pack size must be a positive number."),
+  // Custom products use placeholder pricing until admin sets final pricing.
+  unitPrice: z.coerce.number().nonnegative("Unit price must be a non-negative number."),
+  totalPrice: z.coerce.number().nonnegative("Total price must be a non-negative number."),
+  // Additional Services per product - user only selects which services they want (boolean flags)
+  // Admin will add quantities during approval
+  selectedAdditionalServices: z.array(z.enum(["bubbleWrap", "stickerRemoval", "warningLabels"])).optional(),
+});
+
+const shipmentGroupSchema = z.object({
+  shipmentType: z.enum(["product", "box", "pallet"], { required_error: "Shipment type is required." }),
+  palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
+  shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
+  date: z.date({ required_error: "A shipping date is required." }),
+  shipTo: z.string().min(1, "Ship to destination is required."),
+  service: z.enum(["FBA/WFS/TFS", "FBM"]).optional(),
+  productType: z.enum(["Standard", "Large", "Custom"]).optional(),
+  customDimensions: z.string().optional(),
+}).refine((data) => {
+  if (data.shipmentType === "product") {
+    return data.service && data.productType;
+  }
+  return true;
+}, {
+  message: "Service and product type are required for product shipments.",
+  path: ["service"],
+}).refine((data) => {
+  if (data.shipmentType === "product" && data.productType === "Custom") {
+    return typeof data.customDimensions === "string" && data.customDimensions.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Custom dimensions are required for Custom product type.",
+  path: ["customDimensions"],
+}).refine((data) => {
+  // For non-custom products, unit price must be > 0 for every item.
+  if (data.shipmentType === "product" && data.productType && data.productType !== "Custom") {
+    return (data.shipments || []).every((s) => typeof s?.unitPrice === "number" && s.unitPrice > 0);
+  }
+  return true;
+}, {
+  message: "Unit price must be a positive number.",
+  path: ["shipments"],
+}).refine((data) => {
+  if (data.shipmentType === "pallet") {
+    return data.palletSubType;
+  }
+  return true;
+}, {
+  message: "Please select pallet sub-type.",
+  path: ["palletSubType"],
+});
+
+const formSchema = z.object({
+  shipmentGroups: z.array(shipmentGroupSchema).min(1, "Create at least one shipment."),
+});
+
+interface CreateShipmentWithLabelsFormProps {
+  inventory: InventoryItem[];
+}
+
+interface LabelUploadState {
+  file: File | null;
+  preview: string | null;
+  uploadedUrl: string | null;
+  isUploading: boolean;
+}
+
+export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLabelsFormProps) {
+  const { toast } = useToast();
+  const { user, userProfile } = useAuth();
+  
+  // Early return if user is not loaded
+  if (!user || !userProfile) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Loading user data...
+      </div>
+    );
+  }
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  
+  // Label upload states for each shipment group
+  const [labelStates, setLabelStates] = useState<Record<number, LabelUploadState>>({});
+  
+  // Time restriction state
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [uploadAllowed, setUploadAllowed] = useState<boolean>(true);
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+  
+  // Popup states for each group
+  const [openPopups, setOpenPopups] = useState<Record<string, boolean>>({});
+  
+  // Accordion state - only one shipment open at a time
+  const [openAccordionValue, setOpenAccordionValue] = useState<string | undefined>(undefined);
+  
+  const togglePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+  
+  const closePopup = (groupId: string, popupType: string) => {
+    const key = `${groupId}_${popupType}`;
+    setOpenPopups(prev => ({
+      ...prev,
+      [key]: false
+    }));
+  };
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      shipmentGroups: [],
+    },
+  });
+
+  const { fields: shipmentGroups, append: appendGroup, remove: removeGroup } = useFieldArray({
+    control: form.control,
+    name: "shipmentGroups",
+  });
+
+  // Fetch user's pricing rules
+  const { data: pricingRules } = useCollection<UserPricing>(
+    userProfile ? `users/${userProfile.uid}/pricing` : ""
+  );
+  
+  // Fetch forwarding pricing
+  const { data: boxForwardingPricing } = useCollection<UserBoxForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/boxForwardingPricing` : ""
+  );
+  
+  const { data: palletForwardingPricing } = useCollection<UserPalletForwardingPricing>(
+    userProfile ? `users/${userProfile.uid}/palletForwardingPricing` : ""
+  );
+  
+  // Fetch additional services pricing
+  const { data: additionalServicesPricing } = useCollection<UserAdditionalServicesPricing>(
+    userProfile ? `users/${userProfile.uid}/additionalServicesPricing` : ""
+  );
+
+  // Update time display every second
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(getNewJerseyTimeString());
+      setUploadAllowed(isUploadTimeAllowed());
+      setTimeRemaining(formatTimeRemaining(getTimeUntilNextUploadWindow()));
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-calculate pricing for all shipment groups
+  const watchedGroups = form.watch("shipmentGroups");
+  useEffect(() => {
+    try {
+      const allGroups = watchedGroups || [];
+      
+      if (!Array.isArray(allGroups)) return;
+      
+      allGroups.forEach((group, groupIndex) => {
+        if (!group) return;
+        
+        const shipmentType = group.shipmentType;
+        const palletSubType = group.palletSubType;
+        const service = group.service;
+        const productType = group.productType;
+        const shipments = group.shipments || [];
+        
+        if (!Array.isArray(shipments)) return;
+        
+        shipments.forEach((shipment, shipmentIndex) => {
+          if (!shipment) return;
+        const quantity = shipment.quantity || 0;
+        // Keep packOf for Custom too (admin needs full detail). Pricing stays placeholder for Custom.
+        const packOf = shipmentType === "product" ? (shipment.packOf || 1) : 1;
+        const totalUnits = quantity * packOf;
+        
+        let finalUnitPrice = 0;
+        
+        // Custom product pricing is a placeholder ($1). Admin will set final pricing during approval.
+        if (shipmentType === "product" && productType === "Custom") {
+          finalUnitPrice = 1;
+        } else if (shipmentType === "product" && service && productType && pricingRules && pricingRules.length > 0) {
+          // Use quantity (not totalUnits) to determine unit price
+          // This ensures unit price stays consistent regardless of packOf value
+          const calculatedPrice = calculatePrepUnitPrice(
+            pricingRules,
+            service,
+            productType,
+            quantity // Use quantity, not totalUnits, to get consistent unit price
+          );
+          if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+            finalUnitPrice = calculatedPrice.rate;
+          }
+        } else if (shipmentType === "box") {
+          if (boxForwardingPricing && boxForwardingPricing.length > 0) {
+            const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+              const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+              const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+              return bUpdated - aUpdated;
+            })[0];
+            if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+              // Ensure price is a number
+              const priceValue = typeof latestBoxPricing.price === 'string' 
+                ? parseFloat(latestBoxPricing.price) 
+                : latestBoxPricing.price;
+              if (!isNaN(priceValue) && priceValue > 0) {
+                finalUnitPrice = priceValue;
+              }
+            }
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        } else if (shipmentType === "pallet") {
+          if (palletSubType === "forwarding") {
+            if (palletForwardingPricing && palletForwardingPricing.length > 0) {
+              const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                return bUpdated - aUpdated;
+              })[0];
+              if (latestPalletForwarding && latestPalletForwarding.price !== undefined && latestPalletForwarding.price !== null) {
+                // Ensure price is a number
+                const priceValue = typeof latestPalletForwarding.price === 'string' 
+                  ? parseFloat(latestPalletForwarding.price) 
+                  : latestPalletForwarding.price;
+                if (!isNaN(priceValue) && priceValue > 0) {
+                  finalUnitPrice = priceValue;
+                }
+              }
+            }
+          } else if (palletSubType === "existing_inventory") {
+            // Existing Inventory pallets are priced manually by admin at approval time.
+            // Keep pricing at 0 as a placeholder.
+            finalUnitPrice = 0;
+          }
+          // If no pricing found, keep finalUnitPrice at 0 to clear incorrect values
+        }
+
+        // Calculate total price
+        // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+        // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+        // Example: Rate = 0.10, Pack Of Price = 1.00, Quantity = 10
+        //   Pack Of = 1: (0.10 × 10) + (1.00 × 0) = 1.00 + 0.00 = 1.00 (first pack is free)
+        //   Pack Of = 2: (0.10 × 10) + (1.00 × 1) = 1.00 + 1.00 = 2.00 (charge for 2nd pack)
+        //   Pack Of = 3: (0.10 × 10) + (1.00 × 2) = 1.00 + 2.00 = 3.00 (charge for 2nd and 3rd pack)
+        //   Pack Of = 5: (0.10 × 10) + (1.00 × 4) = 1.00 + 4.00 = 5.00 (charge for 2nd, 3rd, 4th, 5th pack)
+        let calculatedTotal = 0;
+        // Custom product total shown to user is a placeholder ($1).
+        if (shipmentType === "product" && productType === "Custom") {
+          calculatedTotal = 1;
+        } else if (shipmentType === "product" && finalUnitPrice > 0 && quantity > 0) {
+          const baseTotal = finalUnitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+          let packOfPrice = 0;
+          if (service && productType && pricingRules && pricingRules.length > 0) {
+            // Look up packOfPrice based on quantity only, not totalUnits
+            // This ensures packOfPrice doesn't change when packOf changes
+            const calculatedPriceForPackOf = calculatePrepUnitPrice(
+              pricingRules,
+              service,
+              productType,
+              quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+            );
+            if (calculatedPriceForPackOf) {
+              packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+            }
+          }
+          // Pack charge: packOfPrice × (packOf - 1)
+          // First pack is free, charge applies from 2nd pack onwards
+          // When packOf = 1, charge = 0 (no additional packs)
+          // When packOf = 2, charge = packOfPrice × 1 (charge for 2nd pack)
+          // When packOf = 3, charge = packOfPrice × 2 (charge for 2nd and 3rd pack)
+          // When packOf = 5, charge = packOfPrice × 4 (charge for 2nd, 3rd, 4th, 5th pack)
+          const packCharge = packOfPrice * Math.max(0, packOf - 1);
+          calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+        } else if (finalUnitPrice > 0 && quantity > 0) {
+          calculatedTotal = parseFloat((finalUnitPrice * quantity).toFixed(2));
+        }
+
+        // Always update to ensure pricing is calculated correctly
+        const currentUnitPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`);
+        const currentTotalPrice = form.getValues(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`);
+        
+        // Update unit price if it changed - always update when we have a calculated price (even if it's 0.10)
+        // Use a small epsilon for floating point comparison
+        if (Math.abs((currentUnitPrice || 0) - finalUnitPrice) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, finalUnitPrice, { shouldValidate: false });
+        }
+        
+        // Update total price if it changed
+        if (currentTotalPrice !== calculatedTotal) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice`, calculatedTotal, { shouldValidate: false });
+        }
+
+        // For Custom products, ensure unitPrice is always set to 1 in form state (prevents submit validation issues)
+        if (shipmentType === "product" && productType === "Custom" && Math.abs((currentUnitPrice || 0) - 1) > 0.001) {
+          form.setValue(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`, 1, { shouldValidate: false });
+        }
+        });
+      });
+    } catch (error) {
+      console.error("Error calculating pricing:", error);
+    }
+  }, [watchedGroups, pricingRules, boxForwardingPricing, palletForwardingPricing, form]);
+
+  // Initialize label state when a new group is added
+  const handleAddShipmentGroup = () => {
+    const newIndex = shipmentGroups.length;
+    appendGroup({
+      shipmentType: "product",
+      palletSubType: undefined,
+      shipments: [],
+      date: new Date(),
+      shipTo: "",
+      service: "FBA/WFS/TFS",
+      productType: "Standard",
+    });
+    setLabelStates(prev => ({
+      ...prev,
+      [newIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+    }));
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleLabelSelect = async (groupIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
+      if (!isValidType) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: "Please select an image (JPG, PNG) or PDF file.",
+        });
+        return;
+      }
+
+      const maxSizeBytes = 10 * 1024 * 1024;
+      if (file.size > maxSizeBytes) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: "Please select a file smaller than 10 MB.",
+        });
+        return;
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          file,
+          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+          uploadedUrl: null,
+          isUploading: false
+        }
+      }));
+    } catch (error: any) {
+      console.error("Error selecting label file:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to select file. Please try again.",
+      });
+    }
+  };
+
+  const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
+    const labelState = labelStates[groupIndex];
+    if (!labelState?.file || !userProfile) return null;
+
+    if (!isUploadTimeAllowed()) {
+      const timeUntil = getTimeUntilNextUploadWindow();
+      toast({
+        variant: "destructive",
+        title: "Upload Time Restricted",
+        description: `${getUploadWindowDescription()}. ${timeUntil}`,
+      });
+      return null;
+    }
+
+    try {
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: true }
+      }));
+
+      let fileToUpload = labelState.file;
+
+      if (labelState.file.type.startsWith("image/")) {
+        const compressedFile = await compressImage(labelState.file);
+        if (compressedFile.size > 1024 * 1024) {
+          toast({
+            variant: "destructive",
+            title: "Compression Failed",
+            description: "Unable to compress image below 1 MB. Please try a different image.",
+          });
+          return null;
+        }
+        fileToUpload = compressedFile;
+      }
+
+      const currentDate = new Date();
+      const clientName = userProfile.name || "Unknown User";
+      const fileName = `${Date.now()}_${fileToUpload.name}`;
+      
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('clientName', clientName);
+      
+      const year = currentDate.getFullYear().toString();
+      const month = currentDate.toLocaleString('en-US', { month: 'long' });
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const folderPath = `${year}/${month}/${clientName}/${dateStr}`;
+      formData.append('folderPath', folderPath);
+
+      const response = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        let errorMessage = errorData.error || 'Failed to upload label to Google Drive';
+        
+        if (errorMessage.includes('refresh access token') || errorMessage.includes('Failed to get access token')) {
+          errorMessage = 'Google Drive authentication failed. Please contact admin to re-authenticate Google Drive.';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      const downloadURL = result.downloadURL || result.webUrl;
+      
+      if (!downloadURL) {
+        throw new Error('No download URL received from Google Drive');
+      }
+
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: {
+          ...prev[groupIndex],
+          uploadedUrl: downloadURL,
+          isUploading: false
+        }
+      }));
+      
+      toast({
+        title: "Success",
+        description: "Label uploaded successfully to Google Drive!",
+      });
+
+      return downloadURL;
+    } catch (error: any) {
+      console.error("Error uploading label:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload label. Please try again.",
+      });
+      setLabelStates(prev => ({
+        ...prev,
+        [groupIndex]: { ...prev[groupIndex], isUploading: false }
+      }));
+      return null;
+    }
+  };
+
+  const handleRemoveLabel = (groupIndex: number) => {
+    setLabelStates(prev => {
+      const state = prev[groupIndex];
+      if (state?.preview) {
+        URL.revokeObjectURL(state.preview);
+      }
+      return {
+        ...prev,
+        [groupIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+      };
+    });
+  };
+
+  const handleRemoveGroup = (index: number) => {
+    handleRemoveLabel(index);
+    removeGroup(index);
+    // Reindex label states
+    const newStates: Record<number, LabelUploadState> = {};
+    shipmentGroups.forEach((_, i) => {
+      if (i !== index) {
+        const oldIndex = i > index ? i - 1 : i;
+        newStates[oldIndex] = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+      }
+    });
+    setLabelStates(newStates);
+  };
+
+  // Helper function to remove undefined values from objects (Firestore doesn't allow undefined)
+  const removeUndefined = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    // Preserve Firestore Timestamp objects
+    if (obj && typeof obj === 'object' && ('seconds' in obj || 'toDate' in obj || obj.constructor?.name === 'Timestamp')) {
+      return obj;
+    }
+    // Preserve Date objects
+    if (obj instanceof Date) {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefined).filter(item => item !== undefined);
+    }
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          cleaned[key] = removeUndefined(obj[key]);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user || !userProfile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You must be logged in to create shipment requests.",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const batch = writeBatch(db);
+      const requestedAt = Timestamp.now();
+
+      // Process each shipment group
+      for (let i = 0; i < values.shipmentGroups.length; i++) {
+        const group = values.shipmentGroups[i];
+        // Get the current label state - check both the index and ensure we have the latest state
+        const labelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+        // Validate stock availability for this group
+        const stockErrors: string[] = [];
+        group.shipments.forEach((shipment) => {
+          const product = inventory.find(item => item.id === shipment.productId);
+          if (product) {
+            const packOf = group.shipmentType === "product" ? (shipment.packOf || 1) : 1;
+            const totalUnits = shipment.quantity * packOf;
+            if (totalUnits > product.quantity) {
+              const unitType = group.shipmentType === "box" ? "boxes" : group.shipmentType === "pallet" ? "pallets" : "units";
+              stockErrors.push(
+                `${product.productName}: Requested ${totalUnits} ${unitType} but only ${product.quantity} available.`
+              );
+            }
+          }
+        });
+
+        if (stockErrors.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Insufficient Stock",
+            description: `Group ${i + 1}: ${stockErrors.join(" ")}`,
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Upload label if selected (optional) - get fresh state to ensure we have the latest
+        const currentLabelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        let labelUrl = "";
+        
+        // Check if label is already uploaded (priority check)
+        if (currentLabelState.uploadedUrl) {
+          // Label already uploaded, use existing URL
+          labelUrl = currentLabelState.uploadedUrl;
+          console.log(`[Group ${i + 1}] Using existing label URL:`, labelUrl);
+        } else if (currentLabelState.file) {
+          // File selected but not uploaded yet, upload it now
+          console.log(`[Group ${i + 1}] Uploading label file:`, currentLabelState.file.name);
+          const uploadedUrl = await handleLabelUpload(i);
+          if (uploadedUrl) {
+            labelUrl = uploadedUrl;
+            console.log(`[Group ${i + 1}] Label uploaded successfully:`, labelUrl);
+          } else {
+            // Upload failed, but label is optional so we continue without it
+            console.warn(`[Group ${i + 1}] Label upload failed, continuing without label`);
+            labelUrl = "";
+          }
+        } else {
+          // No label provided for this group - that's okay, label is optional
+          console.log(`[Group ${i + 1}] No label provided (optional)`);
+          labelUrl = "";
+        }
+
+        // Create shipment request
+        const dateTimestamp = Timestamp.fromDate(group.date);
+        const requestRef = doc(collection(db, `users/${user.uid}/shipmentRequests`));
+        
+        // Build the document data, only including fields that are applicable
+        const requestData: any = {
+          userId: user.uid,
+          userName: userProfile.name || "Unknown User",
+          date: dateTimestamp,
+          shipTo: group.shipTo || "",
+          shipmentType: group.shipmentType,
+          labelUrl: labelUrl || "",
+          status: "pending",
+          requestedBy: user.uid,
+          requestedAt,
+        };
+        
+        // Set service based on shipment type
+        if (group.shipmentType === "box") {
+          requestData.service = "Box Forwarding";
+        } else if (group.shipmentType === "pallet") {
+          if (group.palletSubType === "forwarding") {
+            requestData.service = "Pallet Forwarding";
+          } else if (group.palletSubType === "existing_inventory") {
+            requestData.service = "Pallet Existing Inventory";
+          }
+          if (group.palletSubType) {
+            requestData.palletSubType = group.palletSubType;
+          }
+        } else if (group.shipmentType === "product") {
+          // For product shipments, use the selected service
+          if (group.service) {
+            requestData.service = group.service;
+          }
+          if (group.productType) {
+            requestData.productType = group.productType;
+          }
+        }
+        
+        // Clean shipments array to remove undefined values
+        requestData.shipments = group.shipments.map((shipment: any) => {
+          const cleaned: any = {
+            productId: shipment.productId,
+            quantity: shipment.quantity,
+            packOf: shipment.packOf || 1,
+            unitPrice: shipment.unitPrice || 0,
+          };
+          // Only include optional fields
+          if (shipment.selectedAdditionalServices && shipment.selectedAdditionalServices.length > 0) {
+            cleaned.selectedAdditionalServices = shipment.selectedAdditionalServices;
+          }
+          return cleaned;
+        });
+        
+        // Remove all undefined values before saving to Firestore
+        const cleanedRequestData = removeUndefined(requestData);
+        
+        batch.set(requestRef, cleanedRequestData);
+      }
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `${values.shipmentGroups.length} shipment request(s) with labels submitted successfully. Admin will review them.`,
+      });
+
+      form.reset({
+        shipmentGroups: [],
+      });
+      setQuery("");
+      setLabelStates({});
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to submit shipment requests.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const onInvalidSubmit = (errors: any) => {
+    // Open the first shipment accordion that has an error so the user can see the field messages.
+    const groups = errors?.shipmentGroups;
+    if (Array.isArray(groups)) {
+      const firstBadIndex = groups.findIndex((g) => g && Object.keys(g).length > 0);
+      if (firstBadIndex >= 0) {
+        setOpenAccordionValue(`shipment-${firstBadIndex}`);
+      }
+    }
+
+    const findFirstMessage = (err: any): string | undefined => {
+      if (!err) return undefined;
+      if (typeof err?.message === "string" && err.message.length > 0) return err.message;
+      if (Array.isArray(err)) {
+        for (const item of err) {
+          const msg = findFirstMessage(item);
+          if (msg) return msg;
+        }
+        return undefined;
+      }
+      if (typeof err === "object") {
+        for (const key of Object.keys(err)) {
+          const msg = findFirstMessage(err[key]);
+          if (msg) return msg;
+        }
+      }
+      return undefined;
+    };
+
+    const firstMessage =
+      findFirstMessage(errors?.shipmentGroups) ||
+      "Please fill all required fields before submitting.";
+
+    toast({
+      variant: "destructive",
+      title: "Fix required fields",
+      description: firstMessage,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Time Display */}
+      <div className="p-4 border rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
+          <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
+            {uploadAllowed ? (
+              <>
+                <span className="font-medium">✓ Allowed</span>
+                <span className="font-mono">({timeRemaining} remaining)</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">⚠️ Disabled</span>
+                <span className="font-mono">({timeRemaining} until available)</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+          {uploadAllowed ? (
+            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
+          ) : (
+            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
+          )}
+        </div>
+        <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
+          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)} className="space-y-6">
+          {/* Add Shipment Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Create Shipment</h3>
+              <p className="text-sm text-muted-foreground">Create multiple shipments, each with its own label</p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleAddShipmentGroup}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Shipment
+            </Button>
+          </div>
+
+          {/* Shipments */}
+          {shipmentGroups.length === 0 && (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">No shipments yet. Click "Add Shipment" to get started.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Accordion 
+            type="single" 
+            collapsible 
+            value={openAccordionValue} 
+            onValueChange={setOpenAccordionValue}
+            className="space-y-4"
+          >
+          {shipmentGroups.map((group, groupIndex) => {
+            const groupShipmentType = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const groupPalletSubType = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            const groupService = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const groupProductType = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const groupShipments = form.watch(`shipmentGroups.${groupIndex}.shipments`);
+            
+            // Calculate available inventory without useMemo (inside map)
+            const normalizedQuery = query.trim().toLowerCase();
+            const availableInventory = inventory
+              .filter((item) => item.quantity > 0)
+              .filter((item) => {
+                const inventoryType = (item as any).inventoryType;
+                if (groupShipmentType === "box") {
+                  return inventoryType === "box";
+                } else if (groupShipmentType === "pallet") {
+                  if (groupPalletSubType === "forwarding") {
+                    return inventoryType === "pallet";
+                  } else if (groupPalletSubType === "existing_inventory") {
+                    // Show all products (inventoryType === "product" or undefined/missing)
+                    const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                    return !isExcludedType;
+                  }
+                  return false;
+                } else {
+                  // Product type - show all products (inventoryType === "product" or undefined/missing)
+                  const isExcludedType = inventoryType === "box" || inventoryType === "container" || inventoryType === "pallet";
+                  return !isExcludedType;
+                }
+              })
+              .filter((item) => item.productName.toLowerCase().includes(normalizedQuery));
+
+            const labelState = labelStates[groupIndex] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+
+            const popupKey = group.id;
+            const shipmentTypeValue = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
+            const serviceValue = form.watch(`shipmentGroups.${groupIndex}.service`);
+            const productTypeValue = form.watch(`shipmentGroups.${groupIndex}.productType`);
+            const palletSubTypeValue = form.watch(`shipmentGroups.${groupIndex}.palletSubType`);
+            
+            return (
+              <AccordionItem key={group.id} value={`shipment-${groupIndex}`} className="border-2 rounded-lg px-4 mb-4">
+                <div className="relative">
+                  <AccordionTrigger className="hover:no-underline pr-12 [&>svg]:hidden">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="text-left">
+                        <div className="text-lg font-semibold">Shipment {groupIndex + 1}</div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Each shipment creates a separate shipment request with its own label
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveGroup(groupIndex);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <AccordionContent>
+                  <div className="pt-4">
+                    {/* Horizontal Entry-Type View (single line) */}
+                    <div className="overflow-x-auto">
+                      <div className="flex flex-nowrap items-end gap-3 min-w-max pb-4 border-b">
+                    {/* Shipment Type - Popup */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipmentType`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipment Type *</FormLabel>
+                          <Dialog open={openPopups[`${popupKey}_shipmentType`] || false} onOpenChange={(open) => {
+                            if (open) {
+                              setOpenPopups(prev => ({ ...prev, [`${popupKey}_shipmentType`]: true }));
+                            } else {
+                              closePopup(popupKey, 'shipmentType');
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-[120px] justify-between"
+                                onClick={() => togglePopup(popupKey, 'shipmentType')}
+                              >
+                                <span className="truncate">{field.value ? field.value.charAt(0).toUpperCase() + field.value.slice(1) : "Select"}</span>
+                                <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Select Shipment Type</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-2 py-4">
+                                {["product", "box", "pallet"].map((type) => (
+                                  <Button
+                                    key={type}
+                                    type="button"
+                                    variant={field.value === type ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange(type);
+                                      if (type !== "pallet") {
+                                        form.setValue(`shipmentGroups.${groupIndex}.palletSubType`, undefined);
+                                      }
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'shipmentType');
+                                    }}
+                                  >
+                                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                                  </Button>
+                                ))}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Pallet Sub-Type - Popup */}
+                    {groupShipmentType === "pallet" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.palletSubType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Pallet Type *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_palletType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_palletType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'palletType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[150px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'palletType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "existing_inventory" ? "Existing Inventory" :
+                                     field.value === "forwarding" ? "Pallet Forwarding" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Pallet Type</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "existing_inventory" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("existing_inventory");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Existing Inventory
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "forwarding" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("forwarding");
+                                      form.setValue(`shipmentGroups.${groupIndex}.shipments`, []);
+                                      closePopup(popupKey, 'palletType');
+                                    }}
+                                  >
+                                    Pallet Forwarding
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Products - Popup (FIRST) */}
+                    <FormItem className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Products</FormLabel>
+                      <Dialog open={openPopups[`${popupKey}_products`] || false} onOpenChange={(open) => {
+                        if (open) {
+                          setOpenPopups(prev => ({ ...prev, [`${popupKey}_products`]: true }));
+                        } else {
+                          closePopup(popupKey, 'products');
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-[160px] justify-between"
+                            onClick={() => togglePopup(popupKey, 'products')}
+                          >
+                            <span className="truncate">
+                              {groupShipments.length > 0 
+                                ? `${groupShipments.length} product${groupShipments.length > 1 ? 's' : ''} selected`
+                                : "Search products..."}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Select Products</DialogTitle>
+                            <DialogDescription>
+                              Search and select products for this shipment
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <Input
+                              placeholder="Search products..."
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                            <ScrollArea className="h-[300px]">
+                              <div className="space-y-2">
+                                {availableInventory.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground text-center py-4">
+                                    No products available for this shipment type.
+                                  </p>
+                                ) : (
+                                  availableInventory.map((item) => {
+                                    const isSelected = groupShipments.some((shipment) => shipment.productId === item.id);
+                                    return (
+                                      <div key={item.id} className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                            if (checked) {
+                                              // Calculate initial price based on shipment type
+                                              let initialUnitPrice = 0;
+                                              let initialTotalPrice = 0;
+                                              
+                                              const group = form.getValues(`shipmentGroups.${groupIndex}`);
+                                              const shipmentType = group?.shipmentType;
+                                              const palletSubType = group?.palletSubType;
+                                              
+                                              if (shipmentType === "box" && boxForwardingPricing && boxForwardingPricing.length > 0) {
+                                                const latestBoxPricing = [...boxForwardingPricing].sort((a, b) => {
+                                                  const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                  const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                  return bUpdated - aUpdated;
+                                                })[0];
+                                                if (latestBoxPricing && latestBoxPricing.price !== undefined && latestBoxPricing.price !== null) {
+                                                  const priceValue = typeof latestBoxPricing.price === 'string' 
+                                                    ? parseFloat(latestBoxPricing.price) 
+                                                    : latestBoxPricing.price;
+                                                  if (!isNaN(priceValue) && priceValue > 0) {
+                                                    initialUnitPrice = priceValue;
+                                                    initialTotalPrice = priceValue; // quantity is 1 by default
+                                                  }
+                                                }
+                                              } else if (shipmentType === "pallet") {
+                                                if (palletSubType === "forwarding" && palletForwardingPricing && palletForwardingPricing.length > 0) {
+                                                  const latestPalletForwarding = [...palletForwardingPricing].sort((a, b) => {
+                                                    const aUpdated = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : (a.updatedAt as any)?.seconds ? (a.updatedAt as any).seconds * 1000 : 0;
+                                                    const bUpdated = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : (b.updatedAt as any)?.seconds ? (b.updatedAt as any).seconds * 1000 : 0;
+                                                    return bUpdated - aUpdated;
+                                                  })[0];
+                                                  if (latestPalletForwarding && latestPalletForwarding.price) {
+                                                    const priceValue = typeof latestPalletForwarding.price === 'string' 
+                                                      ? parseFloat(latestPalletForwarding.price) 
+                                                      : latestPalletForwarding.price;
+                                                    if (!isNaN(priceValue) && priceValue > 0) {
+                                                      initialUnitPrice = priceValue;
+                                                      initialTotalPrice = priceValue;
+                                                    }
+                                                  }
+                                                } else if (palletSubType === "existing_inventory") {
+                                                  // Existing Inventory pallets are priced manually by admin at approval time.
+                                                  // Keep pricing at 0 as a placeholder.
+                                                  initialUnitPrice = 0;
+                                                  initialTotalPrice = 0;
+                                                }
+                                              }
+                                              // For product shipments:
+                                              // - Custom: placeholder pricing ($1) until admin sets final price
+                                              // - Others: calculated by useEffect based on pricing rules
+                                              if (shipmentType === "product" && group?.productType === "Custom") {
+                                                initialUnitPrice = 1;
+                                                initialTotalPrice = 1;
+                                              }
+                                              
+                                              form.setValue(`shipmentGroups.${groupIndex}.shipments`, [
+                                                ...currentShipments,
+                                                {
+                                                  productId: item.id,
+                                                  quantity: 1,
+                                                  packOf: 1,
+                                                  unitPrice: initialUnitPrice,
+                                                  totalPrice: initialTotalPrice,
+                                                  selectedAdditionalServices: undefined,
+                                                }
+                                              ]);
+                                            } else {
+                                              const index = currentShipments.findIndex(s => s.productId === item.id);
+                                              if (index !== -1) {
+                                                const updated = [...currentShipments];
+                                                updated.splice(index, 1);
+                                                form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <label className="flex-1 text-sm cursor-pointer">
+                                          {item.productName} (In Stock: {item.quantity})
+                                        </label>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                onClick={() => closePopup(popupKey, 'products')}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </FormItem>
+
+                    {/* Service - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.service`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Service *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_service`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_service`]: true }));
+                              } else {
+                                closePopup(popupKey, 'service');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[130px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'service')}
+                                >
+                                  <span className="truncate">{field.value || "Select"}</span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Service</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBA/WFS/TFS" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBA/WFS/TFS");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBA/WFS/TFS
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "FBM" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("FBM");
+                                      closePopup(popupKey, 'service');
+                                    }}
+                                  >
+                                    FBM
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Product Type / Dimension - Popup (only for product type) - After Products */}
+                    {groupShipmentType === "product" && (
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.productType`}
+                        render={({ field }) => (
+                          <FormItem className="flex-shrink-0">
+                            <FormLabel className="text-xs text-muted-foreground mb-1 block">Product Type / Dimension *</FormLabel>
+                            <Dialog open={openPopups[`${popupKey}_productType`] || false} onOpenChange={(open) => {
+                              if (open) {
+                                setOpenPopups(prev => ({ ...prev, [`${popupKey}_productType`]: true }));
+                              } else {
+                                closePopup(popupKey, 'productType');
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-[180px] justify-between"
+                                  onClick={() => togglePopup(popupKey, 'productType')}
+                                >
+                                  <span className="truncate">
+                                    {field.value === "Standard" ? "Standard (6×6×6) - <3lbs" :
+                                     field.value === "Large" ? "Large (10×10×10) - <6lbs" :
+                                     field.value === "Custom" ? "Custom" : "Select"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-1" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Select Product Type / Dimension</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-2 py-4">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Standard" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Standard");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Standard (6×6×6) - &lt;3lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Large" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Large");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Large (10×10×10) - &lt;6lbs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "Custom" ? "default" : "outline"}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                      field.onChange("Custom");
+                                      closePopup(popupKey, 'productType');
+                                    }}
+                                  >
+                                    Custom
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Date */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.date`}
+                      render={({ field }) => (
+                        <FormItem className="flex-shrink-0">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Shipping Date</FormLabel>
+                          <DatePicker date={field.value} setDate={field.onChange} />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Ship To */}
+                    <FormField
+                      control={form.control}
+                      name={`shipmentGroups.${groupIndex}.shipTo`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1 min-w-[160px]">
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Ship To</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter destination" {...field} className="w-full" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Label Upload - Inline */}
+                    <div className="flex-shrink-0">
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label (Optional)</FormLabel>
+                      <div className="flex items-center gap-2">
+                        {!labelState.preview && !labelState.uploadedUrl && (
+                          <Input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => {
+                              handleLabelSelect(groupIndex, e).catch((error) => {
+                                console.error("Unhandled error in handleLabelSelect:", error);
+                                toast({
+                                  variant: "destructive",
+                                  title: "Error",
+                                  description: "Failed to process file selection. Please try again.",
+                                });
+                              });
+                            }}
+                            className="w-[170px]"
+                            disabled={labelState.isUploading || isLoading}
+                          />
+                        )}
+                        
+                        {(labelState.preview || labelState.uploadedUrl) && (
+                          <div className="flex items-center gap-2">
+                            {labelState.preview ? (
+                              <img
+                                src={labelState.preview}
+                                alt="Label preview"
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            ) : labelState.uploadedUrl ? (
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            ) : null}
+                            <span className="text-xs text-muted-foreground">Uploaded</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleRemoveLabel(groupIndex)}
+                              disabled={labelState.isUploading || isLoading}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {labelState.isUploading && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                      </div>
+                    </div>
+
+                  {/* Custom Dimensions Field - Only show when Custom is selected */}
+                  {groupShipmentType === "product" && groupProductType === "Custom" && (
+                    <div className="mt-4">
+                      <FormField
+                        control={form.control}
+                        name={`shipmentGroups.${groupIndex}.customDimensions`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Custom Dimensions *</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Enter your custom dimensions (e.g., Length x Width x Height in inches, Weight in lbs)"
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Please provide detailed dimensions and weight for your custom product.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {/* Selected Products Details */}
+                  {groupShipments.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-sm font-medium mb-2">Selected Products:</div>
+                      {groupShipments.map((shipment, shipmentIndex) => {
+                        const product = inventory.find((item) => item.id === shipment.productId);
+                        const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                        const packOf = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1;
+                        const totalUnits = quantity * packOf;
+                        const availableStock = product?.quantity || 0;
+
+                        return (
+                          <div key={shipment.productId || shipmentIndex} className="border rounded-lg p-3 bg-muted/30">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{product?.productName}</div>
+                                <div className="text-xs text-muted-foreground">In Stock: {availableStock}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const currentShipments = form.getValues(`shipmentGroups.${groupIndex}.shipments`);
+                                  const updated = currentShipments.filter((_, i) => i !== shipmentIndex);
+                                  form.setValue(`shipmentGroups.${groupIndex}.shipments`, updated);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex gap-2">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity` as const}
+                                render={({ field }) => (
+                                  <FormItem className="flex-1">
+                                    <FormLabel className="text-xs">Qty</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        className="h-8"
+                                        {...field}
+                                        onChange={(e) => {
+                                          const value = parseInt(e.target.value) || 0;
+                                          field.onChange(value);
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {totalUnits > availableStock && (
+                                      <p className="text-xs font-medium text-destructive">
+                                        Insufficient stock!
+                                      </p>
+                                    )}
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {groupShipmentType === "product" && (
+                                <FormField
+                                  control={form.control}
+                                  name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf` as const}
+                                  render={({ field }) => (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Pack Of</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          className="h-8"
+                                          {...field}
+                                          onChange={(e) => {
+                                            const value = parseInt(e.target.value) || 1;
+                                            field.onChange(value);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
+
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.totalPrice` as const}
+                                render={({ field }) => {
+                                  // Custom: show placeholder $1 and admin message; admin sets final pricing on approval.
+                                  if (groupShipmentType === "product" && groupProductType === "Custom") {
+                                    return (
+                                      <FormItem className="flex-1">
+                                        <FormLabel className="text-xs">Price ($)</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type="text"
+                                            className="h-8 [appearance:textfield]"
+                                            readOnly
+                                            value={"1.00"}
+                                          />
+                                        </FormControl>
+                                        <div className="mt-2 rounded-md border-2 border-blue-200 border-dashed bg-blue-50 p-2">
+                                          <p className="text-xs font-medium text-blue-700 text-center">
+                                            Admin can review your request and then charge
+                                          </p>
+                                        </div>
+                                        <FormMessage />
+                                      </FormItem>
+                                    );
+                                  }
+
+                                  const quantity = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.quantity`) || 0;
+                                  const packOf = groupShipmentType === "product" ? (form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.packOf`) || 1) : 1;
+                                  const totalUnits = quantity * packOf;
+                                  let unitPrice = form.watch(`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice`) || 0;
+                                  
+                                  // Recalculate unit price if not set or if we have pricing rules
+                                  // Use quantity (not totalUnits) to determine unit price
+                                  // This ensures unit price stays consistent regardless of packOf value
+                                  if (groupShipmentType === "product" && groupService && groupProductType && pricingRules && pricingRules.length > 0 && quantity > 0) {
+                                    const calculatedPrice = calculatePrepUnitPrice(
+                                      pricingRules,
+                                      groupService,
+                                      groupProductType,
+                                      quantity // Use quantity, not totalUnits, to get consistent unit price
+                                    );
+                                    // Always use calculated rate if available (even if it's 0.10)
+                                    if (calculatedPrice && calculatedPrice.rate !== undefined && calculatedPrice.rate !== null) {
+                                      unitPrice = calculatedPrice.rate;
+                                    }
+                                  }
+                                  
+                                  // Calculate total price with pack of charge
+                                  // Formula: Total = (Unit Price × Quantity) + (Pack Of Price × (Pack Of - 1))
+                                  // The unit price is per item, and packOfPrice is charged for each pack beyond the first one
+                                  let calculatedTotal = 0;
+                                  if (groupShipmentType === "product" && unitPrice > 0 && quantity > 0) {
+                                    const baseTotal = unitPrice * quantity; // Unit price × quantity (not multiplied by packOf)
+                                    let packOfPrice = 0;
+                                    if (groupService && groupProductType && pricingRules && pricingRules.length > 0) {
+                                      // Look up packOfPrice based on quantity only, not totalUnits
+                                      // This ensures packOfPrice doesn't change when packOf changes
+                                      const calculatedPriceForPackOf = calculatePrepUnitPrice(
+                                        pricingRules,
+                                        groupService,
+                                        groupProductType,
+                                        quantity // Use quantity, not totalUnits, to get the correct packOfPrice
+                                      );
+                                      if (calculatedPriceForPackOf) {
+                                        packOfPrice = calculatedPriceForPackOf.packOf || 0; // Charge per pack (beyond the first pack)
+                                      }
+                                    }
+                                    // Pack charge: packOfPrice × (packOf - 1)
+                                    // First pack is free, charge applies from 2nd pack onwards
+                                    const packCharge = packOfPrice * Math.max(0, packOf - 1);
+                                    calculatedTotal = parseFloat((baseTotal + packCharge).toFixed(2));
+                                  } else if (unitPrice > 0 && quantity > 0) {
+                                    calculatedTotal = parseFloat((unitPrice * quantity).toFixed(2));
+                                  }
+                                  
+                                  // Always show calculated total if available, otherwise show field value
+                                  const displayValue = calculatedTotal > 0 ? calculatedTotal : (field.value || 0);
+                                  // Format to always show 2 decimal places (e.g., 0.10 instead of 0.1)
+                                  const formattedValue = typeof displayValue === 'number' ? displayValue.toFixed(2) : parseFloat(displayValue || 0).toFixed(2);
+                                  
+                                  return (
+                                    <FormItem className="flex-1">
+                                      <FormLabel className="text-xs">Price ($)</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="text"
+                                          placeholder="Auto"
+                                          className="h-8 [appearance:textfield]"
+                                          readOnly
+                                          value={formattedValue}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                              {/* Hidden unitPrice field: required by schema even though we don't show it in the UI */}
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.unitPrice` as const}
+                                render={({ field }) => (
+                                  <input type="hidden" {...field} value={field.value ?? ""} />
+                                )}
+                              />
+                            </div>
+                            
+                            {/* Additional Services - Per Product */}
+                            <div className="mt-3 pt-3 border-t">
+                              <FormField
+                                control={form.control}
+                                name={`shipmentGroups.${groupIndex}.shipments.${shipmentIndex}.selectedAdditionalServices` as const}
+                                render={({ field }) => {
+                                  const selectedServices = field.value || [];
+                                  const hasBubbleWrap = selectedServices.includes("bubbleWrap");
+                                  const hasStickerRemoval = selectedServices.includes("stickerRemoval");
+                                  const hasWarningLabels = selectedServices.includes("warningLabels");
+                                  const selectedServicesDisplay: string[] = [];
+                                  if (hasBubbleWrap) selectedServicesDisplay.push("Bubble Wrap");
+                                  if (hasStickerRemoval) selectedServicesDisplay.push("Sticker Removal");
+                                  if (hasWarningLabels) selectedServicesDisplay.push("Warning Labels");
+                                  const displayText = selectedServicesDisplay.length > 0 
+                                    ? selectedServicesDisplay.join(", ")
+                                    : "Select (optional)";
+                                  const productPopupKey = `${popupKey}_product_${shipmentIndex}_additionalServices`;
+
+                                  return (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-medium">Additional Services (Optional)</FormLabel>
+                                      <Dialog
+                                        open={openPopups[productPopupKey] || false}
+                                        onOpenChange={(open) => {
+                                          if (open) {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: true }));
+                                          } else {
+                                            setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                          }
+                                        }}
+                                      >
+                                        <DialogTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="w-full justify-between"
+                                            onClick={() => {
+                                              setOpenPopups(prev => ({ ...prev, [productPopupKey]: !prev[productPopupKey] }));
+                                            }}
+                                          >
+                                            <span className="truncate">
+                                              {displayText}
+                                            </span>
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                          <DialogHeader>
+                                            <DialogTitle>Additional Services for {product?.productName}</DialogTitle>
+                                            <DialogDescription>
+                                              Select which additional services you need for this product. Admin will add quantities and calculate pricing during approval.
+                                            </DialogDescription>
+                                          </DialogHeader>
+                                          <div className="space-y-4 py-2">
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasBubbleWrap}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "bubbleWrap"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "bubbleWrap"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Bubble Wrap</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (feet) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasStickerRemoval}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "stickerRemoval"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "stickerRemoval"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Sticker Removal</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (items) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                              <FormControl>
+                                                <Checkbox
+                                                  checked={hasWarningLabels}
+                                                  onCheckedChange={(checked) => {
+                                                    const current = field.value || [];
+                                                    if (checked) {
+                                                      field.onChange([...current, "warningLabels"]);
+                                                    } else {
+                                                      field.onChange(current.filter(s => s !== "warningLabels"));
+                                                    }
+                                                  }}
+                                                />
+                                              </FormControl>
+                                              <div className="space-y-1 leading-none">
+                                                <FormLabel>Warning Labels</FormLabel>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Admin will add quantity (count) during approval
+                                                </p>
+                                              </div>
+                                            </FormItem>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                onClick={() => {
+                                                  field.onChange([]);
+                                                  setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }));
+                                                }}
+                                              >
+                                                Clear All
+                                              </Button>
+                                              <Button type="button" onClick={() => setOpenPopups(prev => ({ ...prev, [productPopupKey]: false }))}>
+                                                Done
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
+                                      <FormMessage />
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+          </Accordion>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              type="submit"
+              disabled={isLoading || shipmentGroups.length === 0}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Submit All Shipment Requests
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}

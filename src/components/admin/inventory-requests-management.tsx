@@ -1,0 +1,1023 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import React from "react";
+import type { InventoryRequest, UserProfile } from "@/types";
+import { useCollection } from "@/hooks/use-collection";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { db, storage } from "@/lib/firebase";
+import { doc, updateDoc, addDoc, collection, Timestamp, runTransaction, query, where, getDocs } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { format } from "date-fns";
+import { Check, X, Eye, Loader2, Upload, Image as ImageIcon } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import imageCompression from "browser-image-compression";
+
+function formatDate(date: InventoryRequest["addDate"] | InventoryRequest["requestedAt"] | InventoryRequest["receivingDate"]) {
+  if (!date) return "N/A";
+  if (typeof date === 'string') {
+    return format(new Date(date), "PPP");
+  }
+  if (date && typeof date === 'object' && 'seconds' in date) {
+    return format(new Date(date.seconds * 1000), "PPP");
+  }
+  return "N/A";
+}
+
+export function InventoryRequestsManagement({ 
+  selectedUser,
+  initialRequestId,
+}: { 
+  selectedUser: UserProfile | null;
+  initialRequestId?: string;
+}) {
+  const { toast } = useToast();
+  const { userProfile: adminProfile } = useAuth();
+  const [selectedRequest, setSelectedRequest] = useState<InventoryRequest | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Normalize user ID (handle both id and uid fields) - ensure it's a valid string
+  const userId = selectedUser?.uid || selectedUser?.id;
+  const isValidUserId = userId && typeof userId === 'string' && userId.trim() !== '';
+  
+  const { data: requests, loading, error } = useCollection<InventoryRequest>(
+    isValidUserId ? `users/${userId}/inventoryRequests` : ""
+  );
+
+  // Auto-open a request when coming from Notifications
+  const [didAutoOpen, setDidAutoOpen] = useState(false);
+  React.useEffect(() => {
+    if (didAutoOpen) return;
+    if (!initialRequestId) return;
+    if (!requests || requests.length === 0) return;
+    const match = requests.find((r: any) => r.id === initialRequestId);
+    if (match) {
+      setSelectedRequest(match);
+      setDidAutoOpen(true);
+    }
+  }, [didAutoOpen, initialRequestId, requests]);
+
+  // Debug logging
+  React.useEffect(() => {
+    if (selectedUser) {
+      console.log("Inventory Requests Debug:", {
+        selectedUser: userId,
+        selectedUserName: selectedUser.name,
+        requestsCount: requests.length,
+        requests: requests,
+        loading,
+        error: error?.message,
+      });
+    }
+  }, [selectedUser, requests, loading, error]);
+
+  // Sort and filter requests - latest first
+  const filteredRequests = useMemo(() => {
+    let filtered = statusFilter === "all" ? requests : requests.filter(req => req.status === statusFilter);
+    
+    // Sort by requestedAt (most recent first), fallback to addDate if requestedAt is not available
+    filtered = [...filtered].sort((a, b) => {
+      const getDate = (req: InventoryRequest) => {
+        if (req.requestedAt) {
+          if (typeof req.requestedAt === 'string') {
+            return new Date(req.requestedAt).getTime();
+          }
+          if (req.requestedAt && typeof req.requestedAt === 'object' && 'seconds' in req.requestedAt) {
+            return req.requestedAt.seconds * 1000;
+          }
+        }
+        if (req.addDate) {
+          if (typeof req.addDate === 'string') {
+            return new Date(req.addDate).getTime();
+          }
+          if (req.addDate && typeof req.addDate === 'object' && 'seconds' in req.addDate) {
+            return req.addDate.seconds * 1000;
+          }
+        }
+        return 0;
+      };
+      
+      const dateA = getDate(a);
+      const dateB = getDate(b);
+      return dateB - dateA; // Descending order (newest first)
+    });
+    
+    return filtered;
+  }, [requests, statusFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedRequests = filteredRequests.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filter changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
+
+  const pendingCount = requests.filter(req => req.status === "pending").length;
+  const approvedCount = requests.filter(req => req.status === "approved").length;
+  const rejectedCount = requests.filter(req => req.status === "rejected").length;
+
+  const handleApprove = async (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrl?: string) => {
+    if (!selectedUser || !adminProfile) return;
+
+    setIsProcessing(true);
+    try {
+      // Prepare remarks - trim whitespace
+      const remarksToSave = remarks ? remarks.trim() : "";
+      console.log("=== APPROVAL DEBUG ===");
+      console.log("Original remarks parameter:", remarks);
+      console.log("Remarks type:", typeof remarks);
+      console.log("Remarks value:", remarks);
+      console.log("Remarks trimmed:", remarksToSave);
+      console.log("Remarks length:", remarksToSave.length);
+      
+      // Calculate final values outside transaction for use in invoice generation
+      const finalQuantity = editedQuantity !== undefined ? editedQuantity : request.quantity;
+      const finalProductName = editedProductName && editedProductName.trim() ? editedProductName.trim() : request.productName;
+      const finalSku = request.inventoryType === "product" 
+        ? (editedSku && editedSku.trim() ? editedSku.trim() : ((request as any).sku || ""))
+        : undefined;
+      
+      await runTransaction(db, async (transaction) => {
+        // STEP 1: ALL READS FIRST (before any writes)
+        const requestRef = doc(db, `users/${userId}/inventoryRequests`, request.id);
+        const approvedAt = Timestamp.now();
+        const receivingDateTimestamp = Timestamp.fromDate(receivingDate);
+        
+        // Check if this is a restock request
+        const isRestock = (request as any).productSubType === "restock" && (request as any).productId;
+        
+        // Read existing product if restock (MUST BE BEFORE ANY WRITES)
+        let existingProductDoc = null;
+        let existingProductRef = null;
+        if (isRestock) {
+          existingProductRef = doc(db, `users/${userId}/inventory`, (request as any).productId);
+          existingProductDoc = await transaction.get(existingProductRef);
+        }
+
+        // STEP 2: ALL WRITES AFTER ALL READS
+        // Prepare request update data (combine all updates into one)
+        const requestUpdateData: any = {
+          status: "approved",
+          approvedBy: adminProfile.uid,
+          approvedAt,
+          receivingDate: receivingDateTimestamp,
+          remarks: remarksToSave,
+          imageUrl: imageUrl || "",
+        };
+        
+        // Add edited values to request update if they were changed
+        if (editedQuantity !== undefined) {
+          requestUpdateData.quantity = finalQuantity;
+        }
+        if (editedProductName && editedProductName.trim()) {
+          requestUpdateData.productName = finalProductName;
+        }
+        if (request.inventoryType === "product" && editedSku && editedSku.trim()) {
+          requestUpdateData.sku = finalSku;
+        }
+        
+        // Update request status (single update with all changes)
+        transaction.update(requestRef, requestUpdateData);
+        
+        // Handle inventory update/create
+        if (isRestock && existingProductDoc && existingProductDoc.exists()) {
+          // For restock: Update existing inventory item
+          const existingData = existingProductDoc.data();
+          const currentQuantity = existingData.quantity || 0;
+          const newQuantity = currentQuantity + finalQuantity;
+          
+          // Update existing product with new quantity
+          transaction.update(existingProductRef!, {
+            quantity: newQuantity,
+            receivingDate: receivingDateTimestamp,
+            approvedBy: adminProfile.uid,
+            approvedAt,
+            remarks: remarksToSave,
+            imageUrl: imageUrl || "",
+          });
+        } else {
+          // For new product/box/pallet OR restock with product not found: Create new inventory item
+          const inventoryRef = collection(db, `users/${userId}/inventory`);
+          const addDate = request.addDate && typeof request.addDate === 'object' && 'seconds' in request.addDate
+            ? Timestamp.fromMillis(request.addDate.seconds * 1000)
+            : Timestamp.now();
+          
+          const finalData: any = {
+            productName: finalProductName,
+            quantity: finalQuantity,
+            dateAdded: addDate,
+            receivingDate: receivingDateTimestamp,
+            status,
+            inventoryType: request.inventoryType,
+            requestedBy: request.requestedBy,
+            approvedBy: adminProfile.uid,
+            approvedAt,
+            remarks: remarksToSave,
+            imageUrl: imageUrl || "",
+          };
+          
+          // Only include SKU for product type
+          if (request.inventoryType === "product" && finalSku) {
+            finalData.sku = finalSku;
+          }
+          
+          transaction.set(doc(inventoryRef), finalData);
+        }
+      });
+
+      // Generate invoice for container handling requests
+      if (request.inventoryType === "container") {
+        try {
+          const containerSize = (request as any).containerSize as string;
+          if (containerSize) {
+            // Fetch container handling pricing
+            const containerPricingRef = collection(db, `users/${userId}/containerHandlingPricing`);
+            const containerPricingQuery = query(
+              containerPricingRef,
+              where("containerSize", "==", containerSize)
+            );
+            const containerPricingSnapshot = await getDocs(containerPricingQuery);
+            
+            if (!containerPricingSnapshot.empty) {
+              const latestPricing = containerPricingSnapshot.docs
+                .sort((a, b) => {
+                  const aUpdated = a.data().updatedAt?.seconds || 0;
+                  const bUpdated = b.data().updatedAt?.seconds || 0;
+                  return bUpdated - aUpdated;
+                })[0];
+              
+              const pricing = latestPricing.data();
+              const unitPrice = pricing.price;
+              const totalAmount = unitPrice * finalQuantity;
+              
+              // Generate invoice number
+              const today = new Date();
+              const invoiceNumber = `INV-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-8)}`;
+              const orderNumber = `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`;
+              
+              // Create invoice with standard format
+              const invoiceData = {
+                invoiceNumber,
+                date: format(today, 'dd/MM/yyyy'),
+                orderNumber,
+                soldTo: {
+                  name: selectedUser.name || 'Unknown User',
+                  email: selectedUser.email || '',
+                  phone: selectedUser.phone || '',
+                  address: selectedUser.address || '',
+                },
+                fbm: 'Container Handling',
+                items: [{
+                  quantity: finalQuantity,
+                  productName: `Container Handling - ${containerSize}`,
+                  receivingDate: format(receivingDate, 'dd/MM/yyyy'),
+                  shipDate: format(receivingDate, 'dd/MM/yyyy'), // Keep for backward compatibility
+                  packaging: 'N/A',
+                  shipTo: '',
+                  unitPrice: unitPrice,
+                  amount: totalAmount,
+                }],
+                isContainerHandling: true, // Flag to identify container handling invoices
+                subtotal: totalAmount,
+                grandTotal: totalAmount,
+                status: 'pending' as const,
+                createdAt: new Date(),
+                userId: userId,
+                type: "container_handling", // Keep for reference
+                containerSize: containerSize, // Keep for reference
+              };
+              
+              await addDoc(collection(db, `users/${userId}/invoices`), invoiceData);
+              
+              console.log("Container handling invoice generated:", invoiceNumber);
+            } else {
+              console.warn("No container handling pricing found for size:", containerSize);
+            }
+          }
+        } catch (error: any) {
+          console.error("Error generating container handling invoice:", error);
+          // Log detailed error information
+          console.error("Error details:", {
+            message: error?.message,
+            code: error?.code,
+            stack: error?.stack,
+            userId: userId,
+            containerSize: (request as any).containerSize,
+            finalQuantity: finalQuantity,
+          });
+          // Don't fail the approval if invoice generation fails
+          toast({
+            variant: "destructive",
+            title: "Warning",
+            description: `Container handling request approved, but invoice generation failed: ${error?.message || "Unknown error"}. Please generate invoice manually.`,
+          });
+        }
+      }
+
+      const isRestock = (request as any).productSubType === "restock";
+      toast({
+        title: "Success",
+        description: isRestock 
+          ? "Restock request approved. Quantity added to existing product."
+          : request.inventoryType === "container"
+          ? "Container handling request approved and invoice generated."
+          : "Inventory request approved and added to inventory.",
+      });
+      setSelectedRequest(null);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to approve inventory request.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async (request: InventoryRequest, reason: string) => {
+    if (!selectedUser || !adminProfile) return;
+
+    setIsProcessing(true);
+    try {
+      const requestRef = doc(db, `users/${selectedUser.uid}/inventoryRequests`, request.id);
+      await updateDoc(requestRef, {
+        status: "rejected",
+        rejectedBy: adminProfile.uid,
+        rejectedAt: Timestamp.now(),
+        rejectionReason: reason,
+        remarks: reason, // Also save as remarks so user can see it
+      });
+
+      toast({
+        title: "Success",
+        description: "Inventory request rejected.",
+      });
+      setSelectedRequest(null);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to reject inventory request.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (!selectedUser) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-muted-foreground text-center">Select a user to manage their inventory requests.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Approved</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{approvedCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Rejected</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{rejectedCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter */}
+      <div className="flex items-center gap-4">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Requests Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Inventory Requests</CardTitle>
+          <CardDescription>
+            Review and manage inventory requests from {selectedUser.name}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <p className="text-sm text-destructive font-medium">Error loading requests:</p>
+              <p className="text-xs text-destructive/80 mt-1">{error.message}</p>
+            </div>
+          )}
+          {loading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No inventory requests found.</p>
+              {selectedUser && requests.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  User: {selectedUser.name} ({userId})
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Requested Date</TableHead>
+                    <TableHead>Receiving Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedRequests.map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell className="capitalize">{request.inventoryType}</TableCell>
+                      <TableCell className="font-medium">{request.productName}</TableCell>
+                      <TableCell>{request.quantity}</TableCell>
+                      <TableCell>{formatDate(request.requestedAt)}</TableCell>
+                      <TableCell>
+                        {request.receivingDate ? formatDate(request.receivingDate) : "N/A"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            request.status === "approved"
+                              ? "default"
+                              : request.status === "rejected"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {request.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {request.status === "pending" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedRequest(request)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Review
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">
+                            {request.status === "approved"
+                              ? `Approved ${request.approvedAt ? formatDate(request.approvedAt) : ""}`
+                              : `Rejected ${request.rejectedAt ? formatDate(request.rejectedAt) : ""}`}
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1} to {Math.min(endIndex, filteredRequests.length)} of {filteredRequests.length} requests
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Review Dialog */}
+      {selectedRequest && (
+        <ReviewRequestDialog
+          request={selectedRequest}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onClose={() => setSelectedRequest(null)}
+          isProcessing={isProcessing}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReviewRequestDialog({
+  request,
+  onApprove,
+  onReject,
+  onClose,
+  isProcessing,
+}: {
+  request: InventoryRequest;
+  onApprove: (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrl?: string) => void;
+  onReject: (request: InventoryRequest, reason: string) => void;
+  onClose: () => void;
+  isProcessing: boolean;
+}) {
+  const { toast } = useToast();
+  const { userProfile: adminProfile } = useAuth();
+  const [receivingDate, setReceivingDate] = useState<Date>(new Date());
+  const [status, setStatus] = useState<"In Stock" | "Out of Stock">("In Stock");
+  const [remarks, setRemarks] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [action, setAction] = useState<"approve" | "reject" | null>(null);
+  const [editedQuantity, setEditedQuantity] = useState<number>(request.quantity);
+  const [editedProductName, setEditedProductName] = useState<string>(request.productName);
+  const [editedSku, setEditedSku] = useState<string>((request as any).sku || "");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 1, // Maximum file size in MB
+      maxWidthOrHeight: 1920, // Maximum width or height
+      useWebWorker: true,
+      fileType: file.type,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      throw error;
+    }
+  };
+
+  const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File",
+        description: "Please select an image file.",
+      });
+      return;
+    }
+
+    // Check initial file size (before compression)
+    const maxSizeBytes = 10 * 1024 * 1024; // 10 MB initial limit
+    if (file.size > maxSizeBytes) {
+      toast({
+        variant: "destructive",
+        title: "File Too Large",
+        description: "Please select an image smaller than 10 MB. It will be compressed automatically.",
+      });
+      return;
+    }
+
+    setSelectedImage(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageUpload = async (): Promise<string | null> => {
+    if (!selectedImage || !adminProfile) return null;
+
+    try {
+      setIsUploadingImage(true);
+
+      // Compress the image
+      const compressedFile = await compressImage(selectedImage);
+
+      // Check if compressed file is still over 1 MB
+      if (compressedFile.size > 1024 * 1024) {
+        toast({
+          variant: "destructive",
+          title: "Compression Failed",
+          description: "Unable to compress image below 1 MB. Please try a different image.",
+        });
+        return null;
+      }
+
+      // Upload to Firebase Storage
+      const userId = (request as any).requestedBy || adminProfile.uid;
+      const storagePath = `inventory-images/${userId}/${Date.now()}_${compressedFile.name}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, compressedFile);
+
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      setUploadedImageUrl(downloadURL);
+      
+      toast({
+        title: "Success",
+        description: "Image uploaded successfully!",
+      });
+
+      return downloadURL;
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message || "Failed to upload image. Please try again.",
+      });
+      return null;
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    setUploadedImageUrl(null);
+  };
+
+  const handleApproveClick = async () => {
+    // Validate edited quantity
+    if (editedQuantity <= 0) {
+      return;
+    }
+
+    // Upload image if selected
+    let imageUrl = uploadedImageUrl;
+    if (selectedImage && !uploadedImageUrl) {
+      imageUrl = await handleImageUpload();
+      if (!imageUrl) {
+        // If upload failed, don't proceed with approval
+        return;
+      }
+    }
+
+    // Pass remarks, edited quantity, edited product name, edited SKU, and image URL
+    onApprove(request, receivingDate, status, remarks, editedQuantity, editedProductName, editedSku, imageUrl || undefined);
+  };
+
+  const handleRejectClick = () => {
+    if (!rejectionReason.trim()) {
+      return;
+    }
+    onReject(request, rejectionReason);
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Review Inventory Request</DialogTitle>
+          <DialogDescription>
+            Review the inventory request and approve or reject it.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Request Details */}
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Type</Label>
+                <p className="text-sm font-medium capitalize">{request.inventoryType}</p>
+              </div>
+              <div>
+                <Label>Requested Quantity</Label>
+                <p className="text-sm font-medium">{request.quantity}</p>
+              </div>
+            </div>
+            <div>
+              <Label>Requested Product Name</Label>
+              <p className="text-sm font-medium">{request.productName}</p>
+            </div>
+            <div>
+              <Label>Requested Date</Label>
+              <p className="text-sm font-medium">{formatDate(request.requestedAt)}</p>
+            </div>
+            <div>
+              <Label>Add Date (User Submitted)</Label>
+              <p className="text-sm font-medium">{formatDate(request.addDate)}</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAction("approve")}
+              className="flex-1"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setAction("reject")}
+              className="flex-1"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Reject
+            </Button>
+          </div>
+
+          {/* Approve Form */}
+          {action === "approve" && (
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="font-semibold">Approve Request</h3>
+              
+              {/* Show restock indicator */}
+              {(request as any).productSubType === "restock" && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                  <p className="text-sm font-medium text-blue-900">Restock Request</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    This will add quantity to the existing product: <strong>{request.productName}</strong>
+                  </p>
+                </div>
+              )}
+              
+              {/* Editable Product Name - Hide for restock */}
+              {!(request as any).productSubType === "restock" && (
+                <div>
+                  <Label>Product Name *</Label>
+                  <Input
+                    value={editedProductName}
+                    onChange={(e) => setEditedProductName(e.target.value)}
+                    placeholder="Enter product name"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Original: {request.productName}
+                  </p>
+                </div>
+              )}
+              
+              {/* Show product name as read-only for restock */}
+              {(request as any).productSubType === "restock" && (
+                <div>
+                  <Label>Product Name</Label>
+                  <Input
+                    value={request.productName}
+                    readOnly
+                    className="bg-muted"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Restock request - Product name cannot be changed
+                  </p>
+                </div>
+              )}
+
+              {/* Editable SKU - Only for product type */}
+              {request.inventoryType === "product" && (
+                <div>
+                  <Label>SKU *</Label>
+                  <Input
+                    value={editedSku}
+                    onChange={(e) => setEditedSku(e.target.value)}
+                    placeholder="Enter SKU"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Original: {(request as any).sku || "N/A"}
+                  </p>
+                </div>
+              )}
+
+              {/* Editable Quantity */}
+              <div>
+                <Label>Received Quantity *</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={editedQuantity}
+                  onChange={(e) => setEditedQuantity(parseInt(e.target.value) || 0)}
+                  placeholder="Enter received quantity"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Requested: {request.quantity} | Difference: {editedQuantity - request.quantity}
+                </p>
+              </div>
+
+              <div>
+                <Label>Receiving Date</Label>
+                <DatePicker date={receivingDate} setDate={setReceivingDate} />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(value: "In Stock" | "Out of Stock") => setStatus(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="In Stock">In Stock</SelectItem>
+                    <SelectItem value="Out of Stock">Out of Stock</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Admin Remarks (Optional)</Label>
+                <Textarea
+                  placeholder="Enter remarks (e.g., 10 units damaged, received 90 instead of 100)..."
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                />
+              </div>
+              
+              {/* Image Upload */}
+              <div>
+                <Label>Upload Inventory Picture (Optional)</Label>
+                <div className="space-y-2">
+                  {!imagePreview && !uploadedImageUrl && (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="flex-1"
+                        disabled={isUploadingImage}
+                      />
+                    </div>
+                  )}
+                  
+                  {(imagePreview || uploadedImageUrl) && (
+                    <div className="relative border rounded-lg p-2">
+                      <img
+                        src={uploadedImageUrl || imagePreview || ""}
+                        alt="Inventory preview"
+                        className="max-w-full h-auto max-h-64 rounded"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={handleRemoveImage}
+                        disabled={isUploadingImage}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      {selectedImage && !uploadedImageUrl && (
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Image will be uploaded when you confirm approval.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {isUploadingImage && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Uploading image...
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Upload a picture of the received inventory. Image will be shown in remarks.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleApproveClick}
+                  disabled={
+                    isProcessing || 
+                    editedQuantity <= 0 || 
+                    !editedProductName.trim() || 
+                    (request.inventoryType === "product" && !editedSku.trim())
+                  }
+                  className="flex-1"
+                >
+                  {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Confirm Approval
+                </Button>
+                <Button variant="outline" onClick={() => setAction(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Reject Form */}
+          {action === "reject" && (
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="font-semibold">Reject Request</h3>
+              <div>
+                <Label>Rejection Reason *</Label>
+                <Textarea
+                  placeholder="Enter reason for rejection..."
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={handleRejectClick}
+                  disabled={isProcessing || !rejectionReason.trim()}
+                  className="flex-1"
+                >
+                  {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Confirm Rejection
+                </Button>
+                <Button variant="outline" onClick={() => setAction(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+

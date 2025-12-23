@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+
+
+<head>
+    <title>Clear Firestore Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clear Firestore Cache</h1>
+        <p>This will clear all Firestore IndexedDB data and browser storage to fix permission errors.</p>
+        <button onclick="clearAllCache()">Clear All Cache Now</button>
+        <div id="status"></div>
+    </div>
+    <script>
+        async function clearAllCache() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p>Clearing cache...</p>';
+            
+            try {
+                // Clear IndexedDB
+                const databases = await indexedDB.databases();
+                let cleared = 0;
+                for (const db of databases) {
+                    if (db.name && (db.name.includes('firestore') || db.name.includes('firebase'))) {
+                        await new Promise((resolve, reject) => {
+                            const deleteReq = indexedDB.deleteDatabase(db.name);
+                            deleteReq.onsuccess = () => {
+                                console.log('Deleted:', db.name);
+                                cleared++;
+                                resolve();
+                            };
+                            deleteReq.onerror = () => {
+                                console.error('Error deleting:', db.name);
+                                resolve(); // Continue even if one fails
+                            };
+                        });
+                    }
+                }
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = `
+                    <div class="status success">
+                        <p><strong>✅ Success!</strong></p>
+                        <p>Cleared ${cleared} Firestore databases and all browser storage.</p>
+                        <p><strong>Next steps:</strong></p>
+                        <ol>
+                            <li>Close this tab</li>
+                            <li>Go back to your app</li>
+                            <li>Press Ctrl + Shift + R to hard refresh</li>
+                            <li>Log in again</li>
+                        </ol>
+                    </div>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        <p><strong>❌ Error:</strong> ${error.message}</p>
+                        <p>Please clear cache manually in DevTools (F12 → Application → IndexedDB)</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', () => {
+            clearAllCache();
+        });
+    </script>
+</body>
+</html>
+

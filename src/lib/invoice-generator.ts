@@ -14,6 +14,15 @@ interface InvoiceData {
   orderNumber: string;
   soldTo: User;
   fbm: string;
+  additionalServices?: {
+    bubbleWrapFeet?: number;
+    stickerRemovalItems?: number;
+    warningLabels?: number;
+    pricePerFoot?: number;
+    pricePerItem?: number;
+    pricePerLabel?: number;
+    total?: number;
+  };
   items: Array<{
     quantity: number;
     productName: string;
@@ -25,6 +34,14 @@ interface InvoiceData {
   }>;
   userId?: string;
   status?: 'pending' | 'paid';
+  subtotal?: number;
+  grandTotal?: number;
+  grossTotal?: number;
+  discountType?: "amount" | "percent";
+  discountValue?: number;
+  discountAmount?: number;
+  type?: string;
+  isContainerHandling?: boolean;
 }
 
 export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
@@ -246,7 +263,28 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   });
   
   // Calculate totals
-  const subtotal = data.items.reduce((sum, item) => sum + item.amount, 0);
+  const itemsSubtotal = data.items.reduce((sum, item) => sum + item.amount, 0);
+  const additionalTotal = Number(data.additionalServices?.total || 0);
+  const computedGrossTotal = itemsSubtotal + (Number.isFinite(additionalTotal) ? additionalTotal : 0);
+
+  const storedDiscountAmount = typeof data.discountAmount === "number" ? data.discountAmount : undefined;
+  const discountType = data.discountType;
+  const discountValue = typeof data.discountValue === "number" ? data.discountValue : undefined;
+
+  let discountAmount = 0;
+  if (typeof storedDiscountAmount === "number") {
+    discountAmount = storedDiscountAmount;
+  } else if (discountType === "percent" && typeof discountValue === "number") {
+    discountAmount = computedGrossTotal * (discountValue / 100);
+  } else if (discountType === "amount" && typeof discountValue === "number") {
+    discountAmount = discountValue;
+  }
+  discountAmount = Math.max(0, Math.min(computedGrossTotal, discountAmount || 0));
+
+  const finalTotal =
+    typeof data.grandTotal === "number"
+      ? data.grandTotal
+      : Math.max(0, computedGrossTotal - discountAmount);
   
   // Summary section
   const summaryStartY = currentY + 10;
@@ -257,8 +295,70 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('GRAND TOTAL', margin, summaryStartY + 12);
-  doc.text(`TOTAL: $${subtotal.toFixed(2)}`, pageWidth - rightGutter - 50, summaryStartY + 12);
+  // Breakdown
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Items Subtotal: $${itemsSubtotal.toFixed(2)}`, margin, summaryStartY + 7);
+  let summaryLineY = summaryStartY + 12;
+  
+  // Additional Services Breakdown
+  if (data.additionalServices && additionalTotal > 0.0001) {
+    const add = data.additionalServices;
+    const services: string[] = [];
+    
+    if ((add.bubbleWrapFeet || 0) > 0 && (add.pricePerFoot || 0) > 0) {
+      const qty = add.bubbleWrapFeet || 0;
+      const price = add.pricePerFoot || 0;
+      const amt = qty * price;
+      services.push(`Bubble Wrap: ${qty} ft @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+    }
+    
+    if ((add.stickerRemovalItems || 0) > 0 && (add.pricePerItem || 0) > 0) {
+      const qty = add.stickerRemovalItems || 0;
+      const price = add.pricePerItem || 0;
+      const amt = qty * price;
+      services.push(`Sticker Removal: ${qty} items @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+    }
+    
+    if ((add.warningLabels || 0) > 0 && (add.pricePerLabel || 0) > 0) {
+      const qty = add.warningLabels || 0;
+      const price = add.pricePerLabel || 0;
+      const amt = qty * price;
+      services.push(`Warning Labels: ${qty} labels @ $${price.toFixed(2)} = $${amt.toFixed(2)}`);
+    }
+    
+    if (services.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('Additional Services:', margin, summaryLineY);
+      summaryLineY += 5;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      services.forEach((service) => {
+        doc.text(service, margin + 5, summaryLineY);
+        summaryLineY += 4;
+      });
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`Total Additional Services: $${additionalTotal.toFixed(2)}`, margin, summaryLineY);
+      summaryLineY += 5;
+    } else {
+      // Fallback: just show total if breakdown not available
+      doc.text(`Additional Services: $${additionalTotal.toFixed(2)}`, margin, summaryLineY);
+      summaryLineY += 5;
+    }
+  }
+  if (discountAmount > 0.009) {
+    doc.text(`Discount: -$${discountAmount.toFixed(2)}`, margin, summaryLineY);
+    summaryLineY += 5;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('GRAND TOTAL', margin, summaryLineY + 6);
+  doc.text(`TOTAL: $${finalTotal.toFixed(2)}`, pageWidth - rightGutter - 50, summaryLineY + 6);
   
   // Footer
   doc.setFont('helvetica', 'italic');

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { InventoryItem, ShippedItem } from "@/types";
+import type { InventoryItem, ShippedItem, ShipmentRequest } from "@/types";
 import { getShipmentSummary } from "@/lib/shipment-utils";
 import {
   Card,
@@ -22,8 +22,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Filter, X, Eye } from "lucide-react";
+import { Search, Filter, X, Eye, Clock, XCircle } from "lucide-react";
 import { format } from "date-fns";
+import { useCollection } from "@/hooks/use-collection";
+import { useAuth } from "@/hooks/use-auth";
+import { Badge } from "@/components/ui/badge";
 
 function formatDate(date: ShippedItem["date"]) {
     if (typeof date === 'string') {
@@ -36,6 +39,7 @@ function formatDate(date: ShippedItem["date"]) {
   }
 
 export function ShippedTable({ data, inventory }: { data: ShippedItem[], inventory: InventoryItem[] }) {
+  const { userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -44,6 +48,18 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
   const [selectedShipTo, setSelectedShipTo] = useState<string>("");
   const [isShipToDialogOpen, setIsShipToDialogOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Array<{productName: string, quantity: number, packOf: number, shippedQty: number, unitPrice: number}>>([]);
+  const [isProductsDialogOpen, setIsProductsDialogOpen] = useState(false);
+  const [selectedAdditionalServices, setSelectedAdditionalServices] = useState<any>(null);
+  const [isAdditionalServicesDialogOpen, setIsAdditionalServicesDialogOpen] = useState(false);
+
+  // Fetch pending shipment requests
+  const { data: pendingShipmentRequests } = useCollection<ShipmentRequest>(
+    userProfile ? `users/${userProfile.uid}/shipmentRequests` : ""
+  );
+
+  const pendingCount = pendingShipmentRequests.filter(req => req.status === "pending").length;
+  const rejectedCount = pendingShipmentRequests.filter(req => req.status?.toLowerCase() === "rejected").length;
 
   const handleRemarksClick = (remarks: string) => {
     setSelectedRemarks(remarks);
@@ -55,9 +71,110 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
     setIsShipToDialogOpen(true);
   };
 
+  const handleProductsClick = (products: Array<{productName: string, quantity: number, packOf: number, shippedQty: number, unitPrice: number}>) => {
+    setSelectedProducts(products);
+    setIsProductsDialogOpen(true);
+  };
+
+  const handleAdditionalServicesClick = (additionalServices: any) => {
+    setSelectedAdditionalServices(additionalServices);
+    setIsAdditionalServicesDialogOpen(true);
+  };
+
+  // Combine shipped items, pending, and rejected shipment requests into one list
+  const combinedData = useMemo(() => {
+    // Helper function to convert a single shipment from request to display format
+    const convertShipmentToDisplay = (req: ShipmentRequest, shipment: any, status: "Pending" | "Rejected", index: number) => {
+      const inventoryItem = inventory.find(item => item.id === shipment.productId);
+      const productUnits = (shipment.quantity || 0) * (shipment.packOf || 1);
+      
+      return {
+        id: `request-${req.id}-${index}`,
+        productName: inventoryItem?.productName || "Unknown Product",
+        date: req.date,
+        shippedQty: productUnits,
+        boxesShipped: shipment.quantity || 0,
+        packOf: shipment.packOf || 1,
+        unitPrice: shipment.unitPrice || 0,
+        shipTo: req.shipTo || "",
+        service: req.service || "FBA/WFS/TFS",
+        productType: req.productType || "Standard",
+        remarks: status === "Rejected" ? ((req as any).rejectionReason || req.remarks || "") : (req.remarks || ""),
+        status: status as "Pending" | "Shipped" | "Rejected",
+        isRequest: true,
+        requestId: req.id,
+        createdAt: req.requestedAt,
+        additionalServices: shipment.selectedAdditionalServices || (req as any).additionalServices,
+      };
+    };
+
+    // Convert pending shipment requests - expand each shipment into separate row
+    const pendingItems: any[] = [];
+    pendingShipmentRequests
+      .filter(req => req.status === "pending")
+      .forEach(req => {
+        req.shipments.forEach((shipment, index) => {
+          pendingItems.push(convertShipmentToDisplay(req, shipment, "Pending", index));
+        });
+      });
+
+    // Convert rejected shipment requests - expand each shipment into separate row
+    const rejectedItems: any[] = [];
+    pendingShipmentRequests
+      .filter(req => req.status?.toLowerCase() === "rejected")
+      .forEach(req => {
+        req.shipments.forEach((shipment, index) => {
+          rejectedItems.push(convertShipmentToDisplay(req, shipment, "Rejected", index));
+        });
+      });
+
+    // Convert shipped items - expand items array into separate rows
+    const shippedItems: any[] = [];
+    data.forEach(item => {
+      // Check if item has an items array (multiple products)
+      if (item.items && Array.isArray(item.items) && item.items.length > 0) {
+        item.items.forEach((it: any) => {
+          shippedItems.push({
+            ...item,
+            id: `${item.id}-${it.productId || Math.random()}`,
+            productName: it.productName || item.productName,
+            shippedQty: it.shippedQty || 0,
+            boxesShipped: it.boxesShipped || 0,
+            packOf: it.packOf || item.packOf || 1,
+            unitPrice: it.unitPrice || item.unitPrice || 0,
+            status: "Shipped" as "Pending" | "Shipped" | "Rejected",
+            isRequest: false,
+            additionalServices: it.additionalServices || item.additionalServices || (item as any).selectedAdditionalServices,
+          });
+        });
+      } else {
+        // Single product
+        shippedItems.push({
+          ...item,
+          status: "Shipped" as "Pending" | "Shipped" | "Rejected",
+          isRequest: false,
+          additionalServices: item.additionalServices || (item as any).selectedAdditionalServices,
+        });
+      }
+    });
+
+    // Combine and sort (most recent first)
+    const allItems = [...pendingItems, ...rejectedItems, ...shippedItems];
+    
+    return allItems.sort((a, b) => {
+      const aCreated = a.createdAt
+        ? (typeof a.createdAt === 'string' ? new Date(a.createdAt) : new Date(a.createdAt.seconds * 1000))
+        : (typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000));
+      const bCreated = b.createdAt
+        ? (typeof b.createdAt === 'string' ? new Date(b.createdAt) : new Date(b.createdAt.seconds * 1000))
+        : (typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000));
+      return bCreated.getTime() - aCreated.getTime();
+    });
+  }, [data, pendingShipmentRequests, inventory]);
+
   // Filtered and sorted shipped data (most recent first)
   const filteredData = useMemo(() => {
-    const filtered = data.filter((item) => {
+    const filtered = combinedData.filter((item) => {
       const matchesSearch = item.productName.toLowerCase().includes(searchTerm.toLowerCase());
       
       let matchesDate = true;
@@ -87,17 +204,8 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
       return matchesSearch && matchesDate;
     });
 
-    // Sort by createdAt when available, otherwise by date (most recent first)
-    return filtered.sort((a, b) => {
-      const aCreated = a.createdAt
-        ? (typeof a.createdAt === 'string' ? new Date(a.createdAt) : new Date(a.createdAt.seconds * 1000))
-        : (typeof a.date === 'string' ? new Date(a.date) : new Date(a.date.seconds * 1000));
-      const bCreated = b.createdAt
-        ? (typeof b.createdAt === 'string' ? new Date(b.createdAt) : new Date(b.createdAt.seconds * 1000))
-        : (typeof b.date === 'string' ? new Date(b.date) : new Date(b.date.seconds * 1000));
-      return bCreated.getTime() - aCreated.getTime();
-    });
-  }, [data, searchTerm, dateFilter]);
+    return filtered;
+  }, [combinedData, searchTerm, dateFilter]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -113,10 +221,34 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
   return (
     <Card className="w-full">
       <CardHeader className="pb-2 sm:pb-6">
-        <CardTitle className="text-base sm:text-lg lg:text-xl">Order Shipped ({filteredData.length})</CardTitle>
-        <CardDescription className="text-xs sm:text-sm">
-          Details of products that have been shipped.
-        </CardDescription>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <CardTitle className="text-base sm:text-lg lg:text-xl">
+              Order Shipped ({filteredData.filter((item: any) => !item.isRequest || (item.status !== "Pending" && item.status !== "Rejected")).length})
+              {pendingCount > 0 && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({pendingCount} Pending)
+                </span>
+              )}
+              {rejectedCount > 0 && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({rejectedCount} Rejected)
+                </span>
+              )}
+            </CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
+              Details of products that have been shipped.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-3">
+            {pendingCount > 0 && (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {pendingCount} Pending
+              </Badge>
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-0 sm:p-6">
         {/* Search and Filter Controls */}
@@ -209,11 +341,27 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                     </Button>
                   </div>
                 )}
+                <div className="mt-2">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  {(item as any).status === "Pending" ? (
+                    <Badge variant="outline" className="flex items-center gap-1 w-fit mt-1">
+                      <Clock className="h-3 w-3" />
+                      Pending
+                    </Badge>
+                  ) : (item as any).status === "Rejected" ? (
+                    <Badge variant="destructive" className="flex items-center gap-1 w-fit mt-1">
+                      <XCircle className="h-3 w-3" />
+                      Rejected
+                    </Badge>
+                  ) : (
+                    <Badge variant="default" className="w-fit mt-1">Shipped</Badge>
+                  )}
+                </div>
               </div>
             ))
           ) : (
             <div className="text-center py-8 text-xs text-gray-500">
-              {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
+              {combinedData.length === 0 ? "No shipped orders or pending requests found." : "No orders match your search criteria."}
             </div>
           )}
         </div>
@@ -227,8 +375,12 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                   <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Date</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden sm:table-cell">Shipped</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden md:table-cell">Pack</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden md:table-cell">Service</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden md:table-cell">Product Type</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden md:table-cell">Ship To</TableHead>
                   <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Remarks</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden lg:table-cell">Additional Services</TableHead>
+                  <TableHead className="text-xs sm:text-sm">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -244,6 +396,41 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                             <span>Shipped Units: {(item as any).boxesShipped ?? item.shippedQty}</span>
                             <br />
                             <span>Pack: {item.packOf}</span>
+                            <br />
+                            <span>Service: {(item as any).service || "N/A"}</span>
+                            <br />
+                            <span>Product Type: {(item as any).productType === "Standard"
+                              ? "Standard (6x6x6)"
+                              : (item as any).productType === "Large"
+                              ? "Large (10x10x10)"
+                              : (item as any).productType || "N/A"}</span>
+                            {(() => {
+                              const additionalServices = (item as any).additionalServices;
+                              const hasServices = additionalServices && (
+                                (Array.isArray(additionalServices) && additionalServices.length > 0) ||
+                                (typeof additionalServices === 'object' && (
+                                  additionalServices.bubbleWrapFeet > 0 ||
+                                  additionalServices.stickerRemovalItems > 0 ||
+                                  additionalServices.warningLabels > 0
+                                ))
+                              );
+                              return hasServices ? (
+                                <>
+                                  <br />
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-semibold">Additional Services:</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-auto p-0 text-xs text-gray-500"
+                                      onClick={() => handleAdditionalServicesClick(additionalServices)}
+                                    >
+                                      <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
+                                    </Button>
+                                  </div>
+                                </>
+                              ) : null;
+                            })()}
                             <br />
                             <Button
                               variant="ghost"
@@ -268,6 +455,22 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                                 </Button>
                               </>
                             )}
+                            <br />
+                            <span>
+                              Status: {(item as any).status === "Pending" ? (
+                                <Badge variant="outline" className="ml-1">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Pending
+                                </Badge>
+                              ) : (item as any).status === "Rejected" ? (
+                                <Badge variant="destructive" className="ml-1">
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Rejected
+                                </Badge>
+                              ) : (
+                                <Badge variant="default" className="ml-1">Shipped</Badge>
+                              )}
+                            </span>
                           </div>
                         </div>
                       </TableCell>
@@ -276,6 +479,16 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">{(item as any).boxesShipped ?? item.shippedQty}</TableCell>
                       <TableCell className="hidden md:table-cell">{item.packOf}</TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {(item as any).service || "N/A"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {(item as any).productType === "Standard"
+                          ? "Standard (6x6x6)"
+                          : (item as any).productType === "Large"
+                          ? "Large (10x10x10)"
+                          : (item as any).productType || "N/A"}
+                      </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <Button
                           variant="ghost"
@@ -302,13 +515,53 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {(() => {
+                          const additionalServices = (item as any).additionalServices;
+                          const hasServices = additionalServices && (
+                            (Array.isArray(additionalServices) && additionalServices.length > 0) ||
+                            (typeof additionalServices === 'object' && (
+                              additionalServices.bubbleWrapFeet > 0 ||
+                              additionalServices.stickerRemovalItems > 0 ||
+                              additionalServices.warningLabels > 0
+                            ))
+                          );
+                          return hasServices ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-1"
+                              onClick={() => handleAdditionalServicesClick(additionalServices)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(item as any).status === "Pending" ? (
+                          <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                            <Clock className="h-3 w-3" />
+                            Pending
+                          </Badge>
+                        ) : (item as any).status === "Rejected" ? (
+                          <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                            <XCircle className="h-3 w-3" />
+                            Rejected
+                          </Badge>
+                        ) : (
+                          <Badge variant="default" className="w-fit">Shipped</Badge>
+                        )}
+                      </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <div className="text-xs sm:text-sm text-gray-500">
-                        {data.length === 0 ? "No shipped orders found." : "No orders match your search criteria."}
+                        {combinedData.length === 0 ? "No shipped orders or pending requests found." : "No orders match your search criteria."}
                       </div>
                 </TableCell>
               </TableRow>
@@ -381,6 +634,109 @@ export function ShippedTable({ data, inventory }: { data: ShippedItem[], invento
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Products Dialog */}
+      <Dialog open={isProductsDialogOpen} onOpenChange={setIsProductsDialogOpen}>
+        <DialogContent className="max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>All Products in Shipment</DialogTitle>
+            <DialogDescription>Complete list of products in this shipment order</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 overflow-y-auto max-h-[60vh]">
+            <div className="space-y-4">
+              {selectedProducts.map((product, index) => (
+                <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                  <div className="font-semibold text-sm mb-2">{product.productName}</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Quantity (Boxes):</span>
+                      <span className="ml-2 font-medium">{product.quantity}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Pack Of:</span>
+                      <span className="ml-2 font-medium">{product.packOf}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total Units:</span>
+                      <span className="ml-2 font-medium">{product.shippedQty}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Unit Price:</span>
+                      <span className="ml-2 font-medium">${product.unitPrice.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Additional Services Dialog */}
+      <Dialog open={isAdditionalServicesDialogOpen} onOpenChange={setIsAdditionalServicesDialogOpen}>
+        <DialogContent className="max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Additional Services</DialogTitle>
+            <DialogDescription>Complete list of additional services for this shipment</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 overflow-y-auto max-h-[60vh]">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              {selectedAdditionalServices ? (
+                <div className="space-y-3">
+                  {Array.isArray(selectedAdditionalServices) ? (
+                    // New array format
+                    selectedAdditionalServices.length > 0 ? (
+                      selectedAdditionalServices.map((service: string, index: number) => (
+                        <div key={index} className="text-sm">
+                          <span className="font-medium">â€¢ </span>
+                          <span className="capitalize">
+                            {service === "bubbleWrap" ? "Bubble Wrap" :
+                             service === "stickerRemoval" ? "Sticker Removal" :
+                             service === "warningLabels" ? "Warning Labels" :
+                             service}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No additional services selected</p>
+                    )
+                  ) : (
+                    // Old object format
+                    <>
+                      {selectedAdditionalServices.bubbleWrapFeet > 0 && (
+                        <div className="text-sm">
+                          <span className="font-medium">â€¢ Bubble Wrap:</span>
+                          <span className="ml-2">{selectedAdditionalServices.bubbleWrapFeet} feet</span>
+                        </div>
+                      )}
+                      {selectedAdditionalServices.stickerRemovalItems > 0 && (
+                        <div className="text-sm">
+                          <span className="font-medium">â€¢ Sticker Removal:</span>
+                          <span className="ml-2">{selectedAdditionalServices.stickerRemovalItems} items</span>
+                        </div>
+                      )}
+                      {selectedAdditionalServices.warningLabels > 0 && (
+                        <div className="text-sm">
+                          <span className="font-medium">â€¢ Warning Labels:</span>
+                          <span className="ml-2">{selectedAdditionalServices.warningLabels} labels</span>
+                        </div>
+                      )}
+                      {(!selectedAdditionalServices.bubbleWrapFeet || selectedAdditionalServices.bubbleWrapFeet === 0) &&
+                       (!selectedAdditionalServices.stickerRemovalItems || selectedAdditionalServices.stickerRemovalItems === 0) &&
+                       (!selectedAdditionalServices.warningLabels || selectedAdditionalServices.warningLabels === 0) && (
+                        <p className="text-sm text-muted-foreground">No additional services selected</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No additional services available</p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
+

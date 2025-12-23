@@ -764,3 +764,10 @@ export function PDFUpload({ userId, userName, inventory = [], onUploadSuccess }:
     </div>
   );
 }
+
+
+
+
+
+
+

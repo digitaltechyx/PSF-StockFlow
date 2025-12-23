@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, Query } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, clearFirestoreCache } from '@/lib/firebase';
 
 export function useCollection<T>(path: string, firestoreQuery?: Query) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const clearAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (!path) {
@@ -26,9 +27,54 @@ export function useCollection<T>(path: string, firestoreQuery?: Query) {
         });
         setData(docs);
         setLoading(false);
-      }, (err) => {
-        console.error(err);
-        setError(err);
+        setError(null); // Clear error on success
+        clearAttemptedRef.current = false; // Reset on success
+      }, async (err: any) => {
+        // Handle abort errors gracefully - these happen when component unmounts or navigation occurs
+        if (err?.message?.includes('aborted') || 
+            err?.message?.includes('user aborted') ||
+            err?.code === 'cancelled') {
+          // This is normal - component unmounted or user navigated away
+          // Don't log as error, just silently ignore
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        console.error('Firestore error for path:', path, err);
+        
+        // Handle internal assertion failures - these indicate corrupted client state
+        if (err?.message?.includes('INTERNAL ASSERTION FAILED') || 
+            err?.message?.includes('Unexpected state')) {
+          console.error('âš ï¸ Firestore client is corrupted! Attempting to clear cache...');
+          
+          // Only attempt to clear once per component mount
+          if (!clearAttemptedRef.current) {
+            clearAttemptedRef.current = true;
+            const cleared = await clearFirestoreCache();
+            if (cleared) {
+              console.log('âœ… Cache cleared. Please refresh the page (F5) to reload.');
+              // Show alert to user
+              if (typeof window !== 'undefined') {
+                alert('Firestore cache has been cleared. Please refresh the page (F5) to continue.');
+              }
+            }
+          }
+          
+          // Don't set error to prevent UI breakage, but log it
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        // Only set error if it's a permission error
+        if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+          setError(err);
+        } else {
+          // For other errors, log but don't break the UI
+          console.warn('Firestore error (non-critical):', err);
+          setError(null);
+        }
         setLoading(false);
       });
 
@@ -42,3 +88,4 @@ export function useCollection<T>(path: string, firestoreQuery?: Query) {
 
   return { data, loading, error };
 }
+

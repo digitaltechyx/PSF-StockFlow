@@ -28,6 +28,10 @@ import {
   Truck,
   Users,
   UserCheck,
+  DollarSign,
+  Upload,
+  FileUp,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -67,15 +71,6 @@ export function DashboardSidebar() {
       color: "text-blue-600",
       requiredRole: "user" as const,
       requiredFeature: null as string | null,
-    },
-    {
-      title: "Upload Labels",
-      url: "/dashboard/labels",
-      icon: Package,
-      color: "text-indigo-600",
-      badge: null,
-      requiredRole: "user" as const,
-      requiredFeature: "upload_labels" as const,
     },
     {
       title: "Buy Labels",
@@ -136,6 +131,33 @@ export function DashboardSidebar() {
       badge: pendingInvoicesCount > 0 ? pendingInvoicesCount : null,
       requiredRole: "user" as const,
       requiredFeature: "view_invoices" as const,
+    },
+    {
+      title: "My Pricing",
+      url: "/dashboard/pricing",
+      icon: DollarSign,
+      color: "text-green-600",
+      badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: null,
+    },
+    {
+      title: "Product Returns",
+      url: "/dashboard/product-returns",
+      icon: ArrowLeftRight,
+      color: "text-orange-600",
+      badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: null,
+    },
+    {
+      title: "Create Shipment",
+      url: "/dashboard/create-shipment-with-labels",
+      icon: Upload,
+      color: "text-indigo-600",
+      badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: null,
     },
     {
       title: "Affiliate",
@@ -252,3 +274,4 @@ export function DashboardSidebar() {
     </Sidebar>
   );
 }
+

@@ -61,13 +61,39 @@ export async function GET(request: NextRequest) {
     });
 
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.text();
+      let errorData: any;
+      try {
+        errorData = await tokenResponse.json();
+      } catch {
+        errorData = await tokenResponse.text();
+      }
+      
       console.error('Token refresh error:', errorData);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to refresh access token';
+      let hint = 'Your refresh token may be expired or invalid. Please re-authenticate by visiting /api/drive/auth';
+      
+      if (errorData.error) {
+        if (errorData.error === 'invalid_grant') {
+          errorMessage = 'Refresh token is invalid or expired';
+          hint = 'Please re-authenticate Google Drive by visiting /api/drive/auth to get a new refresh token';
+        } else if (errorData.error === 'invalid_client') {
+          errorMessage = 'Google OAuth credentials are invalid';
+          hint = 'Please check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables';
+        } else {
+          errorMessage = `Token refresh failed: ${errorData.error}`;
+          if (errorData.error_description) {
+            hint = errorData.error_description;
+          }
+        }
+      }
+      
       return NextResponse.json(
         { 
-          error: 'Failed to refresh access token',
+          error: errorMessage,
           details: errorData,
-          hint: 'Your refresh token may be expired. Please re-authenticate.'
+          hint: hint
         },
         { status: 500 }
       );

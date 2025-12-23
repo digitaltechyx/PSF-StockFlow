@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, disableNetwork, enableNetwork, clearIndexedDbPersistence } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 // IMPORTANT: Replace with your own Firebase configuration
@@ -33,4 +33,44 @@ if (typeof window !== "undefined") {
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// Utility function to clear Firestore persistence (call this when client is corrupted)
+export async function clearFirestoreCache() {
+  if (typeof window === "undefined") return;
+  
+  try {
+    // Clear IndexedDB
+    const databases = await indexedDB.databases();
+    for (const dbInfo of databases) {
+      if (dbInfo.name && (dbInfo.name.includes('firestore') || dbInfo.name.includes('firebase'))) {
+        await new Promise((resolve, reject) => {
+          const deleteReq = indexedDB.deleteDatabase(dbInfo.name!);
+          deleteReq.onsuccess = () => resolve(undefined);
+          deleteReq.onerror = () => reject(deleteReq.error);
+        });
+      }
+    }
+    
+    // Clear localStorage and sessionStorage
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Try to clear Firestore persistence
+    try {
+      await clearIndexedDbPersistence(db);
+    } catch (err: any) {
+      // Ignore if persistence is in use or doesn't exist
+      if (err.code !== 'failed-precondition') {
+        console.warn('Could not clear Firestore persistence:', err.message);
+      }
+    }
+    
+    console.log('âœ… Firestore cache cleared! Please refresh the page.');
+    return true;
+  } catch (error) {
+    console.error('Error clearing Firestore cache:', error);
+    return false;
+  }
+}
+
 export { app, auth, db, storage };
+

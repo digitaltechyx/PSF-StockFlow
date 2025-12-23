@@ -283,13 +283,13 @@ export default function RegisterAgentPage() {
                                   name="salesExperienceOther"
                                   render={({ field: otherField }) => (
                                     <FormItem>
-                                      <FormControl>
+                    <FormControl>
                                         <Input placeholder="Please specify" {...otherField} />
-                                      </FormControl>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
                               )}
                             </div>
                           </FormItem>

@@ -1,0 +1,1895 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import type { ProductReturn, UserProfile, InventoryItem } from "@/types";
+import { useCollection } from "@/hooks/use-collection";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import {
+  doc,
+  updateDoc,
+  addDoc,
+  collection,
+  Timestamp,
+  runTransaction,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
+import { format } from "date-fns";
+import {
+  Eye,
+  Check,
+  X,
+  Loader2,
+  Package,
+  Truck,
+  Plus,
+  XCircle,
+  CheckCircle,
+  Clock,
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { generateInvoicePDF } from "@/lib/invoice-generator";
+
+function formatDate(date: ProductReturn["createdAt"]) {
+  if (!date) return "N/A";
+  if (typeof date === 'string') {
+    return format(new Date(date), "PPP");
+  }
+  if (date && typeof date === 'object' && 'seconds' in date) {
+    return format(new Date(date.seconds * 1000), "PPP");
+  }
+  return "N/A";
+}
+
+function getStatusBadge(status: ProductReturn["status"]) {
+  switch (status) {
+    case "pending":
+      return <Badge variant="outline" className="flex items-center gap-1 w-fit"><Clock className="h-3 w-3" />Pending</Badge>;
+    case "approved":
+      return <Badge variant="default" className="flex items-center gap-1 w-fit"><CheckCircle className="h-3 w-3" />Approved</Badge>;
+    case "in_progress":
+      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-blue-500"><Package className="h-3 w-3" />In Progress</Badge>;
+    case "closed":
+      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-green-500"><CheckCircle className="h-3 w-3" />Closed</Badge>;
+    case "cancelled":
+      return <Badge variant="destructive" className="flex items-center gap-1 w-fit"><XCircle className="h-3 w-3" />Cancelled</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+interface ProductReturnsManagementProps {
+  selectedUser: UserProfile | null;
+  inventory: InventoryItem[];
+  initialReturnId?: string;
+}
+
+export function ProductReturnsManagement({
+  selectedUser,
+  inventory,
+  initialReturnId,
+}: ProductReturnsManagementProps) {
+  const { toast } = useToast();
+  const { userProfile: adminProfile } = useAuth();
+  const [selectedReturn, setSelectedReturn] = useState<ProductReturn | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isUpdateQuantityOpen, setIsUpdateQuantityOpen] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [isShipDialogOpen, setIsShipDialogOpen] = useState(false);
+  const [newQuantity, setNewQuantity] = useState<string>("");
+  const [quantityNotes, setQuantityNotes] = useState<string>("");
+  const [rejectReason, setRejectReason] = useState<string>("");
+  const [shipQuantity, setShipQuantity] = useState<string>("");
+  const [shipTo, setShipTo] = useState<string>("");
+  const [shipNotes, setShipNotes] = useState<string>("");
+  const [generateInvoiceOnClose, setGenerateInvoiceOnClose] = useState(true);
+  const [generateInvoiceOnShip, setGenerateInvoiceOnShip] = useState(false);
+
+  // Pricing form state
+  const [returnFee, setReturnFee] = useState<string>("");
+  const [packingFee, setPackingFee] = useState<string>("");
+  const [boxQuantity, setBoxQuantity] = useState<string>("");
+  const [boxPricePerUnit, setBoxPricePerUnit] = useState<string>("");
+  const [palletFee, setPalletFee] = useState<string>("");
+  const [palletQuantity, setPalletQuantity] = useState<string>("");
+  const [palletPricePerUnit, setPalletPricePerUnit] = useState<string>("");
+  // Used in "Ship Products" dialog (admin enters total shipping cost for that shipment)
+  const [shippingFee, setShippingFee] = useState<string>("");
+  // Used in "Ship Products" dialog (admin enters per-unit shipping price; total is auto-calculated)
+  const [shipShippingUnitPrice, setShipShippingUnitPrice] = useState<string>("");
+  // Used in "Close Return Request" dialog (admin enters per-unit shipping price; total uses remaining qty)
+  const [closeShippingUnitPrice, setCloseShippingUnitPrice] = useState<string>("");
+
+  const userId = selectedUser?.uid || selectedUser?.id;
+  const isValidUserId = userId && typeof userId === 'string' && userId.trim() !== '';
+
+  const { data: returns, loading, error } = useCollection<ProductReturn>(
+    isValidUserId ? `users/${userId}/productReturns` : ""
+  );
+
+  const [didAutoOpen, setDidAutoOpen] = useState(false);
+  useEffect(() => {
+    if (didAutoOpen) return;
+    if (!initialReturnId) return;
+    if (!returns || returns.length === 0) return;
+    const match = returns.find((r: any) => r.id === initialReturnId);
+    if (match) {
+      setSelectedReturn(match);
+      setIsDetailsOpen(true);
+      setDidAutoOpen(true);
+    }
+  }, [didAutoOpen, initialReturnId, returns]);
+
+  const filteredReturns = useMemo(() => {
+    let filtered = statusFilter === "all" ? returns : returns.filter((r) => r.status === statusFilter);
+    
+    // Sort by createdAt (newest first)
+    filtered = [...filtered].sort((a, b) => {
+      const getDate = (returnItem: ProductReturn) => {
+        if (returnItem.createdAt) {
+          if (typeof returnItem.createdAt === 'string') {
+            return new Date(returnItem.createdAt).getTime();
+          }
+          if (returnItem.createdAt && typeof returnItem.createdAt === 'object' && 'seconds' in returnItem.createdAt) {
+            return (returnItem.createdAt as any).seconds * 1000;
+          }
+        }
+        return 0;
+      };
+      
+      const dateA = getDate(a);
+      const dateB = getDate(b);
+      return dateB - dateA; // Descending order (newest first)
+    });
+    
+    return filtered;
+  }, [returns, statusFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedReturns = filteredReturns.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
+
+  const pendingCount = returns.filter((r) => r.status === "pending").length;
+  const inProgressCount = returns.filter((r) => r.status === "in_progress").length;
+  const closedCount = returns.filter((r) => r.status === "closed").length;
+
+  const handleApprove = async (returnItem: ProductReturn) => {
+    if (!selectedUser || !adminProfile) return;
+
+    setIsProcessing(true);
+    try {
+      const returnRef = doc(db, `users/${userId}/productReturns`, returnItem.id);
+      const now = Timestamp.now();
+
+      await updateDoc(returnRef, {
+        status: "approved",
+        approvedAt: now,
+        approvedBy: adminProfile.uid,
+        updatedAt: now,
+      });
+
+      // Initialize receiving log if it doesn't exist
+      if (!returnItem.receivingLog) {
+        await updateDoc(returnRef, {
+          receivingLog: [],
+        });
+      }
+
+      toast({
+        title: "Success",
+        description: "Return request approved.",
+      });
+      setIsDetailsOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to approve return request.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedReturn || !selectedUser || !adminProfile) return;
+
+    if (!rejectReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please provide a reason for rejection.",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const returnRef = doc(db, `users/${userId}/productReturns`, selectedReturn.id);
+      const now = Timestamp.now();
+
+      await updateDoc(returnRef, {
+        status: "cancelled",
+        adminRemarks: rejectReason,
+        updatedAt: now,
+      });
+
+      toast({
+        title: "Success",
+        description: "Return request rejected.",
+      });
+      setIsDetailsOpen(false);
+      setIsRejectDialogOpen(false);
+      setRejectReason("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to reject return request.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleUpdateQuantity = async () => {
+    if (!selectedReturn || !adminProfile) return;
+
+    const quantity = parseInt(newQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter a valid quantity.",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const returnRef = doc(db, `users/${userId}/productReturns`, selectedReturn.id);
+      const now = Timestamp.now();
+      const currentReceived = selectedReturn.receivedQuantity || 0;
+      const newReceived = currentReceived + quantity;
+
+      // Get current receiving log
+      const currentLog = selectedReturn.receivingLog || [];
+      const newLogEntry: any = {
+        quantity: quantity,
+        receivedAt: now,
+        receivedBy: adminProfile.uid,
+      };
+      if (quantityNotes && quantityNotes.trim()) {
+        newLogEntry.notes = quantityNotes;
+      }
+
+      // Update status to in_progress if not already
+      const newStatus = selectedReturn.status === "approved" ? "in_progress" : selectedReturn.status;
+
+      await updateDoc(returnRef, {
+        receivedQuantity: newReceived,
+        receivingLog: [...currentLog, newLogEntry],
+        status: newStatus,
+        updatedAt: now,
+      });
+
+      toast({
+        title: "Success",
+        description: `Added ${quantity} units. Total received: ${newReceived} / ${selectedReturn.requestedQuantity}`,
+      });
+
+      setNewQuantity("");
+      setQuantityNotes("");
+      setIsUpdateQuantityOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update quantity.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleShip = async () => {
+    if (!selectedReturn || !adminProfile || !selectedUser) return;
+
+    if (!shipTo || !shipTo.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter a ship to destination.",
+      });
+      return;
+    }
+
+    const quantity = parseInt(shipQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter a valid quantity to ship.",
+      });
+      return;
+    }
+
+    const currentShipped = selectedReturn.shippedQuantity || 0;
+    const availableToShip = selectedReturn.receivedQuantity - currentShipped;
+
+    if (quantity > availableToShip) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Cannot ship ${quantity} units. Only ${availableToShip} units available to ship.`,
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const now = Timestamp.now();
+      const today = new Date();
+      const newShippedQuantity = currentShipped + quantity;
+
+      // Get current shipping log
+      const currentShippingLog = selectedReturn.shippingLog || [];
+      const newShippingLogEntry: any = {
+        quantity: quantity,
+        shippedAt: now,
+        shippedBy: adminProfile.uid,
+      };
+      if (shipNotes && shipNotes.trim()) {
+        newShippingLogEntry.notes = shipNotes;
+      }
+
+      let invoiceId: string | undefined;
+      let invoiceNumber: string | undefined;
+
+      // Use transaction for atomicity
+      await runTransaction(db, async (transaction) => {
+        const returnRef = doc(db, `users/${userId}/productReturns`, selectedReturn.id);
+
+        // Generate invoice if requested
+        if (generateInvoiceOnShip) {
+          const invoiceNum = `INV-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-8)}`;
+          const orderNumber = `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`;
+          invoiceNumber = invoiceNum;
+
+          // Calculate shipping cost (admin can provide unit price or total)
+          const shippingCost = parseFloat(shippingFee) || 0;
+          const unitPrice =
+            quantity > 0
+              ? (parseFloat(shipShippingUnitPrice) || (shippingCost / quantity) || 0)
+              : 0;
+          const invoiceItems: any[] = [
+            {
+              quantity: quantity,
+              productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
+              sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+              shipDate: format(today, 'dd/MM/yyyy'),
+              packaging: 'N/A',
+              shipTo: shipTo || selectedReturn.additionalServices?.shippingAddress?.address || '',
+              unitPrice: unitPrice,
+              amount: shippingCost,
+            },
+          ];
+
+          const invoiceData = {
+            invoiceNumber: invoiceNum,
+            date: format(today, 'dd/MM/yyyy'),
+            orderNumber,
+            soldTo: {
+              name: selectedUser.name || 'Unknown User',
+              email: selectedUser.email || '',
+              phone: selectedUser.phone || '',
+              address: selectedUser.address || '',
+            },
+            fbm: 'Product Return Shipment',
+            items: invoiceItems,
+            subtotal: shippingCost,
+            grandTotal: shippingCost,
+            status: 'pending' as const,
+            createdAt: new Date(),
+            userId: userId,
+            type: "product_return_shipment",
+            returnRequestId: selectedReturn.id,
+          };
+
+          const invoiceRef = doc(collection(db, `users/${userId}/invoices`));
+          transaction.set(invoiceRef, invoiceData);
+          invoiceId = invoiceRef.id;
+
+          // Update return with shipping log including invoice info
+          const shippingLogEntryWithInvoice: any = {
+            quantity: newShippingLogEntry.quantity,
+            shippedAt: newShippingLogEntry.shippedAt,
+            shippedBy: newShippingLogEntry.shippedBy,
+            invoiceId: invoiceRef.id,
+            invoiceNumber: invoiceNum,
+            shippingUnitPrice: unitPrice,
+            shippingTotal: shippingCost,
+          };
+          if (newShippingLogEntry.notes) {
+            shippingLogEntryWithInvoice.notes = newShippingLogEntry.notes;
+          }
+          transaction.update(returnRef, {
+            shippingLog: [...currentShippingLog, shippingLogEntryWithInvoice],
+            shippedQuantity: newShippedQuantity,
+            updatedAt: now,
+          });
+        } else {
+          // Update return with shipping log without invoice
+          transaction.update(returnRef, {
+            shippingLog: [...currentShippingLog, newShippingLogEntry],
+            shippedQuantity: newShippedQuantity,
+            updatedAt: now,
+          });
+        }
+      });
+
+      // Generate PDF after transaction if invoice was requested
+      if (generateInvoiceOnShip && invoiceNumber) {
+        const orderNumber = `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`;
+        const shippingCost = parseFloat(shippingFee) || 0;
+        const unitPrice =
+          quantity > 0
+            ? (parseFloat(shipShippingUnitPrice) || (shippingCost / quantity) || 0)
+            : 0;
+        await generateInvoicePDF({
+          invoiceNumber: invoiceNumber,
+          date: format(today, 'dd/MM/yyyy'),
+          orderNumber,
+          soldTo: {
+            name: selectedUser.name || 'Unknown User',
+            email: selectedUser.email || '',
+            phone: selectedUser.phone || '',
+            address: selectedUser.address || '',
+          },
+          fbm: 'Product Return Shipment',
+          items: [{
+            quantity: quantity,
+            productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            shipDate: format(today, 'dd/MM/yyyy'),
+            packaging: 'N/A',
+            shipTo: shipTo || selectedReturn.additionalServices?.shippingAddress?.address || '',
+            unitPrice: unitPrice,
+            amount: shippingCost,
+          }],
+          subtotal: shippingCost,
+          grandTotal: shippingCost,
+          status: 'pending' as const,
+          type: 'product_return_shipment',
+        });
+      }
+
+      toast({
+        title: "Success",
+        description: `Shipped ${quantity} units.${generateInvoiceOnShip && invoiceNumber ? ` Invoice ${invoiceNumber} generated.` : ''}`,
+      });
+
+      setShipQuantity("");
+      setShipTo("");
+      setShipNotes("");
+      setShippingFee("");
+      setShipShippingUnitPrice("");
+      setCloseShippingUnitPrice("");
+      setGenerateInvoiceOnShip(false);
+      setIsShipDialogOpen(false);
+    } catch (error: any) {
+      console.error("Error shipping products:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to ship products.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCloseRequest = async () => {
+    if (!selectedReturn || !adminProfile || !selectedUser) return;
+
+    // Validate pricing
+    const returnFeeNum = parseFloat(returnFee);
+    if (isNaN(returnFeeNum) || returnFeeNum < 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter a valid return handling fee.",
+      });
+      return;
+    }
+
+    if (selectedReturn.receivedQuantity <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Cannot close request with zero received quantity.",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const now = Timestamp.now();
+      const today = new Date();
+
+      const shippedQtyCurrent = selectedReturn.shippedQuantity || 0;
+      const remainingToShipOnClose = Math.max(0, selectedReturn.receivedQuantity - shippedQtyCurrent);
+
+      // Calculate pricing
+      const returnHandlingTotal = returnFeeNum * selectedReturn.receivedQuantity;
+      const packingFeeNum = parseFloat(packingFee) || 0;
+      const palletFeeNum = parseFloat(palletFee) || 0;
+      const shippingUnitPriceNum = parseFloat(closeShippingUnitPrice) || 0;
+      const shouldShipOnClose = !!selectedReturn.additionalServices?.shipToAddress;
+      const shippingFeeNum = shouldShipOnClose ? (remainingToShipOnClose * shippingUnitPriceNum) : 0;
+      const servicesTotal = packingFeeNum + palletFeeNum + shippingFeeNum;
+      const grandTotal = returnHandlingTotal + servicesTotal;
+
+      // Build pricing object without undefined values (Firestore doesn't allow undefined)
+      const pricing: any = {
+        returnFee: returnFeeNum,
+        total: grandTotal,
+      };
+      
+      if (packingFeeNum > 0) {
+        pricing.packingFee = packingFeeNum;
+      }
+      
+      if (palletFeeNum > 0) {
+        pricing.palletFee = palletFeeNum;
+      }
+      
+      if (shippingFeeNum > 0) {
+        pricing.shippingFee = shippingFeeNum;
+      }
+
+      // Declare invoiceNumber outside transaction so it's accessible after
+      let invoiceNumber: string | undefined;
+
+      await runTransaction(db, async (transaction) => {
+        const returnRef = doc(db, `users/${userId}/productReturns`, selectedReturn.id);
+        const returnSnap = await transaction.get(returnRef);
+        const latestReturn: any = returnSnap.exists() ? returnSnap.data() : selectedReturn;
+        
+        // Calculate values needed for transaction
+        const productName = selectedReturn.productName || selectedReturn.newProductName || "Unknown Product";
+        const sku = selectedReturn.sku || selectedReturn.newProductSku;
+        const shippedQty = latestReturn?.shippedQuantity || 0;
+        const currentShippingLog = latestReturn?.shippingLog || selectedReturn.shippingLog || [];
+        const remainingQuantity = Math.max(0, selectedReturn.receivedQuantity - shippedQty);
+        const shipToAddress = (() => {
+          const shippingAddress = selectedReturn.additionalServices?.shippingAddress;
+          if (!shippingAddress) return "";
+          return `${shippingAddress.address}, ${shippingAddress.city || ''} ${shippingAddress.state || ''} ${shippingAddress.zipCode || ''}, ${shippingAddress.country || ''}`.trim();
+        })();
+
+        // STEP 1: Perform ALL reads first (required by Firestore)
+        let inventoryDoc: any = null;
+        let inventoryRef: any = null;
+
+        // Only add returned items to inventory if they are NOT being shipped back on close
+        const willShipRemainingOnClose = !!selectedReturn.additionalServices?.shipToAddress && remainingQuantity > 0;
+        
+        if (!willShipRemainingOnClose && remainingQuantity > 0 && selectedReturn.type === "existing" && selectedReturn.productId) {
+          // Read existing inventory if it exists
+          inventoryRef = doc(db, `users/${userId}/inventory`, selectedReturn.productId);
+          inventoryDoc = await transaction.get(inventoryRef);
+        }
+
+        // STEP 2: Now perform ALL writes
+        // 1. Update return request
+        const returnUpdate: any = {
+          status: "closed",
+          closedAt: now,
+          closedBy: adminProfile.uid,
+          pricing: pricing,
+          updatedAt: now,
+        };
+
+        // If user selected ship-to-address, mark remaining items as shipped on close (append to shipping log)
+        if (willShipRemainingOnClose) {
+          const closeShipLogEntry: any = {
+            quantity: remainingQuantity,
+            shippedAt: now,
+            shippedBy: adminProfile.uid,
+            notes: "Shipped remaining items on close",
+            shippingUnitPrice: shippingUnitPriceNum,
+            shippingTotal: shippingFeeNum,
+          };
+          returnUpdate.shippingLog = [...currentShippingLog, closeShipLogEntry];
+          returnUpdate.shippedQuantity = shippedQty + remainingQuantity; // should equal receivedQuantity
+        }
+
+        transaction.update(returnRef, returnUpdate);
+
+        // 2. Update inventory with remaining quantity (received - shipped)
+        // Only add to inventory if there's remaining quantity
+        if (!willShipRemainingOnClose && remainingQuantity > 0) {
+          if (selectedReturn.type === "existing" && selectedReturn.productId && inventoryDoc) {
+            // Update existing inventory
+            if (inventoryDoc.exists()) {
+              const currentData = inventoryDoc.data();
+              const currentQuantity = currentData.quantity || 0;
+              transaction.update(inventoryRef, {
+                quantity: currentQuantity + remainingQuantity,
+                status: "In Stock",
+                updatedAt: now,
+              });
+            } else {
+              // Product not found, create new inventory item
+              const newInventoryRef = doc(collection(db, `users/${userId}/inventory`));
+              transaction.set(newInventoryRef, {
+                productName: productName,
+                quantity: remainingQuantity,
+                dateAdded: now,
+                receivingDate: now,
+                status: "In Stock",
+                inventoryType: "product",
+                sku: sku,
+                createdAt: now,
+                updatedAt: now,
+              });
+            }
+          } else {
+            // Create new inventory item for new product return
+            const newInventoryRef = doc(collection(db, `users/${userId}/inventory`));
+            transaction.set(newInventoryRef, {
+              productName: productName,
+              quantity: remainingQuantity,
+              dateAdded: now,
+              receivingDate: now,
+              status: "In Stock",
+              inventoryType: "product",
+              sku: sku,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+
+        // 3. Generate invoice if requested
+        let invoiceRef: any = null;
+        if (generateInvoiceOnClose) {
+          invoiceNumber = `INV-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-8)}`;
+          const orderNumber = `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`;
+
+          const invoiceItems: any[] = [
+            {
+              quantity: selectedReturn.receivedQuantity,
+              productName: `${productName} (Return Handling)`,
+              sku: sku || undefined,
+              shipDate: format(today, 'dd/MM/yyyy'),
+              packaging: 'N/A',
+              shipTo: shipToAddress,
+              unitPrice: returnFeeNum,
+              amount: returnHandlingTotal,
+            },
+          ];
+
+          if (packingFeeNum > 0) {
+            const boxQty = parseFloat(boxQuantity) || 1;
+            invoiceItems.push({
+              quantity: boxQty,
+              productName: `Packing Service`,
+              shipDate: format(today, 'dd/MM/yyyy'),
+              packaging: 'N/A',
+              shipTo: '',
+              unitPrice: boxQty > 0 ? packingFeeNum / boxQty : packingFeeNum,
+              amount: packingFeeNum,
+            });
+          }
+
+          if (palletFeeNum > 0) {
+            const palletQty = parseFloat(palletQuantity) || 1;
+            invoiceItems.push({
+              quantity: palletQty,
+              productName: `Palletizing Service`,
+              shipDate: format(today, 'dd/MM/yyyy'),
+              packaging: 'N/A',
+              shipTo: '',
+              unitPrice: palletQty > 0 ? palletFeeNum / palletQty : palletFeeNum,
+              amount: palletFeeNum,
+            });
+          }
+
+          if (shippingFeeNum > 0) {
+            invoiceItems.push({
+              quantity: remainingQuantity,
+              productName: `${productName} (Return Shipment)`,
+              sku: sku || undefined,
+              shipDate: format(today, 'dd/MM/yyyy'),
+              packaging: 'N/A',
+              shipTo: shipToAddress,
+              unitPrice: shippingUnitPriceNum,
+              amount: shippingFeeNum,
+            });
+          }
+
+          const invoiceData = {
+            invoiceNumber,
+            date: format(today, 'dd/MM/yyyy'),
+            orderNumber,
+            soldTo: {
+              name: selectedUser.name || 'Unknown User',
+              email: selectedUser.email || '',
+              phone: selectedUser.phone || '',
+              address: selectedUser.address || '',
+            },
+            fbm: 'Product Return',
+            items: invoiceItems,
+            subtotal: grandTotal,
+            grandTotal: grandTotal,
+            status: 'pending' as const,
+            createdAt: new Date(),
+            userId: userId,
+            type: "product_return",
+            returnRequestId: selectedReturn.id,
+          };
+
+          invoiceRef = doc(collection(db, `users/${userId}/invoices`));
+          transaction.set(invoiceRef, invoiceData);
+        }
+
+        // 4. Create shipped order for remaining quantity shipped on close (when ship-to-address is selected)
+        if (willShipRemainingOnClose) {
+          const shippedRef = doc(collection(db, `users/${userId}/shipped`));
+          transaction.set(shippedRef, {
+            productName: productName,
+            date: Timestamp.fromDate(today),
+            createdAt: now,
+            shippedQty: remainingQuantity,
+            boxesShipped: selectedReturn.additionalServices?.boxesCount || 1,
+            unitsForPricing: remainingQuantity,
+            remainingQty: 0, // Returned products, so no remaining
+            packOf: 1,
+            unitPrice: shippingUnitPriceNum,
+            shipTo: shipToAddress,
+            service: 'Product Return Shipment',
+            productType: 'Standard',
+            remarks: `Product Return - Request ID: ${selectedReturn.id}`,
+            items: [{
+              productId: selectedReturn.productId || '',
+              productName: productName,
+              boxesShipped: selectedReturn.additionalServices?.boxesCount || 1,
+              shippedQty: remainingQuantity,
+              packOf: 1,
+              unitPrice: shippingUnitPriceNum,
+              remainingQty: 0,
+            }],
+            totalBoxes: selectedReturn.additionalServices?.boxesCount || 1,
+            totalUnits: remainingQuantity,
+            totalSkus: 1,
+            returnRequestId: selectedReturn.id, // Link to return request
+          });
+        }
+
+        // Update return request with invoice info if invoice was created
+        if (invoiceRef && invoiceNumber) {
+          transaction.update(returnRef, {
+            invoiceId: invoiceRef.id,
+            invoiceNumber: invoiceNumber,
+          });
+        }
+      });
+
+      // Generate PDF invoice if requested
+      if (generateInvoiceOnClose && invoiceNumber) {
+        const orderNumber = `ORD-${format(today, 'yyyyMMdd')}-${Date.now().toString().slice(-4)}`;
+        const shipToAddress = (() => {
+          const shippingAddress = selectedReturn.additionalServices?.shippingAddress;
+          if (!shippingAddress) return "";
+          return `${shippingAddress.address}, ${shippingAddress.city || ''} ${shippingAddress.state || ''} ${shippingAddress.zipCode || ''}, ${shippingAddress.country || ''}`.trim();
+        })();
+        const invoiceItems: any[] = [
+          {
+            quantity: selectedReturn.receivedQuantity,
+            productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Handling)`,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            shipDate: format(today, 'dd/MM/yyyy'),
+            packaging: 'N/A',
+            shipTo: shipToAddress,
+            unitPrice: returnFeeNum,
+            amount: returnHandlingTotal,
+          },
+        ];
+
+        if (packingFeeNum > 0) {
+          const boxQty = parseFloat(boxQuantity) || 1;
+          invoiceItems.push({
+            quantity: boxQty,
+            productName: `Packing Service`,
+            shipDate: format(today, 'dd/MM/yyyy'),
+            packaging: 'N/A',
+            shipTo: '',
+            unitPrice: boxQty > 0 ? packingFeeNum / boxQty : packingFeeNum,
+            amount: packingFeeNum,
+          });
+        }
+
+        if (palletFeeNum > 0) {
+          const palletQty = parseFloat(palletQuantity) || 1;
+          invoiceItems.push({
+            quantity: palletQty,
+            productName: `Palletizing Service`,
+            shipDate: format(today, 'dd/MM/yyyy'),
+            packaging: 'N/A',
+            shipTo: '',
+            unitPrice: palletQty > 0 ? palletFeeNum / palletQty : palletFeeNum,
+            amount: palletFeeNum,
+          });
+        }
+
+        if (shippingFeeNum > 0) {
+          invoiceItems.push({
+            quantity: remainingToShipOnClose,
+            productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            shipDate: format(today, 'dd/MM/yyyy'),
+            packaging: 'N/A',
+            shipTo: shipToAddress,
+            unitPrice: shippingUnitPriceNum,
+            amount: shippingFeeNum,
+          });
+        }
+
+        const invoiceDataForPDF = {
+          invoiceNumber,
+          date: format(today, 'dd/MM/yyyy'),
+          orderNumber,
+          soldTo: {
+            name: selectedUser.name || 'Unknown User',
+            email: selectedUser.email || '',
+            phone: selectedUser.phone || '',
+            address: selectedUser.address || '',
+          },
+          fbm: 'Product Return',
+          items: invoiceItems,
+          subtotal: grandTotal,
+          grandTotal: grandTotal,
+          status: 'pending' as const,
+          type: 'product_return' as const,
+        };
+
+        await generateInvoicePDF(invoiceDataForPDF);
+      }
+
+      toast({
+        title: "Success",
+        description: `Return request closed.${generateInvoiceOnClose && invoiceNumber ? ` Invoice ${invoiceNumber} generated.` : ''}${selectedReturn.additionalServices?.shipToAddress ? ' Shipped order created.' : ''}`,
+      });
+
+      setIsCloseDialogOpen(false);
+      setIsDetailsOpen(false);
+      setReturnFee("");
+      setPackingFee("");
+      setBoxQuantity("");
+      setBoxPricePerUnit("");
+      setPalletFee("");
+      setPalletQuantity("");
+      setPalletPricePerUnit("");
+      setShippingFee("");
+    } catch (error: any) {
+      console.error("Error closing return request:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to close return request.",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleViewDetails = (returnItem: ProductReturn) => {
+    setSelectedReturn(returnItem);
+    setIsDetailsOpen(true);
+    // Reset form states
+    setReturnFee("");
+    setPackingFee("");
+    setBoxQuantity("");
+    setBoxPricePerUnit("");
+    setPalletFee("");
+    setPalletQuantity("");
+    setPalletPricePerUnit("");
+    setShippingFee("");
+    setCloseShippingUnitPrice("");
+    setRejectReason("");
+  };
+
+  const handleOpenUpdateQuantity = (returnItem: ProductReturn) => {
+    setSelectedReturn(returnItem);
+    setNewQuantity("");
+    setQuantityNotes("");
+    setIsUpdateQuantityOpen(true);
+  };
+
+  const handleOpenCloseDialog = (returnItem: ProductReturn) => {
+    setSelectedReturn(returnItem);
+    setReturnFee("");
+    setPackingFee("");
+    setPalletFee("");
+    setShippingFee("");
+    setCloseShippingUnitPrice("");
+    setIsCloseDialogOpen(true);
+  };
+
+  if (!selectedUser) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-muted-foreground text-center">
+            Select a user to manage their product returns.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Closed</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{closedCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter */}
+      <div className="flex items-center gap-4">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Returns Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Product Returns</CardTitle>
+          <CardDescription>
+            Manage product return requests from {selectedUser.name}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <p className="text-sm text-destructive font-medium">Error loading returns:</p>
+              <p className="text-xs text-destructive/80 mt-1">{error.message}</p>
+            </div>
+          )}
+          {loading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : filteredReturns.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No product return requests found.</p>
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedReturns.map((returnItem) => {
+                    const progress = returnItem.requestedQuantity > 0
+                      ? Math.round((returnItem.receivedQuantity / returnItem.requestedQuantity) * 100)
+                      : 0;
+                    const productName = returnItem.productName || returnItem.newProductName || "N/A";
+                    const canUpdate = returnItem.status === "approved" || returnItem.status === "in_progress";
+                    const canClose = canUpdate && returnItem.receivedQuantity > 0;
+
+                    return (
+                      <TableRow key={returnItem.id}>
+                        <TableCell className="font-medium">{productName}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="outline">
+                              {returnItem.type === "existing" ? "Existing" : "New"}
+                            </Badge>
+                            {returnItem.type === "existing" && returnItem.returnType && (
+                              <Badge variant="secondary" className="text-xs">
+                                {returnItem.returnType === "combine" ? "Combine" : "Partial"}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {returnItem.receivedQuantity} / {returnItem.requestedQuantity}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-muted rounded-full h-2">
+                              <div
+                                className="bg-primary h-2 rounded-full transition-all"
+                                style={{ width: `${Math.min(progress, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-sm text-muted-foreground w-12 text-right">
+                              {progress}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(returnItem.status)}</TableCell>
+                        <TableCell>{formatDate(returnItem.createdAt)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewDetails(returnItem)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {canUpdate && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenUpdateQuantity(returnItem)}
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add Qty
+                              </Button>
+                            )}
+                            {canClose && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleOpenCloseDialog(returnItem)}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Close
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1} to {Math.min(endIndex, filteredReturns.length)} of {filteredReturns.length} returns
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Details Dialog */}
+      {selectedReturn && (
+        <>
+          <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+            <DialogContent className="max-w-3xl h-[90vh] flex flex-col overflow-hidden p-0">
+              <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4">
+                <DialogTitle>Return Request Details</DialogTitle>
+                <DialogDescription>
+                  View detailed information and activity log
+                </DialogDescription>
+              </DialogHeader>
+              <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0 px-6 pb-6">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="logs">Logs</TabsTrigger>
+                </TabsList>
+                <TabsContent value="details" className="flex-1 overflow-y-auto min-h-0 pr-4 custom-scrollbar mt-0">
+                  <div className="space-y-6">
+                  {/* Basic Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-muted-foreground">Product Name</div>
+                      <div className="font-medium">
+                        {selectedReturn.productName || selectedReturn.newProductName || "N/A"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">SKU</div>
+                      <div className="font-medium">
+                        {selectedReturn.sku || selectedReturn.newProductSku || "N/A"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Type</div>
+                      <div className="font-medium">
+                        {selectedReturn.type === "existing" ? "Existing Product" : "New Inventory"}
+                        {selectedReturn.type === "existing" && selectedReturn.returnType && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({selectedReturn.returnType === "combine" ? "Combine" : "Partial"})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Status</div>
+                      <div>{getStatusBadge(selectedReturn.status)}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Requested Quantity</div>
+                      <div className="font-medium">{selectedReturn.requestedQuantity}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Received Quantity</div>
+                      <div className="font-medium">{selectedReturn.receivedQuantity}</div>
+                    </div>
+                  </div>
+
+                  {/* User Remarks */}
+                  {selectedReturn.userRemarks && (
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">User Remarks</div>
+                      <div className="p-3 bg-muted rounded-md">{selectedReturn.userRemarks}</div>
+                    </div>
+                  )}
+
+                  {/* Additional Services */}
+                  {selectedReturn.additionalServices && (
+                    <div>
+                      <div className="text-sm font-medium mb-2">Additional Services</div>
+                      <div className="space-y-2">
+                        {selectedReturn.additionalServices.packIntoBoxes && (
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <span>Pack into Boxes</span>
+                            {selectedReturn.additionalServices.boxesCount && (
+                              <Badge variant="outline">
+                                {selectedReturn.additionalServices.boxesCount} boxes
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                        {selectedReturn.additionalServices.placeOnPallet && (
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <span>Place on Pallet</span>
+                            {selectedReturn.additionalServices.palletsCount && (
+                              <Badge variant="outline">
+                                {selectedReturn.additionalServices.palletsCount} pallets
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                        {selectedReturn.additionalServices.shipToAddress && (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Truck className="h-4 w-4 text-muted-foreground" />
+                              <span>Ship to Address</span>
+                            </div>
+                            {selectedReturn.additionalServices.shippingAddress && (
+                              <div className="pl-6 text-sm text-muted-foreground">
+                                {selectedReturn.additionalServices.shippingAddress.name && (
+                                  <div>{selectedReturn.additionalServices.shippingAddress.name}</div>
+                                )}
+                                <div>{selectedReturn.additionalServices.shippingAddress.address}</div>
+                                {selectedReturn.additionalServices.shippingAddress.city && (
+                                  <div>
+                                    {selectedReturn.additionalServices.shippingAddress.city}
+                                    {selectedReturn.additionalServices.shippingAddress.state && `, ${selectedReturn.additionalServices.shippingAddress.state}`}
+                                    {selectedReturn.additionalServices.shippingAddress.zipCode && ` ${selectedReturn.additionalServices.shippingAddress.zipCode}`}
+                                  </div>
+                                )}
+                                {selectedReturn.additionalServices.shippingAddress.country && (
+                                  <div>{selectedReturn.additionalServices.shippingAddress.country}</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {selectedReturn.status === "pending" && (
+                    <div className="flex gap-2 pt-4 border-t">
+                      <Button
+                        onClick={() => handleApprove(selectedReturn)}
+                        disabled={isProcessing}
+                        className="flex-1"
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="mr-2 h-4 w-4" />
+                        )}
+                        Open Request (Approve)
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => {
+                          setRejectReason("");
+                          setIsRejectDialogOpen(true);
+                        }}
+                        disabled={isProcessing}
+                        className="flex-1"
+                      >
+                        <X className="mr-2 h-4 w-4" />
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Ship button for approved/in_progress requests */}
+                  {(selectedReturn.status === "approved" || selectedReturn.status === "in_progress") && 
+                   selectedReturn.receivedQuantity > 0 && 
+                   (selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0)) > 0 && (
+                    <div className="flex gap-2 pt-4 border-t">
+                      <Button
+                        onClick={() => {
+                          setShipQuantity("");
+                          setShipTo("");
+                          setShipNotes("");
+                          setShippingFee("");
+                          setGenerateInvoiceOnShip(false);
+                          setIsShipDialogOpen(true);
+                        }}
+                        disabled={isProcessing}
+                        className="flex-1"
+                      >
+                        <Truck className="mr-2 h-4 w-4" />
+                        Ship Products
+                      </Button>
+                    </div>
+                  )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="logs" className="flex-1 overflow-y-auto min-h-0 pr-4 custom-scrollbar mt-0">
+                  <div className="space-y-6">
+                    {/* Receiving Log */}
+                    {selectedReturn.receivingLog && selectedReturn.receivingLog.length > 0 && (
+                      <div>
+                        <div className="text-sm font-medium mb-2">Receiving History</div>
+                        <div className="space-y-2">
+                          {selectedReturn.receivingLog.map((log, index) => (
+                            <div key={index} className="p-3 bg-muted rounded-md">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="font-medium">+{log.quantity} units received</div>
+                                  {log.notes && (
+                                    <div className="text-sm text-muted-foreground mt-1">{log.notes}</div>
+                                  )}
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                  {formatDate(log.receivedAt)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Shipping Log */}
+                    {selectedReturn.shippingLog && selectedReturn.shippingLog.length > 0 && (
+                      <div>
+                        <div className="text-sm font-medium mb-2">Shipping History</div>
+                        <div className="space-y-2">
+                          {selectedReturn.shippingLog.map((log: any, index: number) => (
+                            <div key={index} className="p-3 bg-muted rounded-md">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <div className="font-medium">-{log.quantity} units shipped</div>
+                                  {log.notes && (
+                                    <div className="text-sm text-muted-foreground mt-1">{log.notes}</div>
+                                  )}
+                                  {log.packOf && (
+                                    <div className="text-sm text-muted-foreground mt-1">{log.quantity} pack of {log.packOf}</div>
+                                  )}
+                                  {log.invoiceNumber && (
+                                    <div className="mt-2">
+                                      <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-md">
+                                        Invoice: {log.invoiceNumber}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-sm text-muted-foreground ml-4">
+                                  {formatDate(log.shippedAt)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+
+          {/* Update Quantity Dialog */}
+          <Dialog open={isUpdateQuantityOpen} onOpenChange={setIsUpdateQuantityOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Received Quantity</DialogTitle>
+                <DialogDescription>
+                  Add quantity received for this return request
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Quantity Received</Label>
+                  <Input
+                    type="number"
+                    value={newQuantity || ""}
+                    onChange={(e) => setNewQuantity(e.target.value)}
+                    placeholder="Enter quantity"
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <Label>Notes (Optional)</Label>
+                  <Textarea
+                    value={quantityNotes}
+                    onChange={(e) => setQuantityNotes(e.target.value)}
+                    placeholder="Add any notes about this receiving..."
+                    rows={3}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleUpdateQuantity}
+                    disabled={isProcessing || !newQuantity}
+                    className="flex-1"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="mr-2 h-4 w-4" />
+                    )}
+                    Add Quantity
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsUpdateQuantityOpen(false)}
+                    disabled={isProcessing}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Reject Dialog */}
+          <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Reject Return Request</DialogTitle>
+                <DialogDescription>
+                  Please provide a reason for rejection
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Rejection Reason</Label>
+                  <Textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Enter reason for rejection..."
+                    rows={4}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    onClick={handleReject}
+                    disabled={isProcessing || !rejectReason.trim()}
+                    className="flex-1"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <X className="mr-2 h-4 w-4" />
+                    )}
+                    Reject
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsRejectDialogOpen(false);
+                      setRejectReason("");
+                    }}
+                    disabled={isProcessing}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Close Request Dialog */}
+          <Dialog open={isCloseDialogOpen} onOpenChange={setIsCloseDialogOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle>Close Return Request</DialogTitle>
+                <DialogDescription>
+                  Set pricing and close this return request. Invoice will be generated automatically.
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[70vh] pr-4">
+                <div className="space-y-6">
+                  {/* Summary */}
+                  <div className="p-4 bg-muted rounded-lg">
+                    <div className="text-sm font-medium mb-2">Summary</div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span>Product:</span>
+                        <span className="font-medium">
+                          {selectedReturn.productName || selectedReturn.newProductName || "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Received Quantity:</span>
+                        <span className="font-medium">{selectedReturn.receivedQuantity}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pricing */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Return Handling Fee (per unit) *</Label>
+                      <Input
+                        type="number"
+                        value={returnFee || ""}
+                        onChange={(e) => setReturnFee(e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Total: ${(parseFloat(returnFee) || 0) * selectedReturn.receivedQuantity}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label>Packing Fee</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Box Quantity</Label>
+                          <Input
+                            type="number"
+                            value={boxQuantity || ""}
+                            onChange={(e) => {
+                              setBoxQuantity(e.target.value);
+                              // Auto-calculate total packing fee
+                              const qty = parseFloat(e.target.value) || 0;
+                              const price = parseFloat(boxPricePerUnit) || 0;
+                              setPackingFee((qty * price).toFixed(2));
+                            }}
+                            placeholder="0"
+                            step="1"
+                            min="0"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Price per Box</Label>
+                          <Input
+                            type="number"
+                            value={boxPricePerUnit || ""}
+                            onChange={(e) => {
+                              setBoxPricePerUnit(e.target.value);
+                              // Auto-calculate total packing fee
+                              const qty = parseFloat(boxQuantity) || 0;
+                              const price = parseFloat(e.target.value) || 0;
+                              setPackingFee((qty * price).toFixed(2));
+                            }}
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Total: ${(parseFloat(packingFee) || 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label>Palletizing Fee</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Pallet Quantity</Label>
+                          <Input
+                            type="number"
+                            value={palletQuantity || ""}
+                            onChange={(e) => {
+                              setPalletQuantity(e.target.value);
+                              // Auto-calculate total palletizing fee
+                              const qty = parseFloat(e.target.value) || 0;
+                              const price = parseFloat(palletPricePerUnit) || 0;
+                              setPalletFee((qty * price).toFixed(2));
+                            }}
+                            placeholder="0"
+                            step="1"
+                            min="0"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Price per Pallet</Label>
+                          <Input
+                            type="number"
+                            value={palletPricePerUnit || ""}
+                            onChange={(e) => {
+                              setPalletPricePerUnit(e.target.value);
+                              // Auto-calculate total palletizing fee
+                              const qty = parseFloat(palletQuantity) || 0;
+                              const price = parseFloat(e.target.value) || 0;
+                              setPalletFee((qty * price).toFixed(2));
+                            }}
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Total: ${(parseFloat(palletFee) || 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    {selectedReturn.additionalServices?.shipToAddress && (
+                      <div className="space-y-3">
+                        <Label>Shipping Fee</Label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Remaining Items Shipped</Label>
+                            <Input
+                              type="number"
+                              value={Math.max(0, selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0))}
+                              readOnly
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Unit Price (per item)</Label>
+                            <Input
+                              type="number"
+                              value={closeShippingUnitPrice || ""}
+                              onChange={(e) => setCloseShippingUnitPrice(e.target.value)}
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Total: ${(
+                            Math.max(0, selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0)) *
+                            (parseFloat(closeShippingUnitPrice) || 0)
+                          ).toFixed(2)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Ship to:{" "}
+                          {(() => {
+                            const shippingAddress = selectedReturn.additionalServices?.shippingAddress;
+                            if (!shippingAddress) return "N/A";
+                            return `${shippingAddress.address}, ${shippingAddress.city || ''} ${shippingAddress.state || ''} ${shippingAddress.zipCode || ''}, ${shippingAddress.country || ''}`.trim();
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Total */}
+                    <div className="p-4 bg-muted rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Grand Total:</span>
+                        <span className="text-2xl font-bold">
+                          $
+                          {(
+                            (parseFloat(returnFee) || 0) * selectedReturn.receivedQuantity +
+                            (parseFloat(packingFee) || 0) +
+                            (parseFloat(palletFee) || 0) +
+                            (selectedReturn.additionalServices?.shipToAddress
+                              ? Math.max(0, selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0)) *
+                                (parseFloat(closeShippingUnitPrice) || 0)
+                              : 0)
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Invoice Generation Option */}
+                  <div className="flex items-center space-x-2 pt-2 border-t">
+                    <input
+                      type="checkbox"
+                      id="generateInvoice"
+                      checked={generateInvoiceOnClose}
+                      onChange={(e) => setGenerateInvoiceOnClose(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <Label htmlFor="generateInvoice" className="text-sm font-normal cursor-pointer">
+                      Generate invoice on close
+                    </Label>
+                  </div>
+
+                  <div className="flex gap-2 pt-4 border-t">
+                    <Button
+                      onClick={handleCloseRequest}
+                      disabled={isProcessing || !returnFee}
+                      className="flex-1"
+                    >
+                      {isProcessing ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                      )}
+                      Close Request{generateInvoiceOnClose ? ' & Generate Invoice' : ''}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCloseDialogOpen(false)}
+                      disabled={isProcessing}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+
+          {/* Ship Dialog */}
+          <Dialog open={isShipDialogOpen} onOpenChange={setIsShipDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Ship Products</DialogTitle>
+                <DialogDescription>
+                  Ship a portion of the received products. This will be logged but won't appear in shipped orders.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Available to Ship</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Received: {selectedReturn.receivedQuantity} | 
+                    Already Shipped: {selectedReturn.shippedQuantity || 0} | 
+                    Available: {selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0)}
+                  </div>
+                </div>
+                <div>
+                  <Label>Quantity to Ship *</Label>
+                  <Input
+                    type="number"
+                    value={shipQuantity || ""}
+                    onChange={(e) => setShipQuantity(e.target.value)}
+                    placeholder="Enter quantity"
+                    min="1"
+                    max={selectedReturn.receivedQuantity - (selectedReturn.shippedQuantity || 0)}
+                  />
+                </div>
+                <div>
+                  <Label>Ship To *</Label>
+                  <Input
+                    type="text"
+                    value={shipTo || ""}
+                    onChange={(e) => setShipTo(e.target.value)}
+                    placeholder="Enter destination address"
+                  />
+                </div>
+                <div>
+                  <Label>Shipping (for Invoice)</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Unit Price (per item)</Label>
+                      <Input
+                        type="number"
+                        value={shipShippingUnitPrice || ""}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setShipShippingUnitPrice(next);
+                          const qty = parseInt(shipQuantity || "0");
+                          const unit = parseFloat(next) || 0;
+                          if (!isNaN(qty) && qty > 0) {
+                            setShippingFee((qty * unit).toFixed(2));
+                          }
+                        }}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Total Shipping Cost</Label>
+                      <Input
+                        type="number"
+                        value={shippingFee || ""}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setShippingFee(next);
+                          const qty = parseInt(shipQuantity || "0");
+                          const total = parseFloat(next) || 0;
+                          if (!isNaN(qty) && qty > 0) {
+                            setShipShippingUnitPrice((total / qty).toFixed(2));
+                          }
+                        }}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Unit Price Ã— Quantity = Total. (Needed only if you generate an invoice.)
+                  </div>
+                </div>
+                <div>
+                  <Label>Notes (Optional)</Label>
+                  <Textarea
+                    value={shipNotes}
+                    onChange={(e) => setShipNotes(e.target.value)}
+                    placeholder="Add any notes about this shipment..."
+                    rows={3}
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="generateInvoiceOnShip"
+                    checked={generateInvoiceOnShip}
+                    onChange={(e) => setGenerateInvoiceOnShip(e.target.checked)}
+                    className="h-4 w-4"
+                    disabled={!shippingFee || parseFloat(shippingFee) <= 0}
+                  />
+                  <Label htmlFor="generateInvoiceOnShip" className="text-sm font-normal cursor-pointer">
+                    Generate invoice for this shipment
+                  </Label>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleShip}
+                    disabled={isProcessing || !shipQuantity || !shipTo}
+                    className="flex-1"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Truck className="mr-2 h-4 w-4" />
+                    )}
+                    Ship Products
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsShipDialogOpen(false);
+                      setShipQuantity("");
+                      setShipTo("");
+                      setShipNotes("");
+                      setShippingFee("");
+                      setShipShippingUnitPrice("");
+                      setGenerateInvoiceOnShip(false);
+                    }}
+                    disabled={isProcessing}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+    </div>
+  );
+}
+

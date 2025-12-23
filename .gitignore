@@ -53,3 +53,8 @@ firestore-debug.log
 credentials/
 *.json
 google-drive-credentials.json
+
+# local backups / scratch files
+*.bak.*
+*.bak
+*.backup

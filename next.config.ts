@@ -1,4 +1,5 @@
 import type {NextConfig} from 'next';
+import path from 'path';
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -8,6 +9,8 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Fix for multiple lockfiles warning
+  outputFileTracingRoot: path.join(__dirname),
   images: {
     remotePatterns: [
       {
@@ -37,5 +40,50 @@ const nextConfig: NextConfig = {
     ],
   },
 };
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
+
+export default nextConfig;
+
 
 export default nextConfig;

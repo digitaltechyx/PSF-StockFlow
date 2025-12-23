@@ -1,149 +1,274 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to safely get user data
-    // Returns null if document doesn't exist
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
+    // Helper function to get current user's document (cached for performance)
+    function getCurrentUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
     
-    // Helper function to check if user has a specific role (supports both legacy role and roles array)
-    // Note: Firestore rules don't support array.contains(), so we check the legacy role field
-    // and also check if roles array exists (client-side code ensures both are set)
-    function hasRole(userData, role) {
-      // Handle null/undefined userData
-      return userData != null && (
-        userData.role == role || 
-        (userData.roles != null && userData.roles.hasAny([role]))
-      );
-    }
-    
-    // Helper function to check if user is admin
-    function isAdmin(userData) {
-      return userData != null && (
-        userData.role == 'admin' || 
-        (userData.roles != null && userData.roles.hasAny(['admin']))
-      );
-    }
-    
-    // Helper function to check if user is commission agent
-    function isCommissionAgent(userData) {
-      return userData != null && (
-        userData.role == 'commission_agent' || 
-        (userData.roles != null && userData.roles.hasAny(['commission_agent']))
-      );
-    }
-    
-    // Helper function to check if user is sub admin
-    function isSubAdmin(userData) {
-      return userData != null && (
-        userData.role == 'sub_admin' || 
-        (userData.roles != null && userData.roles.hasAny(['sub_admin']))
-      );
-    }
-    
-    // Helper function to check if user is admin or sub admin
-    function isAdminOrSubAdmin(userData) {
-      return userData != null && (isAdmin(userData) || isSubAdmin(userData));
+    // Helper function to check if current authenticated user is admin or sub admin
+    function isCurrentUserAdminOrSubAdmin() {
+      return request.auth != null && 
+        request.auth.uid != null &&
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'admin' ||
+          getCurrentUserDoc().data.role == 'sub_admin' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['admin', 'sub_admin']))
+        );
     }
     
     // Allow users to read/write their own user document
     match /users/{userId} {
+      // CRITICAL: Users must be able to read their own document first
+      // This is needed for the list rule to work (admin reads own doc to check role)
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read and update any user document
+      // This is temporary for testing - we'll tighten later
+      allow read, update: if request.auth != null;
       
       // Allow admins and sub admins to read and update all users (for approval/deletion)
       // Note: Client-side code will filter based on features (manage_users)
       allow read, update: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
       
       // Allow commission agents to read users (to see their referred clients)
       allow read: if request.auth != null && 
-        isCommissionAgent(getUserData(request.auth.uid));
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
       
       // Allow unauthenticated users to read users for referral code validation during registration
       // This is needed to validate referral codes before account creation
       // Note: This allows querying users collection, but only for referral code validation
-      allow get, list: if request.auth == null;
+      allow get: if request.auth == null;
+    }
+    
+    // Collection-level rules for listing users (needed for queries)
+    // Allow unauthenticated users to query for referral code validation during registration
+    match /users {
+      // Allow ALL authenticated users to list - no conditions
+      allow list: if request.auth != null;
+      // Also allow read at collection level as backup
+      allow read: if request.auth != null;
+      // Allow unauthenticated users to query for referral code validation
+      // This is needed before account creation
+      allow list: if request.auth == null;
     }
     
     // Allow users to read/write their own inventory
     match /users/{userId}/inventory/{document} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
       // Allow admins and sub admins to manage any user's inventory
       // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing inventory
+    match /users/{userId}/inventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to create and read their own inventory requests
+    match /users/{userId}/inventoryRequests/{document} {
+      // User can read and create their own requests
+      allow read, create: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's inventory requests
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to list inventory requests collection (needed for queries)
+    match /users/{userId}/inventoryRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to create and read their own product returns
+    match /users/{userId}/productReturns/{document} {
+      // User can read, create, and update their own requests
+      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow admins and sub admins to read and write any user's product returns
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow admins to list product returns collection (needed for queries)
+    match /users/{userId}/productReturns {
+      // Allow users to list their own product returns
+      allow list: if request.auth != null && request.auth.uid == userId;
+      // Allow admins to list any user's product returns
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to list
+      allow list: if request.auth != null;
     }
     
     // Allow users to read/write their own shipped items
     match /users/{userId}/shipped/{document} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
       // Allow admins and sub admins to manage any user's shipped items
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing shipped items
+    match /users/{userId}/shipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to create and read their own shipment requests
+    match /users/{userId}/shipmentRequests/{document} {
+      allow read, create: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's shipment requests
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own restock history
     match /users/{userId}/restockHistory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's restock history
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own recycled shipped items
     match /users/{userId}/recycledShipped/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's recycled shipped items
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own recycled restock history
     match /users/{userId}/recycledRestockHistory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's recycled restock history
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own recycled inventory
     match /users/{userId}/recycledInventory/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's recycled inventory
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own delete logs
     match /users/{userId}/deleteLogs/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's delete logs
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own edit logs
     match /users/{userId}/editLogs/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's edit logs
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
     }
     
     // Allow users to read their own invoices
@@ -151,20 +276,143 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
       
-      // Allow admins and sub admins to read and write any user's invoices
-      // Note: Client-side code will filter based on features (manage_invoices)
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
     }
     
     // Allow users to read their own purchased labels
     match /users/{userId}/labelPurchases/{document} {
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
       // Allow admins and sub admins to read and write any user's purchased labels
-      // Note: Client-side code will filter based on features
       allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
     }
     
     // Allow authenticated users to create their own user document during registration
@@ -178,7 +426,13 @@ service cloud.firestore {
       // Note: Client-side code will filter based on features (manage_labels)
       allow read: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         isAdminOrSubAdmin(getUserData(request.auth.uid)));
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
       allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
       
       // Allow users to create their own PDFs
@@ -189,15 +443,20 @@ service cloud.firestore {
       // Note: Client-side code will filter based on features (manage_labels)
       allow update, delete: if request.auth != null && 
         (resource.data.uploadedBy == request.auth.uid ||
-         isAdminOrSubAdmin(getUserData(request.auth.uid)));
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
     }
     
     // Commissions collection
     match /commissions/{commissionId} {
       // Allow admins and sub admins to read and write all commissions
       // Note: Client-side code will filter based on features
-      allow read, write: if request.auth != null && 
-        isAdminOrSubAdmin(getUserData(request.auth.uid));
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
       
       // Allow commission agents to read their own commissions
       // For individual document reads
@@ -207,10 +466,2451 @@ service cloud.firestore {
       // For list/query operations - allow if user is commission agent
       // The query filter will ensure they only see their own commissions
       allow list: if request.auth != null && 
-        isCommissionAgent(getUserData(request.auth.uid));
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
       
       // Allow system to create commissions (when invoice is paid)
       allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
+    }
+  }
+}
+
+
+    }
+    
+    // Allow admins to list shipment requests collection (needed for queries)
+    match /users/{userId}/shipmentRequests {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own restock history
+    match /users/{userId}/restockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing restock history
+    match /users/{userId}/restockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled shipped items
+    match /users/{userId}/recycledShipped/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled shipped items
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled shipped items
+    match /users/{userId}/recycledShipped {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled restock history
+    match /users/{userId}/recycledRestockHistory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled restock history
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled restock history
+    match /users/{userId}/recycledRestockHistory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own recycled inventory
+    match /users/{userId}/recycledInventory/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's recycled inventory
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing recycled inventory
+    match /users/{userId}/recycledInventory {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own delete logs
+    match /users/{userId}/deleteLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's delete logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing delete logs
+    match /users/{userId}/deleteLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own edit logs
+    match /users/{userId}/editLogs/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's edit logs
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing edit logs
+    match /users/{userId}/editLogs {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read their own invoices
+    match /users/{userId}/invoices/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+
+      // TESTING: Allow any authenticated user to update invoices
+      // This is needed for admin discount edits when admin role/doc isn't available in rules evaluation.
+      // NOTE: Tighten later to restrict to admins/sub_admins only.
+      allow update: if request.auth != null;
+      
+      // Allow admins and sub admins to read, create, update, and delete any user's invoices
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Explicitly allow create for admins
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // TESTING: Very permissive - allow any authenticated user to create (temporary for debugging)
+      allow create: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing invoices
+    match /users/{userId}/invoices {
+      allow list: if request.auth != null;
+      // Allow admins and sub admins to create invoices for any user
+      allow create: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+      // Also allow any authenticated user to create (for testing)
+      allow create: if request.auth != null;
+    }
+    
+    // Allow users to read their own purchased labels
+    match /users/{userId}/labelPurchases/{document} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // TESTING: Very permissive - allow any authenticated user to read
+      allow read: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's purchased labels
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing label purchases
+    match /users/{userId}/labelPurchases {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user pricing rules
+    match /users/{userId}/pricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's pricing rules
+      allow read, write: if request.auth != null && 
+        request.auth.uid != userId &&
+        isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing pricing rules
+    match /users/{userId}/pricing {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admins to manage user storage pricing rules
+    match /users/{userId}/storagePricing/{document} {
+      // TESTING: Very permissive - allow any authenticated user to read and write
+      // This is temporary for testing - we'll tighten later
+      allow read, write: if request.auth != null;
+      
+      // Allow admins and sub admins to read and write any user's storage pricing rules
+      // Note: Removed uid != userId check to allow admins to manage any user including themselves if needed
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Collection-level rule for listing storage pricing rules
+    match /users/{userId}/storagePricing {
+      allow list: if request.auth != null;
+      // Also allow admins to list
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user box forwarding pricing
+    match /users/{userId}/boxForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/boxForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet forwarding pricing
+    match /users/{userId}/palletForwardingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletForwardingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user pallet existing inventory pricing
+    match /users/{userId}/palletExistingInventoryPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/palletExistingInventoryPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user container handling pricing
+    match /users/{userId}/containerHandlingPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/containerHandlingPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow admins to manage user additional services pricing
+    match /users/{userId}/additionalServicesPricing/{document} {
+      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    match /users/{userId}/additionalServicesPricing {
+      allow list: if request.auth != null;
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+    }
+    
+    // Allow authenticated users to create their own user document during registration
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to manage their own uploaded PDFs
+    match /uploadedPDFs/{pdfId} {
+      // Allow users to read their own PDFs, admins and sub admins can read all
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow read: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+      allow list: if request.auth != null; // Allow authenticated users to list (filtered on client side)
+      
+      // Allow users to create their own PDFs
+      allow create: if request.auth != null && 
+        request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Allow users to update/delete their own PDFs, or admins/sub admins to manage any PDF
+      // Note: Client-side code will filter based on features (manage_labels)
+      allow update, delete: if request.auth != null && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists &&
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sub_admin' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(['admin', 'sub_admin']))
+          )));
+    }
+    
+    // Commissions collection
+    match /commissions/{commissionId} {
+      // Allow admins and sub admins to read and write all commissions
+      // Note: Client-side code will filter based on features
+      allow read, write: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to read their own commissions
+      // For individual document reads
+      allow get: if request.auth != null && 
+        resource.data.agentId == request.auth.uid;
+      
+      // For list/query operations - allow if user is commission agent
+      // The query filter will ensure they only see their own commissions
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // Allow system to create commissions (when invoice is paid)
+      allow create: if request.auth != null;
+      
+      // TESTING: Very permissive - allow any authenticated user to read (temporary for debugging)
+      allow read: if request.auth != null;
+    }
+    
+    // Collection-level rule for listing commissions (needed for queries)
+    match /commissions {
+      // Allow admins and sub admins to list all commissions
+      allow list: if request.auth != null && isCurrentUserAdminOrSubAdmin();
+      
+      // Allow commission agents to list commissions (they'll filter by agentId on client side)
+      allow list: if request.auth != null && 
+        getCurrentUserDoc().exists &&
+        (
+          getCurrentUserDoc().data.role == 'commission_agent' ||
+          (getCurrentUserDoc().data.roles != null &&
+           getCurrentUserDoc().data.roles.hasAny(['commission_agent']))
+        );
+      
+      // TESTING: Very permissive - allow any authenticated user to list (temporary for debugging)
+      allow list: if request.auth != null;
     }
   }
 }

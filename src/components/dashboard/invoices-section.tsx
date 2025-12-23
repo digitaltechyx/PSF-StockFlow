@@ -145,6 +145,15 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
         soldTo: invoice.soldTo,
         fbm: invoice.fbm,
         items: invoice.items,
+        isContainerHandling: (invoice as any).isContainerHandling,
+        type: (invoice as any).type,
+        additionalServices: (invoice as any).additionalServices,
+        subtotal: invoice.subtotal,
+        grandTotal: invoice.grandTotal,
+        grossTotal: (invoice as any).grossTotal,
+        discountType: (invoice as any).discountType,
+        discountValue: (invoice as any).discountValue,
+        discountAmount: (invoice as any).discountAmount,
       });
       
       toast({
@@ -544,33 +553,53 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                   <p className="text-xs sm:text-sm text-muted-foreground break-all">{selectedInvoice.soldTo.email}</p>
                 </div>
                 <div className="p-3 sm:p-4 border rounded-lg">
-                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">FBM</h4>
+                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">Service</h4>
                   <p className="text-xs sm:text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
                 </div>
               </div>
 
               {/* Items Table - Desktop */}
               <div className="hidden sm:block border rounded-lg overflow-hidden">
-                <div className="bg-muted p-2 grid grid-cols-8 gap-2 text-sm font-semibold">
-                  <div>Qty</div>
-                  <div className="col-span-2">Product</div>
-                  <div>Ship Date</div>
-                  <div>Ship To</div>
-                  <div>Packaging</div>
-                  <div>Unit Price</div>
-                  <div>Amount</div>
-                </div>
-                {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-8 gap-2 text-sm border-t">
-                    <div>{item.quantity}</div>
-                    <div className="col-span-2">{item.productName}</div>
-                    <div>{item.shipDate || '-'}</div>
-                    <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
-                    <div>{item.packaging}</div>
-                    <div>${item.unitPrice.toFixed(2)}</div>
-                    <div className="font-semibold">${item.amount.toFixed(2)}</div>
-                  </div>
-                ))}
+                {(() => {
+                  const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                  return (
+                    <>
+                      <div className={`bg-muted p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm font-semibold`}>
+                        <div>Qty</div>
+                        <div className="col-span-2">Product</div>
+                        <div>{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</div>
+                        {!isContainerHandling && (
+                          <>
+                            <div>Ship To</div>
+                            <div>Packaging</div>
+                          </>
+                        )}
+                        <div>Unit Price</div>
+                        <div>Amount</div>
+                      </div>
+                      {selectedInvoice.items.map((item, idx) => {
+                        const dateValue = isContainerHandling && (item as any).receivingDate 
+                          ? (item as any).receivingDate 
+                          : (item.shipDate || '-');
+                        return (
+                          <div key={`${item.productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
+                            <div>{item.quantity}</div>
+                            <div className="col-span-2">{item.productName}</div>
+                            <div>{dateValue}</div>
+                            {!isContainerHandling && (
+                              <>
+                                <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
+                                <div>{item.packaging}</div>
+                              </>
+                            )}
+                            <div>${item.unitPrice.toFixed(2)}</div>
+                            <div className="font-semibold">${item.amount.toFixed(2)}</div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Items Cards - Mobile */}
@@ -588,20 +617,33 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                         <p className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} each</p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t text-xs">
-                      <div>
-                        <p className="text-muted-foreground">Ship Date</p>
-                        <p className="font-medium">{item.shipDate || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Packaging</p>
-                        <p className="font-medium">{item.packaging}</p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">Ship To</p>
-                        <p className="font-medium break-words">{item.shipTo}</p>
-                      </div>
-                    </div>
+                    {(() => {
+                      const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                      return (
+                        <div className={`grid ${isContainerHandling ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-2 border-t text-xs`}>
+                          <div>
+                            <p className="text-muted-foreground">{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</p>
+                            <p className="font-medium">
+                              {isContainerHandling && (item as any).receivingDate
+                                ? (item as any).receivingDate
+                                : (item.shipDate || '-')}
+                            </p>
+                          </div>
+                          {!isContainerHandling && (
+                            <>
+                              <div>
+                                <p className="text-muted-foreground">Packaging</p>
+                                <p className="font-medium">{item.packaging}</p>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="text-muted-foreground">Ship To</p>
+                                <p className="font-medium break-words">{item.shipTo}</p>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -609,10 +651,59 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
               {/* Totals */}
               <div className="flex justify-end">
                 <div className="w-full sm:w-64 space-y-2">
-                  <div className="flex justify-between text-xs sm:text-sm">
-                    <span>Subtotal:</span>
-                    <span className="font-semibold">${selectedInvoice.subtotal.toFixed(2)}</span>
-                  </div>
+                  {(() => {
+                    const additionalTotal = Number((selectedInvoice as any)?.additionalServices?.total || 0);
+                    const itemsSubtotal = selectedInvoice.items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+                    const grossTotal =
+                      typeof (selectedInvoice as any).grossTotal === "number"
+                        ? (selectedInvoice as any).grossTotal
+                        : itemsSubtotal + (Number.isFinite(additionalTotal) ? additionalTotal : 0);
+                    const discountType = (selectedInvoice as any).discountType as ("amount" | "percent" | undefined);
+                    const discountValue = (selectedInvoice as any).discountValue as (number | undefined);
+                    const storedDiscountAmount = (selectedInvoice as any).discountAmount as (number | undefined);
+
+                    let discountAmount = 0;
+                    if (typeof storedDiscountAmount === "number") {
+                      discountAmount = storedDiscountAmount;
+                    } else if (discountType === "percent" && typeof discountValue === "number") {
+                      discountAmount = grossTotal * (discountValue / 100);
+                    } else if (discountType === "amount" && typeof discountValue === "number") {
+                      discountAmount = discountValue;
+                    }
+                    discountAmount = Math.max(0, Math.min(grossTotal, discountAmount || 0));
+                    const hasDiscount = discountAmount > 0.009;
+                    const discountLabel =
+                      discountType === "percent" && typeof discountValue === "number"
+                        ? `Discount (${discountValue.toFixed(2)}%)`
+                        : "Discount";
+
+                    return (
+                      <>
+                        {additionalTotal > 0.0001 && (
+                          <>
+                            <div className="flex justify-between text-xs sm:text-sm">
+                              <span>Items Subtotal:</span>
+                              <span className="font-semibold">${itemsSubtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs sm:text-sm">
+                              <span>Additional Services:</span>
+                              <span className="font-semibold">${additionalTotal.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between text-xs sm:text-sm">
+                          <span>Gross Total:</span>
+                          <span className="font-semibold">${grossTotal.toFixed(2)}</span>
+                        </div>
+                        {hasDiscount && (
+                          <div className="flex justify-between text-xs sm:text-sm">
+                            <span>{discountLabel}:</span>
+                            <span className="font-semibold">-${discountAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <div className="flex justify-between text-xs sm:text-sm text-muted-foreground">
                     <span>NJ Sales Tax 6.625% - Excluded</span>
                     <span>-</span>

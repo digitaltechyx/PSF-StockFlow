@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import type { ShippedItem } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { createCommissionForInvoice } from "@/lib/commission-utils";
 import { DollarSign } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 interface InvoiceManagementProps {
   users: UserProfile[];
@@ -52,6 +53,13 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [commissionsLoading, setCommissionsLoading] = useState(false);
   const [commissionPage, setCommissionPage] = useState(1);
   const itemsPerPage = 12;
+
+  // Discount editor (admin-only, for already generated invoices)
+  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false);
+  const [discountInvoice, setDiscountInvoice] = useState<Invoice | null>(null);
+  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
+  const [discountValue, setDiscountValue] = useState<string>("");
+  const [isApplyingDiscount, setIsApplyingDiscount] = useState(false);
   
   // Load all invoices from all users
   const loadInvoices = async () => {
@@ -66,10 +74,32 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         );
         const snapshot = await getDocs(invoicesQuery);
         
-        invoicesMap[user.uid] = snapshot.docs.map(doc => ({
+        const loaded = snapshot.docs.map(doc => ({
           ...doc.data() as Invoice,
           id: doc.id,
         }));
+
+        // Defensive: ensure latest invoices appear first even if createdAt is missing/mixed
+        const getInvoiceSortTime = (inv: any) => {
+          const createdAt = inv?.createdAt;
+          if (createdAt) {
+            if (typeof createdAt === "string") {
+              const t = new Date(createdAt).getTime();
+              if (!Number.isNaN(t)) return t;
+            }
+            if (typeof createdAt === "object" && typeof createdAt.seconds === "number") {
+              return createdAt.seconds * 1000;
+            }
+            if (createdAt instanceof Date) {
+              return createdAt.getTime();
+            }
+          }
+          // Fallback to invoice.date
+          const t2 = inv?.date ? new Date(inv.date).getTime() : 0;
+          return Number.isNaN(t2) ? 0 : t2;
+        };
+
+        invoicesMap[user.uid] = [...loaded].sort((a: any, b: any) => getInvoiceSortTime(b) - getInvoiceSortTime(a));
       }
       
       setUserInvoices(invoicesMap);
@@ -89,6 +119,14 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const loadCommissions = async () => {
     setCommissionsLoading(true);
     try {
+      // Check if user is admin before attempting to load
+      if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'sub_admin')) {
+        console.warn('User is not an admin, skipping commissions load');
+        setCommissions([]);
+        setCommissionsLoading(false);
+        return;
+      }
+
       const commissionsQuery = query(
         collection(db, "commissions"),
         orderBy('createdAt', 'desc')
@@ -101,12 +139,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
       }));
       
       setCommissions(commissionsData);
-    } catch (error) {
+      console.log('Commissions loaded successfully:', commissionsData.length);
+    } catch (error: any) {
       console.error('Error loading commissions:', error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to load commissions.",
+        description: `Failed to load commissions: ${error?.message || 'Unknown error'}`,
       });
     } finally {
       setCommissionsLoading(false);
@@ -177,7 +218,26 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
 
   const handleViewUserInvoices = async (user: UserProfile) => {
     setSelectedUser(user);
-    setSelectedUserInvoices(userInvoices[user.uid] || []);
+    // Always show latest first
+    const list = userInvoices[user.uid] || [];
+    const getInvoiceSortTime = (inv: any) => {
+      const createdAt = inv?.createdAt;
+      if (createdAt) {
+        if (typeof createdAt === "string") {
+          const t = new Date(createdAt).getTime();
+          if (!Number.isNaN(t)) return t;
+        }
+        if (typeof createdAt === "object" && typeof createdAt.seconds === "number") {
+          return createdAt.seconds * 1000;
+        }
+        if (createdAt instanceof Date) {
+          return createdAt.getTime();
+        }
+      }
+      const t2 = inv?.date ? new Date(inv.date).getTime() : 0;
+      return Number.isNaN(t2) ? 0 : t2;
+    };
+    setSelectedUserInvoices([...list].sort((a: any, b: any) => getInvoiceSortTime(b) - getInvoiceSortTime(a)));
     setIsDetailDialogOpen(true);
     // Reset date filters and tab when opening a new user's invoices
     setStartDate("");
@@ -203,6 +263,26 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         return invoiceDate <= end;
       }
       return true;
+    }).sort((a: any, b: any) => {
+      // Keep newest first after filtering
+      const getInvoiceSortTime = (inv: any) => {
+        const createdAt = inv?.createdAt;
+        if (createdAt) {
+          if (typeof createdAt === "string") {
+            const t = new Date(createdAt).getTime();
+            if (!Number.isNaN(t)) return t;
+          }
+          if (typeof createdAt === "object" && typeof createdAt.seconds === "number") {
+            return createdAt.seconds * 1000;
+          }
+          if (createdAt instanceof Date) {
+            return createdAt.getTime();
+          }
+        }
+        const t2 = inv?.date ? new Date(inv.date).getTime() : 0;
+        return Number.isNaN(t2) ? 0 : t2;
+      };
+      return getInvoiceSortTime(b) - getInvoiceSortTime(a);
     });
   };
 
@@ -244,6 +324,100 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
     setIsViewDialogOpen(true);
   };
 
+  const openDiscountEditor = (invoice: Invoice) => {
+    setDiscountInvoice(invoice);
+    const existingType = ((invoice as any).discountType as "amount" | "percent" | undefined) || "amount";
+    const existingValue = (invoice as any).discountValue;
+    setDiscountType(existingType);
+    setDiscountValue(typeof existingValue === "number" ? String(existingValue) : "");
+    setIsDiscountDialogOpen(true);
+  };
+
+  const discountPreview = useMemo(() => {
+    if (!discountInvoice) {
+      return {
+        grossTotal: 0,
+        discountAmount: 0,
+        grandTotal: 0,
+      };
+    }
+
+    const grossTotalRaw =
+      typeof (discountInvoice as any).grossTotal === "number"
+        ? (discountInvoice as any).grossTotal
+        : (typeof discountInvoice.subtotal === "number"
+          ? discountInvoice.subtotal
+          : discountInvoice.grandTotal);
+
+    const grossTotal = Number.isFinite(grossTotalRaw) ? grossTotalRaw : 0;
+    const valueNum = parseFloat(discountValue) || 0;
+
+    let discountAmount = 0;
+    if (discountType === "percent") {
+      discountAmount = grossTotal * (Math.max(0, Math.min(100, valueNum)) / 100);
+    } else {
+      discountAmount = Math.max(0, valueNum);
+    }
+    discountAmount = Math.min(grossTotal, discountAmount);
+
+    const grandTotal = Math.max(0, grossTotal - discountAmount);
+    return { grossTotal, discountAmount, grandTotal };
+  }, [discountInvoice, discountType, discountValue]);
+
+  const handleApplyDiscount = async () => {
+    if (!discountInvoice) return;
+    if (!discountInvoice.id) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Cannot update discount: missing invoice id.",
+      });
+      return;
+    }
+
+    setIsApplyingDiscount(true);
+    try {
+      const grossTotal = discountPreview.grossTotal;
+      const discountAmount = discountPreview.discountAmount;
+      const grandTotal = discountPreview.grandTotal;
+      const valueNum = parseFloat(discountValue) || 0;
+
+      const normalizedValue =
+        discountType === "percent"
+          ? Math.max(0, Math.min(100, valueNum))
+          : Math.max(0, valueNum);
+
+      await updateDoc(doc(db, `users/${discountInvoice.userId}/invoices/${discountInvoice.id}`), {
+        grossTotal,
+        discountType,
+        discountValue: normalizedValue,
+        discountAmount,
+        grandTotal,
+        updatedAt: new Date(),
+      } as any);
+
+      await loadInvoices();
+
+      toast({
+        title: "Discount Applied",
+        description: `Invoice updated. New total: $${grandTotal.toFixed(2)}`,
+      });
+
+      setIsDiscountDialogOpen(false);
+      setDiscountInvoice(null);
+      setDiscountValue("");
+    } catch (error: any) {
+      console.error("Error applying discount:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to apply discount.",
+      });
+    } finally {
+      setIsApplyingDiscount(false);
+    }
+  };
+
   const handleDownloadInvoice = async (invoice: Invoice) => {
     try {
       await generateInvoicePDF({
@@ -253,6 +427,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         soldTo: invoice.soldTo,
         fbm: invoice.fbm,
         items: invoice.items,
+        isContainerHandling: (invoice as any).isContainerHandling,
+        type: (invoice as any).type,
+        additionalServices: (invoice as any).additionalServices,
+        subtotal: invoice.subtotal,
+        grandTotal: invoice.grandTotal,
+        grossTotal: (invoice as any).grossTotal,
+        discountType: (invoice as any).discountType,
+        discountValue: (invoice as any).discountValue,
+        discountAmount: (invoice as any).discountAmount,
       });
       
       toast({
@@ -676,6 +859,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                                   <span className="hidden sm:inline">Download</span>
                                 </Button>
                                 <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => openDiscountEditor(invoice)}
+                                >
+                                  <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  Discount
+                                </Button>
+                                <Button
                                   variant="default"
                                   size="sm"
                                   className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
@@ -763,6 +955,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                                 >
                                   <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                                   <span className="hidden sm:inline">Download</span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="col-span-2 w-full text-xs sm:text-sm h-8 sm:h-9"
+                                  onClick={() => openDiscountEditor(invoice)}
+                                >
+                                  <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                                  Discount
                                 </Button>
                               </div>
                             </div>
@@ -865,33 +1066,53 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                   <p className="text-xs sm:text-sm text-muted-foreground break-all">{selectedInvoice.soldTo.email}</p>
                 </div>
                 <div className="p-3 sm:p-4 border rounded-lg">
-                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">FBM</h4>
+                  <h4 className="font-semibold text-sm sm:text-base mb-1.5 sm:mb-2">Service</h4>
                   <p className="text-xs sm:text-sm text-muted-foreground">{selectedInvoice.fbm}</p>
                 </div>
               </div>
 
               {/* Items Table - Desktop */}
               <div className="hidden sm:block border rounded-lg overflow-hidden">
-                <div className="bg-muted p-2 grid grid-cols-8 gap-2 text-sm font-semibold">
-                  <div>Qty</div>
-                  <div className="col-span-2">Product</div>
-                  <div>Ship Date</div>
-                  <div>Ship To</div>
-                  <div>Packaging</div>
-                  <div>Unit Price</div>
-                  <div>Amount</div>
-                </div>
-                {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${item.productName}-${idx}`} className="p-2 grid grid-cols-8 gap-2 text-sm border-t">
-                    <div>{item.quantity}</div>
-                    <div className="col-span-2">{item.productName}</div>
-                    <div>{item.shipDate || '-'}</div>
-                    <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
-                    <div>{item.packaging}</div>
-                    <div>${item.unitPrice.toFixed(2)}</div>
-                    <div className="font-semibold">${item.amount.toFixed(2)}</div>
-                  </div>
-                ))}
+                {(() => {
+                  const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                  return (
+                    <>
+                      <div className={`bg-muted p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm font-semibold`}>
+                        <div>Qty</div>
+                        <div className="col-span-2">Product</div>
+                        <div>{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</div>
+                        {!isContainerHandling && (
+                          <>
+                            <div>Ship To</div>
+                            <div>Packaging</div>
+                          </>
+                        )}
+                        <div>Unit Price</div>
+                        <div>Amount</div>
+                      </div>
+                      {selectedInvoice.items.map((item, idx) => {
+                        const dateValue = isContainerHandling && (item as any).receivingDate 
+                          ? (item as any).receivingDate 
+                          : (item.shipDate || '-');
+                        return (
+                          <div key={`${item.productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
+                            <div>{item.quantity}</div>
+                            <div className="col-span-2">{item.productName}</div>
+                            <div>{dateValue}</div>
+                            {!isContainerHandling && (
+                              <>
+                                <div className="truncate" title={item.shipTo}>{item.shipTo}</div>
+                                <div>{item.packaging}</div>
+                              </>
+                            )}
+                            <div>${item.unitPrice.toFixed(2)}</div>
+                            <div className="font-semibold">${item.amount.toFixed(2)}</div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Items Cards - Mobile */}
@@ -909,20 +1130,33 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                         <p className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} each</p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t text-xs">
-                      <div>
-                        <p className="text-muted-foreground">Ship Date</p>
-                        <p className="font-medium">{item.shipDate || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Packaging</p>
-                        <p className="font-medium">{item.packaging}</p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">Ship To</p>
-                        <p className="font-medium break-words">{item.shipTo}</p>
-                      </div>
-                    </div>
+                    {(() => {
+                      const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                      return (
+                        <div className={`grid ${isContainerHandling ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-2 border-t text-xs`}>
+                          <div>
+                            <p className="text-muted-foreground">{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</p>
+                            <p className="font-medium">
+                              {isContainerHandling && (item as any).receivingDate
+                                ? (item as any).receivingDate
+                                : (item.shipDate || '-')}
+                            </p>
+                          </div>
+                          {!isContainerHandling && (
+                            <>
+                              <div>
+                                <p className="text-muted-foreground">Packaging</p>
+                                <p className="font-medium">{item.packaging}</p>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="text-muted-foreground">Ship To</p>
+                                <p className="font-medium break-words">{item.shipTo}</p>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -930,10 +1164,59 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               {/* Totals */}
               <div className="flex justify-end">
                 <div className="w-full sm:w-64 space-y-2">
-                  <div className="flex justify-between text-xs sm:text-sm">
-                    <span>Subtotal:</span>
-                    <span className="font-semibold">${selectedInvoice.subtotal.toFixed(2)}</span>
-                  </div>
+                  {(() => {
+                    const additionalTotal = Number((selectedInvoice as any)?.additionalServices?.total || 0);
+                    const itemsSubtotal = selectedInvoice.items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+                    const grossTotal =
+                      typeof (selectedInvoice as any).grossTotal === "number"
+                        ? (selectedInvoice as any).grossTotal
+                        : itemsSubtotal + (Number.isFinite(additionalTotal) ? additionalTotal : 0);
+                    const discountType = (selectedInvoice as any).discountType as ("amount" | "percent" | undefined);
+                    const discountValue = (selectedInvoice as any).discountValue as (number | undefined);
+                    const storedDiscountAmount = (selectedInvoice as any).discountAmount as (number | undefined);
+
+                    let discountAmount = 0;
+                    if (typeof storedDiscountAmount === "number") {
+                      discountAmount = storedDiscountAmount;
+                    } else if (discountType === "percent" && typeof discountValue === "number") {
+                      discountAmount = grossTotal * (discountValue / 100);
+                    } else if (discountType === "amount" && typeof discountValue === "number") {
+                      discountAmount = discountValue;
+                    }
+                    discountAmount = Math.max(0, Math.min(grossTotal, discountAmount || 0));
+                    const hasDiscount = discountAmount > 0.009;
+                    const discountLabel =
+                      discountType === "percent" && typeof discountValue === "number"
+                        ? `Discount (${discountValue.toFixed(2)}%)`
+                        : "Discount";
+
+                    return (
+                      <>
+                        {additionalTotal > 0.0001 && (
+                          <>
+                            <div className="flex justify-between text-xs sm:text-sm">
+                              <span>Items Subtotal:</span>
+                              <span className="font-semibold">${itemsSubtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs sm:text-sm">
+                              <span>Additional Services:</span>
+                              <span className="font-semibold">${additionalTotal.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between text-xs sm:text-sm">
+                          <span>Gross Total:</span>
+                          <span className="font-semibold">${grossTotal.toFixed(2)}</span>
+                        </div>
+                        {hasDiscount && (
+                          <div className="flex justify-between text-xs sm:text-sm">
+                            <span>{discountLabel}:</span>
+                            <span className="font-semibold">-${discountAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <div className="flex justify-between text-xs sm:text-sm text-muted-foreground">
                     <span>NJ Sales Tax 6.625% - Excluded</span>
                     <span>-</span>
@@ -955,6 +1238,100 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                 >
                   <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                   Download PDF
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Discount Dialog */}
+      <Dialog open={isDiscountDialogOpen} onOpenChange={(open) => {
+        setIsDiscountDialogOpen(open);
+        if (!open) {
+          setDiscountInvoice(null);
+          setDiscountValue("");
+          setDiscountType("amount");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Apply Discount</DialogTitle>
+            <DialogDescription>
+              Update an already-generated invoice by applying a discount (amount or percentage). This will update the invoice totals and PDF.
+            </DialogDescription>
+          </DialogHeader>
+
+          {discountInvoice && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-muted/40 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Invoice</span>
+                  <span className="font-medium">{discountInvoice.invoiceNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gross Total</span>
+                  <span className="font-medium">${discountPreview.grossTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <Tabs value={discountType} onValueChange={(v) => setDiscountType(v as any)} className="w-full">
+                <TabsList className="grid grid-cols-2 w-full">
+                  <TabsTrigger value="amount">Amount ($)</TabsTrigger>
+                  <TabsTrigger value="percent">Percentage (%)</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="amount" className="mt-4">
+                  <Label>Discount Amount ($)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </TabsContent>
+
+                <TabsContent value="percent" className="mt-4">
+                  <Label>Discount Percentage (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    placeholder="0"
+                  />
+                </TabsContent>
+              </Tabs>
+
+              <div className="p-3 rounded-lg bg-muted/40 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="font-medium">-${discountPreview.discountAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Grand Total</span>
+                  <span className="font-semibold">${discountPreview.grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1"
+                  onClick={handleApplyDiscount}
+                  disabled={isApplyingDiscount || !discountInvoice}
+                >
+                  {isApplyingDiscount ? "Saving..." : "Apply Discount"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDiscountDialogOpen(false)}
+                  disabled={isApplyingDiscount}
+                >
+                  Cancel
                 </Button>
               </div>
             </div>
