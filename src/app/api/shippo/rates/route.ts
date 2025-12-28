@@ -113,8 +113,8 @@ export async function POST(request: NextRequest) {
     const ratesData = await ratesResponse.json();
     const rates = Array.isArray(ratesData.results) ? ratesData.results : ratesData;
 
-    // Format rates for frontend and add 10 cents admin markup
-    const ADMIN_MARKUP = 0.10; // 10 cents admin profit
+    // Format rates for frontend and add 15 cents admin markup
+    const ADMIN_MARKUP = 0.15; // 15 cents admin profit
     const formattedRates = rates.map((rate: any) => {
       const baseAmount = parseFloat(rate.amount) || 0;
       const markedUpAmount = (baseAmount + ADMIN_MARKUP).toFixed(2);
