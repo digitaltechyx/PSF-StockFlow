@@ -33,9 +33,33 @@ function formatDateTime(value: any) {
   return date.toLocaleString(undefined, {
     month: "long",
     day: "numeric",
-    hour: "2-digit",
+    year: "numeric",
+    hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
+}
+
+function formatStatus(status: string | undefined): string {
+  if (!status) return "Update";
+  const statusLower = status.toLowerCase();
+  
+  // Map common statuses to user-friendly text
+  if (statusLower.includes("delivered")) return "Delivered";
+  if (statusLower.includes("out_for_delivery") || statusLower.includes("out for delivery")) return "Out for Delivery";
+  if (statusLower.includes("arrived_at_post_office") || statusLower.includes("arrived at post office")) return "Arrived at Post Office";
+  if (statusLower.includes("arrived_at_usps") || statusLower.includes("arrived at usps")) return "Arrived at USPS Regional Facility";
+  if (statusLower.includes("in_transit") || statusLower.includes("in transit")) return "In Transit to Next Facility";
+  if (statusLower.includes("departed") || statusLower.includes("departed usps")) return "Departed USPS Facility";
+  if (statusLower.includes("arrived_at_facility") || statusLower.includes("arrived at facility")) return "Arrived at USPS Facility";
+  if (statusLower.includes("pre_transit") || statusLower.includes("pre transit")) return "Label Created";
+  if (statusLower.includes("transit")) return "In Transit";
+  
+  // Capitalize first letter of each word
+  return status
+    .split(/[_\s]+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function getTimelineDate(event: any) {
@@ -256,42 +280,59 @@ export default function TrackShipmentPage() {
             {timelineEvents.length > 0 && (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-4">
-                  Journey timeline
+                  Tracking History
                 </p>
-                <div className="space-y-6 border-l border-white/10 pl-6">
-                  {timelineEvents.slice(0, 8).map((event: any, idx: number) => {
-                    const location = event?.location || {};
-                    const locationText = [location.city, location.state || location.zip]
-                      .filter(Boolean)
-                      .join(", ");
-                    const dateText = formatDateTime(getTimelineDate(event));
+                <div className="relative">
+                  {/* Vertical timeline line */}
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-blue-600"></div>
+                  
+                  {/* Timeline events - reverse chronological (most recent first) */}
+                  <div className="space-y-6 pl-8">
+                    {timelineEvents.slice(0, 10).map((event: any, idx: number) => {
+                      const location = event?.location || {};
+                      const locationText = [
+                        location.city,
+                        location.state,
+                        location.zip,
+                        location.facility_name
+                      ]
+                        .filter(Boolean)
+                        .join(", ");
+                      const dateText = formatDateTime(getTimelineDate(event));
+                      const statusText = formatStatus(event.status);
+                      const isDelivered = statusText.toLowerCase().includes("delivered") && idx === 0;
+                      const isFirst = idx === 0;
 
-                    return (
-                      <div key={idx} className="relative space-y-1">
-                        <span
-                          className={`absolute -left-3.5 top-1 h-3 w-3 rounded-full border border-emerald-400 ${
-                            idx === 0
-                              ? "bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.7)]"
-                              : "bg-slate-950"
-                          }`}
-                        />
-                        <p className="text-sm font-semibold uppercase">
-                          {event.status || "Update"}
-                        </p>
-                        {dateText && (
-                          <p className="text-xs font-semibold text-emerald-300">
-                            {dateText}
-                          </p>
-                        )}
-                        {locationText && (
-                          <p className="text-xs text-slate-300">{locationText}</p>
-                        )}
-                        {event.status_details && (
-                          <p className="text-xs text-slate-400">{event.status_details}</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                      return (
+                        <div key={idx} className="relative">
+                          {/* Timeline node */}
+                          <div
+                            className={`absolute -left-9 top-1 h-4 w-4 rounded-full border-2 ${
+                              isDelivered
+                                ? "bg-green-500 border-green-500"
+                                : "bg-blue-600 border-blue-600"
+                            }`}
+                          />
+                          
+                          {/* Event content */}
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-white">
+                              {statusText}
+                            </p>
+                            {event.status_details && (
+                              <p className="text-xs text-slate-300">{event.status_details}</p>
+                            )}
+                            {locationText && (
+                              <p className="text-xs text-slate-400">{locationText}</p>
+                            )}
+                            {dateText && (
+                              <p className="text-xs text-slate-400">{dateText}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
