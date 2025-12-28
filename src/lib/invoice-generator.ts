@@ -45,16 +45,17 @@ interface InvoiceData {
 }
 
 export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
-  // Create PDF with A4 size
-  const doc = new jsPDF('p', 'mm', 'a4');
-  
-  // Set up page dimensions for A4
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
-  const rightGutter = 10; // extra space on the right edge
-  let yPos = margin;
-  let headerLogoHeightUsed = 0;
+  try {
+    // Create PDF with A4 size
+    const doc = new jsPDF('p', 'mm', 'a4');
+    
+    // Set up page dimensions for A4
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const rightGutter = 10; // extra space on the right edge
+    let yPos = margin;
+    let headerLogoHeightUsed = 0;
   
   // Add watermark logo (centered, large, semi-transparent)
   try {
@@ -229,9 +230,10 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   
   if (isStorageInvoice) {
     // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet, Amount)
-    const colAmount = tableRight;           // 185 (right-aligned)
-    const colPricePerPallet = colAmount - 30; // right-aligned
-    const colDate = colPricePerPallet - 35;   // left-aligned
+    // Calculate positions from left to right for proper order
+    const colDate = colProduct + 50;           // ~90mm (after Product)
+    const colPricePerPallet = colDate + 30;    // ~120mm (after Date)
+    const colAmount = tableRight;              // 185mm (right-aligned)
     
     doc.text('QUANTITY', colQty, tableStartY);
     doc.text('PRODUCT', colProduct, tableStartY);
@@ -260,7 +262,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
 
       doc.setFont('helvetica', 'normal');
       doc.text(String(qty), colQty, currentY);
-      doc.text(productName.substring(0, 40), colProduct, currentY);
+      doc.text(productName.substring(0, 35), colProduct, currentY);
       doc.text(shipDate.substring(0, 12), colDate, currentY);
       doc.text(`$${unitPrice.toFixed(2)}`, colPricePerPallet, currentY, { align: 'right' });
       doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
@@ -415,13 +417,17 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   doc.text('GRAND TOTAL', margin, summaryLineY + 6);
   doc.text(`TOTAL: $${finalTotal.toFixed(2)}`, pageWidth - rightGutter - 50, summaryLineY + 6);
   
-  // Footer
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(9);
-  doc.text('WE APPRECIATE YOUR BUSINESS', (pageWidth - rightGutter) / 2, 280, { align: 'center' });
-  
-  // Save the PDF
-  doc.save(`Invoice-${data.invoiceNumber}.pdf`);
+    // Footer
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.text('WE APPRECIATE YOUR BUSINESS', (pageWidth - rightGutter) / 2, 280, { align: 'center' });
+    
+    // Save the PDF
+    doc.save(`Invoice-${data.invoiceNumber}.pdf`);
+  } catch (error) {
+    console.error('Error generating invoice PDF:', error);
+    throw new Error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export { generateInvoiceNumber } from "./invoice-utils";
