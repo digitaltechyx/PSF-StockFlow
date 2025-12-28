@@ -138,14 +138,7 @@ body {
   }
 }
 
-/* Hide default cursor globally for fluid cursor effect */
-body {
-  cursor: none;
-}
-
-body * {
-  cursor: none !important;
-}
+/* Default cursor restored - fluid cursor removed */
 
 /* Ensure scrollbars are always visible */
 body *::-webkit-scrollbar,
