@@ -176,7 +176,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   let leftColumnBottomY = yPos + (soldToLines.length - 1) * 5;
   
   if (data.soldTo.address) {
-    leftColumnBottomY += 2;
+    leftColumnBottomY += 7; // Add spacing between name and address
     doc.text(data.soldTo.address, margin, leftColumnBottomY);
   }
   
@@ -216,60 +216,106 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   // Itemized table
   yPos += 12;
   const tableStartY = yPos;
-  
+
+  // Check if this is a storage invoice
+  const isStorageInvoice = data.type === 'storage';
+
   // Table headers
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   const tableRight = pageWidth - margin - rightGutter; // ~185mm
   const colQty = margin;                  // 15
   const colProduct = margin + 25;         // 40
-  // Set remaining columns based on fixed separations from the right edge
-  const colAmount = tableRight;           // 185 (right-aligned)
-  const colUnitPrice = colAmount - 22;    // right-aligned
-  const colPackaging = colUnitPrice - 35; // extra spacing from Unit Price
-  const colShipTo = colPackaging - 26;    // 111 (left-aligned)
-  const colShipDate = colShipTo - 26;     // 85 (left-aligned)
-
-  doc.text('QUANTITY', colQty, tableStartY);
-  doc.text('PRODUCT', colProduct, tableStartY);
-  doc.text('DATE', colShipDate, tableStartY);
-  doc.text('SHIP TO', colShipTo, tableStartY);
-  doc.text('PACK', colPackaging, tableStartY);
-  doc.text('UNIT PRICE', colUnitPrice, tableStartY, { align: 'right' });
-  doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
   
-  // Horizontal line under headers
-  doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
-  
-  // Table rows
-  let currentY = tableStartY + 10;
-  data.items.forEach((item, index) => {
-    if (currentY > 250) {
-      // New page if needed
-      doc.addPage();
-      currentY = 20;
-    }
+  if (isStorageInvoice) {
+    // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet, Amount)
+    const colAmount = tableRight;           // 185 (right-aligned)
+    const colPricePerPallet = colAmount - 30; // right-aligned
+    const colDate = colPricePerPallet - 35;   // left-aligned
     
-    const safeItem: any = item as any;
-    const qty = Number(safeItem?.quantity || 0);
-    const productName = String(safeItem?.productName || safeItem?.description || '');
-    const shipDate = String(safeItem?.shipDate || '');
-    const shipTo = String(safeItem?.shipTo || '');
-    const packaging = String(safeItem?.packaging || '');
-    const unitPrice = Number(safeItem?.unitPrice || 0);
-    const amount = Number(safeItem?.amount || 0);
+    doc.text('QUANTITY', colQty, tableStartY);
+    doc.text('PRODUCT', colProduct, tableStartY);
+    doc.text('DATE', colDate, tableStartY);
+    doc.text('PRICE PER PALLET', colPricePerPallet, tableStartY, { align: 'right' });
+    doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
+    
+    // Horizontal line under headers
+    doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
+    
+    // Table rows
+    let currentY = tableStartY + 10;
+    data.items.forEach((item, index) => {
+      if (currentY > 250) {
+        // New page if needed
+        doc.addPage();
+        currentY = 20;
+      }
+      
+      const safeItem: any = item as any;
+      const qty = Number(safeItem?.quantity || 0);
+      const productName = String(safeItem?.productName || safeItem?.description || '');
+      const shipDate = String(safeItem?.shipDate || '');
+      const unitPrice = Number(safeItem?.unitPrice || 0);
+      const amount = Number(safeItem?.amount || 0);
 
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(qty), colQty, currentY);
-    doc.text(productName.substring(0, 30), colProduct, currentY);
-    doc.text(shipDate.substring(0, 10), colShipDate, currentY);
-    doc.text(shipTo.substring(0, 14), colShipTo, currentY);
-    doc.text(packaging.substring(0, 12), colPackaging, currentY);
-    doc.text(`$${unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
-    doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(qty), colQty, currentY);
+      doc.text(productName.substring(0, 40), colProduct, currentY);
+      doc.text(shipDate.substring(0, 12), colDate, currentY);
+      doc.text(`$${unitPrice.toFixed(2)}`, colPricePerPallet, currentY, { align: 'right' });
+      doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
+      
+      currentY += 7;
+    });
+  } else {
+    // Regular invoice: 7 columns (Qty, Product, Date, Ship To, Pack, Unit Price, Amount)
+    const colAmount = tableRight;           // 185 (right-aligned)
+    const colUnitPrice = colAmount - 22;    // right-aligned
+    const colPackaging = colUnitPrice - 35; // extra spacing from Unit Price
+    const colShipTo = colPackaging - 26;    // 111 (left-aligned)
+    const colShipDate = colShipTo - 26;     // 85 (left-aligned)
+
+    doc.text('QUANTITY', colQty, tableStartY);
+    doc.text('PRODUCT', colProduct, tableStartY);
+    doc.text('DATE', colShipDate, tableStartY);
+    doc.text('SHIP TO', colShipTo, tableStartY);
+    doc.text('PACK', colPackaging, tableStartY);
+    doc.text('UNIT PRICE', colUnitPrice, tableStartY, { align: 'right' });
+    doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
     
-    currentY += 7;
-  });
+    // Horizontal line under headers
+    doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
+    
+    // Table rows
+    let currentY = tableStartY + 10;
+    data.items.forEach((item, index) => {
+      if (currentY > 250) {
+        // New page if needed
+        doc.addPage();
+        currentY = 20;
+      }
+      
+      const safeItem: any = item as any;
+      const qty = Number(safeItem?.quantity || 0);
+      const productName = String(safeItem?.productName || safeItem?.description || '');
+      const shipDate = String(safeItem?.shipDate || '');
+      const shipTo = String(safeItem?.shipTo || '');
+      const packaging = String(safeItem?.packaging || '');
+      const unitPrice = Number(safeItem?.unitPrice || 0);
+      const amount = Number(safeItem?.amount || 0);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(qty), colQty, currentY);
+      doc.text(productName.substring(0, 30), colProduct, currentY);
+      doc.text(shipDate.substring(0, 10), colShipDate, currentY);
+      doc.text(shipTo.substring(0, 14), colShipTo, currentY);
+      doc.text(packaging.substring(0, 12), colPackaging, currentY);
+      doc.text(`$${unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
+      doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
+      
+      currentY += 7;
+    });
+  }
   
   // Calculate totals
   const itemsSubtotal = data.items.reduce((sum, item: any) => sum + Number((item as any)?.amount || 0), 0);

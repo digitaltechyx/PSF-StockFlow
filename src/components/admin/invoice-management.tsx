@@ -1210,7 +1210,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                             <div>Packaging</div>
                           </>
                         )}
-                        <div>{isStorageInvoice ? 'Pallet Price' : 'Unit Price'}</div>
+                        <div>{isStorageInvoice ? 'Price per Pallet' : 'Unit Price'}</div>
                         <div>Amount</div>
                       </div>
                       {selectedInvoice.items.map((item, idx) => {
@@ -1254,7 +1254,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                       <div className="text-right ml-2">
                         <p className="font-semibold text-sm">${Number((item as any).amount || 0).toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {((selectedInvoice as any).type === 'storage' ? 'Pallet Price' : 'Unit Price')}: ${Number((item as any).unitPrice || 0).toFixed(2)}
+                          {((selectedInvoice as any).type === 'storage' ? 'Price per Pallet' : 'Unit Price')}: ${Number((item as any).unitPrice || 0).toFixed(2)}
                         </p>
                       </div>
                     </div>

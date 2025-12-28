@@ -3,7 +3,6 @@ import "./globals.css";
 import { AuthProvider } from "@/hooks/use-auth";
 import { Toaster } from "@/components/ui/toaster";
 import { WhatsAppFloatingButton } from "@/components/whatsapp-floating-button";
-import { FluidCursor } from "@/components/fluid-cursor";
 
 export const metadata: Metadata = {
   title: "PSF StockFlow",
@@ -39,7 +38,6 @@ export default function RootLayout({
         />
       </head>
       <body className="font-body antialiased">
-        <FluidCursor />
         <AuthProvider>
           {children}
           <Toaster />
