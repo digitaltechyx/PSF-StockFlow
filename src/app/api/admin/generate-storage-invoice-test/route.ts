@@ -110,14 +110,35 @@ export async function POST(request: NextRequest) {
 
     const storagePricingSnapshot = await db
       .collection(`users/${userId}/storagePricing`)
-      .limit(1)
       .get();
 
     if (storagePricingSnapshot.empty) {
       return NextResponse.json({ error: "No storage pricing configured" }, { status: 400 });
     }
 
-    const storagePricing = storagePricingSnapshot.docs[0].data();
+    const toMs = (v: any): number => {
+      if (!v) return 0;
+      if (typeof v === "string") {
+        const t = new Date(v).getTime();
+        return Number.isNaN(t) ? 0 : t;
+      }
+      if (typeof v === "object" && typeof v.toDate === "function") {
+        return v.toDate().getTime();
+      }
+      if (typeof v === "object" && typeof v.seconds === "number") return v.seconds * 1000;
+      if (v instanceof Date) return v.getTime();
+      return 0;
+    };
+
+    const latestPricingDoc = [...storagePricingSnapshot.docs].sort((a, b) => {
+      const ad: any = a.data();
+      const bd: any = b.data();
+      const at = Math.max(toMs(ad.updatedAt), toMs(ad.createdAt));
+      const bt = Math.max(toMs(bd.updatedAt), toMs(bd.createdAt));
+      return bt - at;
+    })[0];
+
+    const storagePricing = latestPricingDoc.data();
     const price = storagePricing.price;
     if (!price || price <= 0) {
       return NextResponse.json({ error: "Invalid storage price" }, { status: 400 });

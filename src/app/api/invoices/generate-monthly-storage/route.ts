@@ -133,7 +133,6 @@ async function handleRequest(request: NextRequest) {
       // Get user's storage pricing
       const storagePricingSnapshot = await db
         .collection(`users/${userId}/storagePricing`)
-        .limit(1)
         .get();
 
       if (storagePricingSnapshot.empty) {
@@ -141,7 +140,30 @@ async function handleRequest(request: NextRequest) {
         continue;
       }
 
-      const storagePricing = storagePricingSnapshot.docs[0].data();
+      const toMs = (v: any): number => {
+        if (!v) return 0;
+        if (typeof v === "string") {
+          const t = new Date(v).getTime();
+          return Number.isNaN(t) ? 0 : t;
+        }
+        if (typeof v === "object" && typeof v.toDate === "function") {
+          return v.toDate().getTime();
+        }
+        if (typeof v === "object" && typeof v.seconds === "number") return v.seconds * 1000;
+        if (v instanceof Date) return v.getTime();
+        return 0;
+      };
+
+      // Pick the latest pricing doc; .limit(1) is non-deterministic and can pick old prices.
+      const latestPricingDoc = [...storagePricingSnapshot.docs].sort((a, b) => {
+        const ad: any = a.data();
+        const bd: any = b.data();
+        const at = Math.max(toMs(ad.updatedAt), toMs(ad.createdAt));
+        const bt = Math.max(toMs(bd.updatedAt), toMs(bd.createdAt));
+        return bt - at;
+      })[0];
+
+      const storagePricing = latestPricingDoc.data();
       const price = storagePricing.price;
 
       if (!price || price <= 0) {
