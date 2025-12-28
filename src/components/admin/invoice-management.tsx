@@ -1195,20 +1195,22 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
               {/* Items Table - Desktop */}
               <div className="hidden sm:block border rounded-lg overflow-hidden">
                 {(() => {
+                  const isStorageInvoice = (selectedInvoice as any).type === 'storage';
                   const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                  const gridCols = isStorageInvoice ? 'grid-cols-5' : (isContainerHandling ? 'grid-cols-6' : 'grid-cols-8');
                   return (
                     <>
-                      <div className={`bg-muted p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm font-semibold`}>
+                      <div className={`bg-muted p-2 grid ${gridCols} gap-2 text-sm font-semibold`}>
                         <div>Qty</div>
                         <div className="col-span-2">Product</div>
-                        <div>{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</div>
-                        {!isContainerHandling && (
+                        <div>{isStorageInvoice ? 'Date' : (isContainerHandling ? 'Receiving Date' : 'Ship Date')}</div>
+                        {!isStorageInvoice && !isContainerHandling && (
                           <>
                             <div>Ship To</div>
                             <div>Packaging</div>
                           </>
                         )}
-                        <div>Unit Price</div>
+                        <div>{isStorageInvoice ? 'Pallet Price' : 'Unit Price'}</div>
                         <div>Amount</div>
                       </div>
                       {selectedInvoice.items.map((item, idx) => {
@@ -1219,11 +1221,11 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                         const shipTo = (item as any).shipTo || "—";
                         const packaging = (item as any).packaging || "—";
                         return (
-                          <div key={`${productName}-${idx}`} className={`p-2 grid ${isContainerHandling ? 'grid-cols-6' : 'grid-cols-8'} gap-2 text-sm border-t`}>
+                          <div key={`${productName}-${idx}`} className={`p-2 grid ${gridCols} gap-2 text-sm border-t`}>
                             <div>{(item as any).quantity}</div>
                             <div className="col-span-2">{productName}</div>
                             <div>{dateValue}</div>
-                            {!isContainerHandling && (
+                            {!isStorageInvoice && !isContainerHandling && (
                               <>
                                 <div className="truncate" title={shipTo}>{shipTo}</div>
                                 <div>{packaging}</div>
@@ -1251,22 +1253,25 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                       </div>
                       <div className="text-right ml-2">
                         <p className="font-semibold text-sm">${Number((item as any).amount || 0).toFixed(2)}</p>
-                        <p className="text-xs text-muted-foreground">${Number((item as any).unitPrice || 0).toFixed(2)} each</p>
+                        <p className="text-xs text-muted-foreground">
+                          {((selectedInvoice as any).type === 'storage' ? 'Pallet Price' : 'Unit Price')}: ${Number((item as any).unitPrice || 0).toFixed(2)}
+                        </p>
                       </div>
                     </div>
                     {(() => {
+                      const isStorageInvoice = (selectedInvoice as any).type === 'storage';
                       const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
                       return (
-                        <div className={`grid ${isContainerHandling ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-2 border-t text-xs`}>
+                        <div className={`grid ${isStorageInvoice || isContainerHandling ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-2 border-t text-xs`}>
                           <div>
-                            <p className="text-muted-foreground">{isContainerHandling ? 'Receiving Date' : 'Ship Date'}</p>
+                            <p className="text-muted-foreground">{isStorageInvoice ? 'Date' : (isContainerHandling ? 'Receiving Date' : 'Ship Date')}</p>
                             <p className="font-medium">
                               {isContainerHandling && (item as any).receivingDate
                                 ? (item as any).receivingDate
                                 : (((item as any).shipDate) || '-')}
                             </p>
                           </div>
-                          {!isContainerHandling && (
+                          {!isStorageInvoice && !isContainerHandling && (
                             <>
                               <div>
                                 <p className="text-muted-foreground">Packaging</p>
