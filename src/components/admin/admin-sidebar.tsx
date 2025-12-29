@@ -94,6 +94,7 @@ export function AdminSidebar() {
 
         if (!cancelled) {
           setPendingRequestsCount(shipmentPending + inventoryPending + productReturnPending);
+          console.log("[AdminSidebar] Document pending count (polling):", documentPending);
           setPendingDocumentRequestsCount(documentPending);
         }
       } catch {
@@ -165,6 +166,7 @@ export function AdminSidebar() {
       }, onRealtimeError);
       unsub4 = onSnapshot(documentsQ, (snap) => {
         documentCount = snap.size;
+        console.log("[AdminSidebar] Document requests count:", documentCount);
         push();
       }, onRealtimeError);
     } catch {
@@ -247,6 +249,13 @@ export function AdminSidebar() {
     },
   ];
 
+  // Debug: Log document requests count
+  useEffect(() => {
+    if (pendingDocumentRequestsCount > 0) {
+      console.log("[AdminSidebar] Pending document requests count:", pendingDocumentRequestsCount);
+    }
+  }, [pendingDocumentRequestsCount]);
+
   // Filter menu items based on user's role and features
   const menuItems = allMenuItems.filter((item) => {
     const canAccessAdmin =
@@ -321,26 +330,26 @@ export function AdminSidebar() {
                             : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        <Link href={item.url} className="flex items-center gap-3">
+                        <Link href={item.url} className="flex items-center gap-3 relative w-full">
                           <Icon className={cn(
                             "h-5 w-5 transition-transform group-hover:scale-110",
                             isActive ? item.color : "text-muted-foreground"
                           )} />
                           <span className={cn(
-                            "font-medium transition-colors",
+                            "font-medium transition-colors flex-1",
                             isActive && "font-semibold"
                           )}>
                             {item.title}
                           </span>
-                          {item.badge !== null && item.badge !== undefined && (
-                            <SidebarMenuBadge className={cn(
-                              "ml-auto bg-primary text-primary-foreground shadow-sm",
-                              isActive && "bg-primary/90"
-                            )}>
-                              {item.badge}
-                            </SidebarMenuBadge>
-                          )}
                         </Link>
+                        {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
+                          <SidebarMenuBadge className={cn(
+                            "ml-auto bg-primary text-primary-foreground shadow-sm",
+                            isActive && "bg-primary/90"
+                          )}>
+                            {item.badge}
+                          </SidebarMenuBadge>
+                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
