@@ -240,7 +240,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet, Amount)
     // Calculate positions from left to right for proper order
     const colDate = colProduct + 50;           // ~90mm (after Product)
-    const colPricePerPallet = colDate + 30;    // ~120mm (after Date)
+    const colPricePerPallet = colDate + 40;    // ~130mm (after Date, with more spacing)
     const colAmount = tableRight;              // 185mm (right-aligned)
     
     doc.text('QUANTITY', colQty, tableStartY);
