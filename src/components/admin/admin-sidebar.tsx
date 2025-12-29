@@ -27,6 +27,7 @@ import {
   DollarSign,
   ArrowLeftRight,
   Bell,
+  FolderOpen,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -50,6 +51,8 @@ export function AdminSidebar() {
 
   // Pending requests badge (Notifications)
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  // Pending document requests badge
+  const [pendingDocumentRequestsCount, setPendingDocumentRequestsCount] = useState<number>(0);
   useEffect(() => {
     // Don't start Firestore listeners until auth/profile is ready.
     // Starting collectionGroup listeners unauthenticated triggers permission-denied "uncaught" snapshot errors.
@@ -70,7 +73,7 @@ export function AdminSidebar() {
           return counts.reduce((a, b) => a + b, 0);
         };
 
-        const [shipmentPending, inventoryPending, productReturnPending] = await Promise.all([
+        const [shipmentPending, inventoryPending, productReturnPending, documentPending] = await Promise.all([
           // Shipment requests may use "pending" or "Pending"
           countStatuses("shipmentRequests", ["pending", "Pending"]),
           // Inventory requests may use "pending" or "Pending" (older data)
@@ -85,11 +88,19 @@ export function AdminSidebar() {
             "In Progress",
             "in progress",
           ]),
+          // Document requests: pending status
+          countStatuses("documentRequests", ["pending", "Pending"]),
         ]);
 
-        if (!cancelled) setPendingRequestsCount(shipmentPending + inventoryPending + productReturnPending);
+        if (!cancelled) {
+          setPendingRequestsCount(shipmentPending + inventoryPending + productReturnPending);
+          setPendingDocumentRequestsCount(documentPending);
+        }
       } catch {
-        if (!cancelled) setPendingRequestsCount(0);
+        if (!cancelled) {
+          setPendingRequestsCount(0);
+          setPendingDocumentRequestsCount(0);
+        }
       }
     };
 
@@ -106,17 +117,26 @@ export function AdminSidebar() {
       collectionGroup(db, "productReturns"),
       where("status", "in", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"])
     );
+    const documentsQ = query(
+      collectionGroup(db, "documentRequests"),
+      where("status", "in", ["pending", "Pending"])
+    );
 
     let shipmentCount = 0;
     let inventoryCount = 0;
     let returnsCount = 0;
+    let documentCount = 0;
     const push = () => {
-      if (!cancelled) setPendingRequestsCount(shipmentCount + inventoryCount + returnsCount);
+      if (!cancelled) {
+        setPendingRequestsCount(shipmentCount + inventoryCount + returnsCount);
+        setPendingDocumentRequestsCount(documentCount);
+      }
     };
 
     let unsub1: (() => void) | null = null;
     let unsub2: (() => void) | null = null;
     let unsub3: (() => void) | null = null;
+    let unsub4: (() => void) | null = null;
 
     const onRealtimeError = (err: any) => {
       if (cancelled) return;
@@ -143,6 +163,10 @@ export function AdminSidebar() {
         returnsCount = snap.size;
         push();
       }, onRealtimeError);
+      unsub4 = onSnapshot(documentsQ, (snap) => {
+        documentCount = snap.size;
+        push();
+      }, onRealtimeError);
     } catch {
       // Fallback to polling if realtime listeners fail (permissions / indexing)
       run();
@@ -162,6 +186,7 @@ export function AdminSidebar() {
       unsub1?.();
       unsub2?.();
       unsub3?.();
+      unsub4?.();
     };
   }, [userProfile?.uid]);
 
@@ -210,6 +235,14 @@ export function AdminSidebar() {
       url: "/admin/dashboard/product-returns",
       icon: ArrowLeftRight,
       color: "text-orange-600",
+      requiredFeature: "admin_dashboard" as const,
+    },
+    {
+      title: "Documents",
+      url: "/admin/dashboard/documents",
+      icon: FolderOpen,
+      color: "text-indigo-600",
+      badge: pendingDocumentRequestsCount > 0 ? pendingDocumentRequestsCount : null,
       requiredFeature: "admin_dashboard" as const,
     },
   ];

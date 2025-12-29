@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, Query } from 'firebase/firestore';
+import { collection, onSnapshot, query, Query, collectionGroup } from 'firebase/firestore';
 import { db, clearFirestoreCache } from '@/lib/firebase';
 
 export function useCollection<T>(path: string, firestoreQuery?: Query) {
@@ -85,6 +85,46 @@ export function useCollection<T>(path: string, firestoreQuery?: Query) {
       setLoading(false);
     }
   }, [path, firestoreQuery]);
+
+  return { data, loading, error };
+}
+
+export function useCollectionGroup<T>(collectionName: string, firestoreQuery?: Query) {
+  const [data, setData] = useState<T[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!collectionName) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const collectionGroupRef = collectionGroup(db, collectionName);
+      const q = firestoreQuery || query(collectionGroupRef);
+      
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const docs: T[] = [];
+        querySnapshot.forEach((doc) => {
+          docs.push({ id: doc.id, ...doc.data() } as T);
+        });
+        setData(docs);
+        setLoading(false);
+        setError(null);
+      }, (err: any) => {
+        console.error('Firestore collectionGroup error:', err);
+        setError(err instanceof Error ? err : new Error("An unknown error occurred"));
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err : new Error("An unknown error occurred"));
+      setLoading(false);
+    }
+  }, [collectionName, firestoreQuery]);
 
   return { data, loading, error };
 }
