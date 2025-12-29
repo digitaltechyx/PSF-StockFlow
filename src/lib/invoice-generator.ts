@@ -46,6 +46,11 @@ interface InvoiceData {
 
 export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   try {
+    // Validate required data
+    if (!data.invoiceNumber || !data.date || !data.items || data.items.length === 0) {
+      throw new Error('Missing required invoice data: invoiceNumber, date, or items');
+    }
+
     // Create PDF with A4 size
     const doc = new jsPDF('p', 'mm', 'a4');
     
@@ -256,14 +261,22 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       const safeItem: any = item as any;
       const qty = Number(safeItem?.quantity || 0);
       const productName = String(safeItem?.productName || safeItem?.description || '');
-      const shipDate = String(safeItem?.shipDate || '');
+      // For storage invoices, use shipDate or date field, format it properly
+      let dateValue = String(safeItem?.shipDate || safeItem?.date || '');
+      // If date is in format "YYYY-MM" (like "2025-12"), format it nicely
+      if (dateValue.match(/^\d{4}-\d{2}$/)) {
+        const [year, month] = dateValue.split('-');
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthIndex = parseInt(month, 10) - 1;
+        dateValue = `${monthNames[monthIndex] || month} ${year}`;
+      }
       const unitPrice = Number(safeItem?.unitPrice || 0);
       const amount = Number(safeItem?.amount || 0);
 
       doc.setFont('helvetica', 'normal');
       doc.text(String(qty), colQty, currentY);
       doc.text(productName.substring(0, 35), colProduct, currentY);
-      doc.text(shipDate.substring(0, 12), colDate, currentY);
+      doc.text(dateValue.substring(0, 15), colDate, currentY);
       doc.text(`$${unitPrice.toFixed(2)}`, colPricePerPallet, currentY, { align: 'right' });
       doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });
       
@@ -355,7 +368,13 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   // Breakdown
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Items Subtotal: $${itemsSubtotal.toFixed(2)}`, margin, summaryStartY + 7);
+  
+  // For storage invoices, show Gross Total directly; for others, show Items Subtotal
+  if (isStorageInvoice) {
+    doc.text(`Gross Total: $${computedGrossTotal.toFixed(2)}`, margin, summaryStartY + 7);
+  } else {
+    doc.text(`Items Subtotal: $${itemsSubtotal.toFixed(2)}`, margin, summaryStartY + 7);
+  }
   let summaryLineY = summaryStartY + 12;
   
   // Additional Services Breakdown
@@ -423,12 +442,25 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     doc.text('WE APPRECIATE YOUR BUSINESS', (pageWidth - rightGutter) / 2, 280, { align: 'center' });
     
     // Save the PDF
-    doc.save(`Invoice-${data.invoiceNumber}.pdf`);
+    try {
+      const fileName = `Invoice-${data.invoiceNumber}.pdf`;
+      doc.save(fileName);
+      console.log('PDF generated and saved successfully:', fileName);
+    } catch (saveError) {
+      console.error('Error saving PDF:', saveError);
+      throw new Error(`Failed to save PDF: ${saveError instanceof Error ? saveError.message : 'Unknown error'}`);
+    }
   } catch (error) {
     console.error('Error generating invoice PDF:', error);
-    throw new Error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Full error details:', {
+      error,
+      invoiceNumber: data.invoiceNumber,
+      itemCount: data.items?.length || 0,
+      type: data.type,
+    });
+    throw new Error(`Failed to generate PDF: ${errorMessage}`);
   }
 }
 
 export { generateInvoiceNumber } from "./invoice-utils";
-

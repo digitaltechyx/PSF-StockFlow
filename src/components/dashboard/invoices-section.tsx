@@ -138,6 +138,10 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
 
   const handleDownloadInvoice = async (invoice: Invoice) => {
     try {
+      console.log("Starting PDF generation for invoice:", invoice.invoiceNumber);
+      console.log("Invoice type:", (invoice as any).type);
+      console.log("Items count:", invoice.items?.length);
+      
       await generateInvoicePDF({
         invoiceNumber: invoice.invoiceNumber,
         date: invoice.date,
@@ -162,10 +166,17 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
       });
     } catch (error) {
       console.error("Error downloading invoice:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Full error details:", {
+        error,
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceType: (invoice as any).type,
+        itemsCount: invoice.items?.length,
+      });
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to download invoice.",
+        description: `Failed to download invoice: ${errorMessage}`,
       });
     }
   };
@@ -616,12 +627,19 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                 {(() => {
                   const isStorageInvoice = (selectedInvoice as any).type === 'storage';
                   const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
-                  const gridCols = isStorageInvoice ? 'grid-cols-5' : (isContainerHandling ? 'grid-cols-6' : 'grid-cols-8');
+                  
+                  // Use explicit grid template columns for better control
+                  const gridTemplateCols = isStorageInvoice 
+                    ? 'grid-cols-[60px_1fr_100px_120px_100px]' 
+                    : (isContainerHandling 
+                      ? 'grid-cols-[60px_1fr_120px_120px_100px_100px]' 
+                      : 'grid-cols-[60px_1fr_100px_120px_100px_100px_100px_100px]');
+                  
                   return (
                     <>
-                      <div className={`bg-muted p-2 grid ${gridCols} gap-2 text-sm font-semibold`}>
+                      <div className={`bg-muted p-2 grid ${gridTemplateCols} gap-2 text-sm font-semibold`}>
                         <div>Qty</div>
-                        <div className="col-span-2">Product</div>
+                        <div>Product</div>
                         <div>{isStorageInvoice ? 'Date' : (isContainerHandling ? 'Receiving Date' : 'Ship Date')}</div>
                         {!isStorageInvoice && !isContainerHandling && (
                           <>
@@ -640,9 +658,9 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                         const shipTo = (item as any).shipTo || "—";
                         const packaging = (item as any).packaging || "—";
                         return (
-                          <div key={`${productName}-${idx}`} className={`p-2 grid ${gridCols} gap-2 text-sm border-t`}>
+                          <div key={`${productName}-${idx}`} className={`p-2 grid ${gridTemplateCols} gap-2 text-sm border-t`}>
                             <div>{(item as any).quantity}</div>
-                            <div className="col-span-2">{productName}</div>
+                            <div className="truncate" title={productName}>{productName}</div>
                             <div>{dateValue}</div>
                             {!isStorageInvoice && !isContainerHandling && (
                               <>
@@ -650,8 +668,8 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                                 <div>{packaging}</div>
                               </>
                             )}
-                            <div>${Number((item as any).unitPrice || 0).toFixed(2)}</div>
-                            <div className="font-semibold">${Number((item as any).amount || 0).toFixed(2)}</div>
+                            <div className="text-right">${Number((item as any).unitPrice || 0).toFixed(2)}</div>
+                            <div className="font-semibold text-right">${Number((item as any).amount || 0).toFixed(2)}</div>
                           </div>
                         );
                       })}
@@ -796,4 +814,3 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
     </div>
   );
 }
-

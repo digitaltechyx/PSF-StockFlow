@@ -58,13 +58,20 @@ export default function DocumentsPage() {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, `users/${userProfile.uid}/documentRequests`), {
+      // Build the request data object
+      const requestData: any = {
         userId: userProfile.uid,
         documentType: "Service Document",
         status: "pending",
         requestedAt: Timestamp.now(),
-        notes: notes.trim() || undefined,
-      });
+      };
+
+      // Only include notes if it has a non-empty value
+      if (notes && notes.trim().length > 0) {
+        requestData.notes = notes.trim();
+      }
+
+      await addDoc(collection(db, `users/${userProfile.uid}/documentRequests`), requestData);
 
       toast({
         title: "Request Submitted",
