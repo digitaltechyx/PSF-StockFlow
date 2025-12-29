@@ -33,6 +33,9 @@ interface DocumentRequest {
   documentUrl?: string;
   fileName?: string;
   notes?: string;
+  companyName?: string;
+  contact?: string;
+  email?: string;
 }
 
 export default function DocumentsPage() {
@@ -40,6 +43,9 @@ export default function DocumentsPage() {
   const { toast } = useToast();
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [notes, setNotes] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [contact, setContact] = useState("");
+  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: documentRequests, loading } = useCollection<DocumentRequest>(
@@ -56,6 +62,45 @@ export default function DocumentsPage() {
       return;
     }
 
+    // Validate required fields
+    if (!companyName || companyName.trim().length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Company Name is required.",
+      });
+      return;
+    }
+
+    if (!contact || contact.trim().length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Contact is required.",
+      });
+      return;
+    }
+
+    if (!email || email.trim().length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Email is required.",
+      });
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please enter a valid email address.",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // Build the request data object
@@ -64,6 +109,9 @@ export default function DocumentsPage() {
         documentType: "Service Document",
         status: "pending",
         requestedAt: Timestamp.now(),
+        companyName: companyName.trim(),
+        contact: contact.trim(),
+        email: email.trim(),
       };
 
       // Only include notes if it has a non-empty value
@@ -79,6 +127,9 @@ export default function DocumentsPage() {
       });
 
       setNotes("");
+      setCompanyName("");
+      setContact("");
+      setEmail("");
       setRequestDialogOpen(false);
     } catch (error: any) {
       console.error("Error submitting document request:", error);
@@ -132,6 +183,43 @@ export default function DocumentsPage() {
               <div className="space-y-2">
                 <Label>Document Type</Label>
                 <Input value="Service Document" disabled />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyName">
+                  Company Name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="companyName"
+                  placeholder="Enter company name"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact">
+                  Contact <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="contact"
+                  placeholder="Enter contact number"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">
+                  Email <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>

@@ -35,6 +35,9 @@ interface DocumentRequest {
   documentUrl?: string;
   fileName?: string;
   notes?: string;
+  companyName?: string;
+  contact?: string;
+  email?: string;
   userEmail?: string;
   userName?: string;
 }
@@ -247,6 +250,21 @@ export default function DocumentRequestsPage() {
                             <User className="h-4 w-4" />
                             <span>{request.userName} ({request.userEmail})</span>
                           </div>
+                          {request.companyName && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Company: {request.companyName}
+                            </p>
+                          )}
+                          {request.contact && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Contact: {request.contact}
+                            </p>
+                          )}
+                          {request.email && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Email: {request.email}
+                            </p>
+                          )}
                           <p className="text-sm text-muted-foreground mt-1">
                             Requested {format(new Date(request.requestedAt?.seconds * 1000 || Date.now()), "MMM d, yyyy 'at' h:mm a")}
                           </p>
@@ -315,6 +333,21 @@ export default function DocumentRequestsPage() {
                             <User className="h-4 w-4" />
                             <span>{request.userName} ({request.userEmail})</span>
                           </div>
+                          {request.companyName && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Company: {request.companyName}
+                            </p>
+                          )}
+                          {request.contact && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Contact: {request.contact}
+                            </p>
+                          )}
+                          {request.email && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Email: {request.email}
+                            </p>
+                          )}
                           <p className="text-sm text-muted-foreground mt-1">
                             Completed {request.completedAt && format(new Date(request.completedAt?.seconds * 1000), "MMM d, yyyy 'at' h:mm a")}
                           </p>
