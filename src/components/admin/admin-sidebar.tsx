@@ -341,15 +341,15 @@ export function AdminSidebar() {
                           )}>
                             {item.title}
                           </span>
+                          {item.badge !== null && item.badge !== undefined && (
+                            <SidebarMenuBadge className={cn(
+                              "ml-auto bg-primary text-primary-foreground shadow-sm",
+                              isActive && "bg-primary/90"
+                            )}>
+                              {item.badge}
+                            </SidebarMenuBadge>
+                          )}
                         </Link>
-                        {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
-                          <SidebarMenuBadge className={cn(
-                            "ml-auto bg-primary text-primary-foreground shadow-sm",
-                            isActive && "bg-primary/90"
-                          )}>
-                            {item.badge}
-                          </SidebarMenuBadge>
-                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
