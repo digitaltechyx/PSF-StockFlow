@@ -7,7 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import { collectionGroup, query, where, doc, updateDoc, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 import { FileText, Upload, Loader2, CheckCircle, Clock, Download, User } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -84,28 +85,20 @@ export default function DocumentRequestsPage() {
     setIsUploading(true);
     try {
       // Upload file to Firebase Storage
-      const storageRef = `documentRequests/${selectedRequest.userId}/${selectedRequest.id}/${file.name}`;
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("path", storageRef);
+      const storagePath = `documentRequests/${selectedRequest.userId}/${selectedRequest.id}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+      
+      // Upload the file
+      await uploadBytes(storageRef, file);
 
-      const uploadResponse = await fetch("/api/drive/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
-        throw new Error(errorData.error || "Failed to upload file");
-      }
-
-      const { url } = await uploadResponse.json();
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
 
       // Update document request with file URL and status
       const requestRef = doc(db, `users/${selectedRequest.userId}/documentRequests`, selectedRequest.id);
       await updateDoc(requestRef, {
         status: "complete",
-        documentUrl: url,
+        documentUrl: downloadURL,
         fileName: file.name,
         completedAt: Timestamp.now(),
       });
