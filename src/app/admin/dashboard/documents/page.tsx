@@ -84,15 +84,37 @@ export default function DocumentRequestsPage() {
 
     setIsUploading(true);
     try {
+      // Validate file type
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain'
+      ];
+      
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error(`File type not allowed. Please upload PDF, DOC, DOCX, or TXT files.`);
+      }
+
+      // Validate file size (50MB limit)
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
+        throw new Error(`File size exceeds 50MB limit. Please upload a smaller file.`);
+      }
+
       // Upload file to Firebase Storage
       const storagePath = `documentRequests/${selectedRequest.userId}/${selectedRequest.id}/${Date.now()}_${file.name}`;
       const storageRef = ref(storage, storagePath);
       
+      console.log("Uploading file to Firebase Storage:", storagePath);
+      
       // Upload the file
       await uploadBytes(storageRef, file);
+      console.log("File uploaded successfully");
 
       // Get download URL
       const downloadURL = await getDownloadURL(storageRef);
+      console.log("Download URL obtained:", downloadURL);
 
       // Update document request with file URL and status
       const requestRef = doc(db, `users/${selectedRequest.userId}/documentRequests`, selectedRequest.id);
@@ -102,6 +124,8 @@ export default function DocumentRequestsPage() {
         fileName: file.name,
         completedAt: Timestamp.now(),
       });
+
+      console.log("Document request updated in Firestore");
 
       toast({
         title: "Document Uploaded",
@@ -113,10 +137,38 @@ export default function DocumentRequestsPage() {
       setFile(null);
     } catch (error: any) {
       console.error("Error uploading document:", error);
+      
+      // Handle Firebase Storage errors
+      let errorMessage = "Failed to upload document. Please try again.";
+      
+      if (error.code) {
+        switch (error.code) {
+          case 'storage/unauthorized':
+            errorMessage = "You don't have permission to upload files. Please contact an administrator.";
+            break;
+          case 'storage/canceled':
+            errorMessage = "Upload was canceled. Please try again.";
+            break;
+          case 'storage/unknown':
+            errorMessage = "An unknown error occurred during upload. Please try again.";
+            break;
+          case 'storage/quota-exceeded':
+            errorMessage = "Storage quota exceeded. Please contact an administrator.";
+            break;
+          case 'storage/unauthenticated':
+            errorMessage = "Please log in to upload documents.";
+            break;
+          default:
+            errorMessage = error.message || errorMessage;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to upload document. Please try again.",
+        description: errorMessage,
       });
     } finally {
       setIsUploading(false);
