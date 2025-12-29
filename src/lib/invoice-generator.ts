@@ -233,6 +233,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   const colQty = margin;                  // 15
   const colProduct = margin + 25;         // 40
   
+  // Declare currentY outside the if/else blocks so it's accessible after
+  let currentY = tableStartY + 10;
+  
   if (isStorageInvoice) {
     // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet, Amount)
     // Calculate positions from left to right for proper order
@@ -250,7 +253,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
     
     // Table rows
-    let currentY = tableStartY + 10;
+    currentY = tableStartY + 10;
     data.items.forEach((item, index) => {
       if (currentY > 250) {
         // New page if needed
@@ -302,7 +305,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     doc.line(margin, tableStartY + 3, pageWidth - margin - rightGutter, tableStartY + 3);
     
     // Table rows
-    let currentY = tableStartY + 10;
+    currentY = tableStartY + 10;
     data.items.forEach((item, index) => {
       if (currentY > 250) {
         // New page if needed
