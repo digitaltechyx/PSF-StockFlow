@@ -2,7 +2,31 @@
 
 import { useState, useMemo } from "react";
 import React from "react";
-import type { InventoryRequest, UserProfile } from "@/types";
+import type { UserProfile } from "@/types";
+
+// Define InventoryRequest locally since it's not exported from @/types
+interface InventoryRequest {
+  id: string;
+  userId?: string;
+  userName?: string;
+  inventoryType: "product" | "box" | "pallet" | "container";
+  productName: string;
+  quantity: number;
+  addDate?: any;
+  requestedAt?: any;
+  receivingDate?: any;
+  status: "pending" | "approved" | "rejected";
+  requestedBy?: string;
+  approvedBy?: string;
+  approvedAt?: any;
+  rejectedBy?: string;
+  rejectedAt?: any;
+  rejectionReason?: string;
+  remarks?: string;
+  imageUrl?: string;
+  imageUrls?: string[];
+  [key: string]: any;
+}
 import { useCollection } from "@/hooks/use-collection";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -69,8 +93,8 @@ export function InventoryRequestsManagement({
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Normalize user ID (handle both id and uid fields) - ensure it's a valid string
-  const userId = selectedUser?.uid || selectedUser?.id;
+  // Normalize user ID - use uid
+  const userId = selectedUser?.uid;
   const isValidUserId = userId && typeof userId === 'string' && userId.trim() !== '';
   
   const { data: requests, loading, error } = useCollection<InventoryRequest>(
@@ -153,7 +177,7 @@ export function InventoryRequestsManagement({
   const approvedCount = requests.filter(req => req.status === "approved").length;
   const rejectedCount = requests.filter(req => req.status === "rejected").length;
 
-  const handleApprove = async (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrl?: string) => {
+  const handleApprove = async (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrls?: string[]) => {
     if (!selectedUser || !adminProfile) return;
 
     setIsProcessing(true);
@@ -173,6 +197,9 @@ export function InventoryRequestsManagement({
       const finalSku = request.inventoryType === "product" 
         ? (editedSku && editedSku.trim() ? editedSku.trim() : ((request as any).sku || ""))
         : undefined;
+      
+      // Normalize imageUrls - handle both old single imageUrl and new imageUrls array
+      const finalImageUrls = imageUrls && imageUrls.length > 0 ? imageUrls : [];
       
       await runTransaction(db, async (transaction) => {
         // STEP 1: ALL READS FIRST (before any writes)
@@ -199,7 +226,7 @@ export function InventoryRequestsManagement({
           approvedAt,
           receivingDate: receivingDateTimestamp,
           remarks: remarksToSave,
-          imageUrl: imageUrl || "",
+          imageUrls: finalImageUrls,
         };
         
         // Add edited values to request update if they were changed
@@ -230,7 +257,7 @@ export function InventoryRequestsManagement({
             approvedBy: adminProfile.uid,
             approvedAt,
             remarks: remarksToSave,
-            imageUrl: imageUrl || "",
+            imageUrls: finalImageUrls,
           });
         } else {
           // For new product/box/pallet OR restock with product not found: Create new inventory item
@@ -250,7 +277,7 @@ export function InventoryRequestsManagement({
             approvedBy: adminProfile.uid,
             approvedAt,
             remarks: remarksToSave,
-            imageUrl: imageUrl || "",
+            imageUrls: finalImageUrls,
           };
           
           // Only include SKU for product type
@@ -603,7 +630,7 @@ function ReviewRequestDialog({
   isProcessing,
 }: {
   request: InventoryRequest;
-  onApprove: (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrl?: string) => void;
+  onApprove: (request: InventoryRequest, receivingDate: Date, status: "In Stock" | "Out of Stock", remarks?: string, editedQuantity?: number, editedProductName?: string, editedSku?: string, imageUrls?: string[]) => void;
   onReject: (request: InventoryRequest, reason: string) => void;
   onClose: () => void;
   isProcessing: boolean;
@@ -618,10 +645,10 @@ function ReviewRequestDialog({
   const [editedQuantity, setEditedQuantity] = useState<number>(request.quantity);
   const [editedProductName, setEditedProductName] = useState<string>(request.productName);
   const [editedSku, setEditedSku] = useState<string>((request as any).sku || "");
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<{ file: File; preview: string }[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([]);
 
   const compressImage = async (file: File): Promise<File> => {
     const options = {
@@ -641,92 +668,129 @@ function ReviewRequestDialog({
   };
 
   const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      toast({
-        variant: "destructive",
-        title: "Invalid File",
-        description: "Please select an image file.",
-      });
-      return;
+    const validFiles: File[] = [];
+    const newPreviews: { file: File; preview: string }[] = [];
+
+    // Validate all selected files
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File",
+          description: `${file.name} is not an image file. Skipping.`,
+        });
+        continue;
+      }
+
+      // Check initial file size (before compression)
+      const maxSizeBytes = 10 * 1024 * 1024; // 10 MB initial limit
+      if (file.size > maxSizeBytes) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: `${file.name} is too large (max 10 MB). It will be compressed automatically.`,
+        });
+        continue;
+      }
+
+      validFiles.push(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newPreviews.push({ file, preview: reader.result as string });
+        if (newPreviews.length === validFiles.length) {
+          setSelectedImages(prev => [...prev, ...validFiles]);
+          setImagePreviews(prev => [...prev, ...newPreviews]);
+        }
+      };
+      reader.readAsDataURL(file);
     }
 
-    // Check initial file size (before compression)
-    const maxSizeBytes = 10 * 1024 * 1024; // 10 MB initial limit
-    if (file.size > maxSizeBytes) {
-      toast({
-        variant: "destructive",
-        title: "File Too Large",
-        description: "Please select an image smaller than 10 MB. It will be compressed automatically.",
-      });
-      return;
-    }
-
-    setSelectedImage(file);
-    
-    // Create preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    // Reset input
+    event.target.value = "";
   };
 
-  const handleImageUpload = async (): Promise<string | null> => {
-    if (!selectedImage || !adminProfile) return null;
+  const handleImageUpload = async (): Promise<string[]> => {
+    if (selectedImages.length === 0 || !adminProfile) return uploadedImageUrls;
 
     try {
       setIsUploadingImage(true);
+      const userId = (request as any).requestedBy || adminProfile.uid;
+      const uploadedUrls: string[] = [...uploadedImageUrls];
 
-      // Compress the image
-      const compressedFile = await compressImage(selectedImage);
+      // Upload all selected images
+      for (const file of selectedImages) {
+        try {
+          // Compress the image
+          const compressedFile = await compressImage(file);
 
-      // Check if compressed file is still over 1 MB
-      if (compressedFile.size > 1024 * 1024) {
-        toast({
-          variant: "destructive",
-          title: "Compression Failed",
-          description: "Unable to compress image below 1 MB. Please try a different image.",
-        });
-        return null;
+          // Check if compressed file is still over 1 MB
+          if (compressedFile.size > 1024 * 1024) {
+            toast({
+              variant: "destructive",
+              title: "Compression Failed",
+              description: `Unable to compress ${file.name} below 1 MB. Skipping.`,
+            });
+            continue;
+          }
+
+          // Upload to Firebase Storage
+          const storagePath = `inventory-images/${userId}/${Date.now()}_${compressedFile.name}`;
+          const storageRef = ref(storage, storagePath);
+          await uploadBytes(storageRef, compressedFile);
+
+          // Get download URL
+          const downloadURL = await getDownloadURL(storageRef);
+          uploadedUrls.push(downloadURL);
+        } catch (error: any) {
+          console.error(`Error uploading ${file.name}:`, error);
+          toast({
+            variant: "destructive",
+            title: "Upload Failed",
+            description: `Failed to upload ${file.name}: ${error.message || "Unknown error"}`,
+          });
+        }
       }
 
-      // Upload to Firebase Storage
-      const userId = (request as any).requestedBy || adminProfile.uid;
-      const storagePath = `inventory-images/${userId}/${Date.now()}_${compressedFile.name}`;
-      const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, compressedFile);
-
-      // Get download URL
-      const downloadURL = await getDownloadURL(storageRef);
-      setUploadedImageUrl(downloadURL);
+      setUploadedImageUrls(uploadedUrls);
+      setSelectedImages([]);
+      setImagePreviews([]);
       
-      toast({
-        title: "Success",
-        description: "Image uploaded successfully!",
-      });
+      if (uploadedUrls.length > uploadedImageUrls.length) {
+        toast({
+          title: "Success",
+          description: `${uploadedUrls.length - uploadedImageUrls.length} image(s) uploaded successfully!`,
+        });
+      }
 
-      return downloadURL;
+      return uploadedUrls;
     } catch (error: any) {
-      console.error("Error uploading image:", error);
+      console.error("Error uploading images:", error);
       toast({
         variant: "destructive",
         title: "Upload Failed",
-        description: error.message || "Failed to upload image. Please try again.",
+        description: error.message || "Failed to upload images. Please try again.",
       });
-      return null;
+      return uploadedImageUrls;
     } finally {
       setIsUploadingImage(false);
     }
   };
 
-  const handleRemoveImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    setUploadedImageUrl(null);
+  const handleRemoveImage = (index: number, isUploaded: boolean) => {
+    if (isUploaded) {
+      setUploadedImageUrls(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setSelectedImages(prev => prev.filter((_, i) => i !== index));
+      setImagePreviews(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   const handleApproveClick = async () => {
@@ -735,18 +799,15 @@ function ReviewRequestDialog({
       return;
     }
 
-    // Upload image if selected
-    let imageUrl = uploadedImageUrl;
-    if (selectedImage && !uploadedImageUrl) {
-      imageUrl = await handleImageUpload();
-      if (!imageUrl) {
-        // If upload failed, don't proceed with approval
-        return;
-      }
+    // Upload images if selected
+    let imageUrls = uploadedImageUrls;
+    if (selectedImages.length > 0) {
+      const uploaded = await handleImageUpload();
+      imageUrls = uploaded;
     }
 
-    // Pass remarks, edited quantity, edited product name, edited SKU, and image URL
-    onApprove(request, receivingDate, status, remarks, editedQuantity, editedProductName, editedSku, imageUrl || undefined);
+    // Pass remarks, edited quantity, edited product name, edited SKU, and image URLs
+    onApprove(request, receivingDate, status, remarks, editedQuantity, editedProductName, editedSku, imageUrls.length > 0 ? imageUrls : undefined);
   };
 
   const handleRejectClick = () => {
@@ -791,6 +852,16 @@ function ReviewRequestDialog({
               <Label>Add Date (User Submitted)</Label>
               <p className="text-sm font-medium">{formatDate(request.addDate)}</p>
             </div>
+            {(request as any).remarks && (request as any).remarks.trim() && (
+              <div>
+                <Label>User Remarks</Label>
+                <div className="p-3 bg-gray-50 border rounded-lg mt-1">
+                  <p className="text-sm whitespace-pre-wrap break-words">
+                    {(request as any).remarks}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -829,7 +900,7 @@ function ReviewRequestDialog({
               )}
               
               {/* Editable Product Name - Hide for restock */}
-              {!(request as any).productSubType === "restock" && (
+              {(request as any).productSubType !== "restock" && (
                 <div>
                   <Label>Product Name *</Label>
                   <Input
@@ -890,7 +961,7 @@ function ReviewRequestDialog({
 
               <div>
                 <Label>Receiving Date</Label>
-                <DatePicker date={receivingDate} setDate={setReceivingDate} />
+                <DatePicker date={receivingDate} setDate={(date) => date && setReceivingDate(date)} />
               </div>
               <div>
                 <Label>Status</Label>
@@ -915,54 +986,83 @@ function ReviewRequestDialog({
               
               {/* Image Upload */}
               <div>
-                <Label>Upload Inventory Picture (Optional)</Label>
+                <Label>Upload Inventory Pictures (Optional)</Label>
                 <div className="space-y-2">
-                  {!imagePreview && !uploadedImageUrl && (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageSelect}
-                        className="flex-1"
-                        disabled={isUploadingImage}
-                      />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageSelect}
+                      className="flex-1"
+                      disabled={isUploadingImage}
+                    />
+                  </div>
+                  
+                  {/* Display uploaded images */}
+                  {uploadedImageUrls.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {uploadedImageUrls.map((url, index) => (
+                        <div key={`uploaded-${index}`} className="relative border rounded-lg p-2">
+                          <img
+                            src={url}
+                            alt={`Inventory ${index + 1}`}
+                            className="max-w-full h-auto max-h-32 rounded"
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-1 right-1 h-6 w-6 p-0"
+                            onClick={() => handleRemoveImage(index, true)}
+                            disabled={isUploadingImage}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   )}
                   
-                  {(imagePreview || uploadedImageUrl) && (
-                    <div className="relative border rounded-lg p-2">
-                      <img
-                        src={uploadedImageUrl || imagePreview || ""}
-                        alt="Inventory preview"
-                        className="max-w-full h-auto max-h-64 rounded"
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="absolute top-2 right-2"
-                        onClick={handleRemoveImage}
-                        disabled={isUploadingImage}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                      {selectedImage && !uploadedImageUrl && (
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          Image will be uploaded when you confirm approval.
-                        </div>
-                      )}
+                  {/* Display selected images (not yet uploaded) */}
+                  {imagePreviews.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {imagePreviews.map((preview, index) => (
+                          <div key={`preview-${index}`} className="relative border rounded-lg p-2">
+                            <img
+                              src={preview.preview}
+                              alt={`Preview ${index + 1}`}
+                              className="max-w-full h-auto max-h-32 rounded"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="absolute top-1 right-1 h-6 w-6 p-0"
+                              onClick={() => handleRemoveImage(index, false)}
+                              disabled={isUploadingImage}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {imagePreviews.length} image(s) will be uploaded when you confirm approval.
+                      </div>
                     </div>
                   )}
                   
                   {isUploadingImage && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Uploading image...
+                      Uploading images...
                     </div>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Upload a picture of the received inventory. Image will be shown in remarks.
+                  Upload pictures of the received inventory. Images will be shown in remarks. You can upload multiple images.
                 </p>
               </div>
               <div className="flex gap-2">

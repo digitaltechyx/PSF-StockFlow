@@ -67,7 +67,7 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [selectedRemarks, setSelectedRemarks] = useState<string>("");
-  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([]);
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
   const [editingRequest, setEditingRequest] = useState<InventoryRequest | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -84,9 +84,16 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
   const pendingCount = inventoryRequests.filter(req => req.status === "pending").length;
   const rejectedCount = inventoryRequests.filter(req => req.status === "rejected").length;
 
-  const handleRemarksClick = (remarks: string, imageUrl?: string) => {
+  const handleRemarksClick = (remarks: string, imageUrls?: string | string[]) => {
     setSelectedRemarks(remarks);
-    setSelectedImageUrl(imageUrl || null);
+    // Handle both old single imageUrl and new imageUrls array
+    if (Array.isArray(imageUrls)) {
+      setSelectedImageUrls(imageUrls);
+    } else if (typeof imageUrls === 'string') {
+      setSelectedImageUrls([imageUrls]);
+    } else {
+      setSelectedImageUrls([]);
+    }
     setIsRemarksDialogOpen(true);
   };
 
@@ -213,15 +220,30 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
       // Use remarks from inventory item first, then from approved request
       const remarks = item.remarks || matchingRequest?.remarks;
       
-      // Get imageUrl from inventory item or matching request
-      const imageUrl = (item as any).imageUrl || (matchingRequest as any)?.imageUrl || undefined;
+      // Get imageUrls from inventory item or matching request
+      // Handle both old single imageUrl and new imageUrls array
+      let imageUrls: string[] | undefined = undefined;
+      const itemImageUrls = (item as any).imageUrls;
+      const itemImageUrl = (item as any).imageUrl;
+      const requestImageUrls = (matchingRequest as any)?.imageUrls;
+      const requestImageUrl = (matchingRequest as any)?.imageUrl;
+      
+      if (itemImageUrls && Array.isArray(itemImageUrls) && itemImageUrls.length > 0) {
+        imageUrls = itemImageUrls;
+      } else if (requestImageUrls && Array.isArray(requestImageUrls) && requestImageUrls.length > 0) {
+        imageUrls = requestImageUrls;
+      } else if (itemImageUrl && typeof itemImageUrl === 'string') {
+        imageUrls = [itemImageUrl];
+      } else if (requestImageUrl && typeof requestImageUrl === 'string') {
+        imageUrls = [requestImageUrl];
+      }
       
       return {
         ...item,
         status: item.status as "Pending" | "In Stock" | "Out of Stock" | "Rejected",
         isRequest: false,
         remarks: remarks && remarks.trim() ? remarks.trim() : undefined,
-        imageUrl: imageUrl,
+        imageUrls: imageUrls,
       };
     });
 
@@ -365,7 +387,7 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
                           variant="ghost"
                           size="sm"
                           className="h-auto p-0 text-left justify-start text-xs"
-                          onClick={() => handleRemarksClick(item.remarks || "", (item as any).imageUrl)}
+                          onClick={() => handleRemarksClick(item.remarks || "", (item as any).imageUrls || (item as any).imageUrl)}
                         >
                           <span className="text-blue-600 italic">{item.remarks}</span>
                           <Eye className="h-3 w-3 ml-1 inline-block align-middle" />
@@ -460,7 +482,7 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
                           variant="ghost"
                           size="sm"
                           className="h-auto p-1 text-left justify-start max-w-xs truncate"
-                          onClick={() => handleRemarksClick(item.remarks || "", (item as any).imageUrl)}
+                          onClick={() => handleRemarksClick(item.remarks || "", (item as any).imageUrls || (item as any).imageUrl)}
                         >
                           <span className="truncate text-xs">{item.remarks}</span>
                           <Eye className="h-3 w-3 ml-1 flex-shrink-0" />
@@ -536,14 +558,22 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
             <DialogDescription>Remarks from admin for this inventory item</DialogDescription>
           </DialogHeader>
           <div className="mt-4 overflow-y-auto max-h-[60vh] space-y-4">
-            {selectedImageUrl && (
+            {selectedImageUrls.length > 0 && (
               <div className="bg-gray-50 p-4 rounded-lg">
-                <Label className="text-sm font-semibold mb-2 block">Inventory Picture</Label>
-                <img
-                  src={selectedImageUrl}
-                  alt="Inventory received"
-                  className="max-w-full h-auto rounded-lg border"
-                />
+                <Label className="text-sm font-semibold mb-2 block">
+                  Inventory Pictures ({selectedImageUrls.length})
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selectedImageUrls.map((url, index) => (
+                    <div key={index} className="relative">
+                      <img
+                        src={url}
+                        alt={`Inventory ${index + 1}`}
+                        className="max-w-full h-auto rounded-lg border"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="bg-gray-50 p-4 rounded-lg">

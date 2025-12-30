@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +33,7 @@ const inventoryRequestSchema = z.object({
   sku: z.string().optional(),
   containerSize: z.enum(["20 feet", "40 feet"]).optional(), // For container type
   quantity: z.coerce.number().int().positive("Quantity must be a positive number."),
+  remarks: z.string().optional(), // Optional remarks field
 }).refine((data) => {
   // For product type, productSubType is required
   if (data.inventoryType === "product" && !data.productSubType) {
@@ -83,7 +85,9 @@ export function AddInventoryRequestForm() {
       productId: "",
       productName: "",
       sku: "",
+      containerSize: undefined,
       quantity: 1,
+      remarks: "",
     },
   });
 
@@ -310,6 +314,11 @@ export function AddInventoryRequestForm() {
         }
       }
 
+      // Include remarks if provided (trim whitespace)
+      if (values.remarks && values.remarks.trim()) {
+        requestData.remarks = values.remarks.trim();
+      }
+
       await addDoc(collection(db, `users/${user.uid}/inventoryRequests`), requestData);
 
       toast({
@@ -325,6 +334,7 @@ export function AddInventoryRequestForm() {
         sku: "",
         containerSize: undefined,
         quantity: 1,
+        remarks: "",
       });
       setOpen(false);
     } catch (error: any) {
@@ -618,7 +628,32 @@ export function AddInventoryRequestForm() {
                 <FormItem>
                   <FormLabel>Quantity</FormLabel>
                   <FormControl>
-                    <Input type="number" min="1" {...field} />
+                    <Input 
+                      type="number" 
+                      min="1" 
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                      value={field.value}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Remarks Field - Available for all inventory types */}
+            <FormField
+              control={form.control}
+              name="remarks"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Remarks (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Add any additional notes or remarks about this inventory request..."
+                      className="min-h-[100px]"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

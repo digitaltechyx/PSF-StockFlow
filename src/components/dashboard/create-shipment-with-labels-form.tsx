@@ -14,7 +14,6 @@ import { Loader2, X, Plus, ChevronDown } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { isUploadTimeAllowed, getTimeUntilNextUploadWindow, formatTimeRemaining, getNewJerseyTimeString, getUploadWindowDescription } from "@/lib/time-utils";
 import type { InventoryItem, ServiceType, ProductType, UserPricing, UserBoxForwardingPricing, UserPalletForwardingPricing, UserAdditionalServicesPricing } from "@/types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
@@ -118,11 +117,6 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
   // Label upload states for each shipment group
   const [labelStates, setLabelStates] = useState<Record<number, LabelUploadState>>({});
   
-  // Time restriction state
-  const [currentTime, setCurrentTime] = useState<string>("");
-  const [uploadAllowed, setUploadAllowed] = useState<boolean>(true);
-  const [timeRemaining, setTimeRemaining] = useState<string>("");
-  
   // Popup states for each group
   const [openPopups, setOpenPopups] = useState<Record<string, boolean>>({});
   
@@ -176,18 +170,6 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
     userProfile ? `users/${userProfile.uid}/additionalServicesPricing` : ""
   );
 
-  // Update time display every second
-  useEffect(() => {
-    const updateTime = () => {
-      setCurrentTime(getNewJerseyTimeString());
-      setUploadAllowed(isUploadTimeAllowed());
-      setTimeRemaining(formatTimeRemaining(getTimeUntilNextUploadWindow()));
-    };
-    
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Auto-calculate pricing for all shipment groups
   const watchedGroups = form.watch("shipmentGroups");
@@ -425,16 +407,6 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
   const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
     const labelState = labelStates[groupIndex];
     if (!labelState?.file || !userProfile) return null;
-
-    if (!isUploadTimeAllowed()) {
-      const timeUntil = getTimeUntilNextUploadWindow();
-      toast({
-        variant: "destructive",
-        title: "Upload Time Restricted",
-        description: `${getUploadWindowDescription()}. ${timeUntil}`,
-      });
-      return null;
-    }
 
     try {
       setLabelStates(prev => ({
@@ -778,34 +750,11 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
 
   return (
     <div className="space-y-6">
-      {/* Time Display */}
+      {/* Simple Fulfillment Notice */}
       <div className="p-4 border rounded-lg bg-muted/50">
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span>New Jersey Time: <span className="font-mono font-semibold">{currentTime}</span></span>
-          <div className={`flex items-center gap-1 ${uploadAllowed ? 'text-green-600' : 'text-red-600'}`}>
-            {uploadAllowed ? (
-              <>
-                <span className="font-medium">✓ Allowed</span>
-                <span className="font-mono">({timeRemaining} remaining)</span>
-              </>
-            ) : (
-              <>
-                <span className="font-medium">⚠️ Disabled</span>
-                <span className="font-mono">({timeRemaining} until available)</span>
-              </>
-            )}
-          </div>
-        </div>
-        <div className={`mt-2 p-2 rounded text-sm ${uploadAllowed ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
-          {uploadAllowed ? (
-            <span>✓ Create your shipment between 5:00 PM - 11:00 AM (New Jersey Time) if you want same day fulfilment</span>
-          ) : (
-            <span>⚠️ Uploads are currently disabled. Available in {timeRemaining}</span>
-          )}
-        </div>
-        <div className="mt-2 p-2 rounded text-xs bg-green-50 border border-green-200 text-green-800">
-          ✨ <strong>New System:</strong> Create multiple shipments with labels. Admin will receive your requests directly.
-        </div>
+        <p className="text-sm text-muted-foreground">
+          For same day fulfillment please create shipment before 11 am EST.
+        </p>
       </div>
 
       <Form {...form}>
