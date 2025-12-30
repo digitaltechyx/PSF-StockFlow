@@ -751,8 +751,8 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
   return (
     <div className="space-y-6">
       {/* Simple Fulfillment Notice */}
-      <div className="p-4 border rounded-lg bg-muted/50">
-        <p className="text-sm text-muted-foreground">
+      <div className="p-4 border border-green-200 rounded-lg bg-green-50">
+        <p className="text-sm text-green-800 font-medium">
           For same day fulfillment please create shipment before 11 am EST.
         </p>
       </div>
