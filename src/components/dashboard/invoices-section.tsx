@@ -151,6 +151,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
         items: invoice.items,
         isContainerHandling: (invoice as any).isContainerHandling,
         type: (invoice as any).type,
+        storageType: (invoice as any).storageType,
         additionalServices: (invoice as any).additionalServices,
         subtotal: invoice.subtotal,
         grandTotal: invoice.grandTotal,

@@ -492,6 +492,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
         items: invoice.items,
         isContainerHandling: (invoice as any).isContainerHandling,
         type: (invoice as any).type,
+        storageType: (invoice as any).storageType,
         additionalServices: (invoice as any).additionalServices,
         subtotal: invoice.subtotal,
         grandTotal: invoice.grandTotal,
