@@ -42,6 +42,7 @@ interface InvoiceData {
   discountAmount?: number;
   type?: string;
   isContainerHandling?: boolean;
+  storageType?: string;
 }
 
 export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
@@ -225,6 +226,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
 
   // Check if this is a storage invoice
   const isStorageInvoice = data.type === 'storage';
+  const isProductBaseStorage = data.storageType === 'product_base';
+  const isPalletBaseStorage = data.storageType === 'pallet_base';
 
   // Table headers
   doc.setFont('helvetica', 'bold');
@@ -237,16 +240,19 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   let currentY = tableStartY + 10;
   
   if (isStorageInvoice) {
-    // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet, Amount)
+    // Storage invoice: 5 columns (Qty, Product, Date, Price per Pallet/Item, Amount)
     // Calculate positions from left to right for proper order
     const colDate = colProduct + 50;           // ~90mm (after Product)
     const colPricePerPallet = colDate + 40;    // ~130mm (after Date, with more spacing)
     const colAmount = tableRight;              // 185mm (right-aligned)
     
+    // Use "Price per Item" for Product Base, "Price per Pallet" for Pallet Base
+    const priceColumnHeader = isProductBaseStorage ? 'PRICE PER ITEM' : 'PRICE PER PALLET';
+    
     doc.text('QUANTITY', colQty, tableStartY);
     doc.text('PRODUCT', colProduct, tableStartY);
     doc.text('DATE', colDate, tableStartY);
-    doc.text('PRICE PER PALLET', colPricePerPallet, tableStartY, { align: 'right' });
+    doc.text(priceColumnHeader, colPricePerPallet, tableStartY, { align: 'right' });
     doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
     
     // Horizontal line under headers

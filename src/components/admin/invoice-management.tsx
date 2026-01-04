@@ -1208,6 +1208,8 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                 {(() => {
                   const isStorageInvoice = (selectedInvoice as any).type === 'storage';
                   const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                  const storageType = (selectedInvoice as any).storageType as string | undefined;
+                  const isProductBaseStorage = storageType === 'product_base';
                   
                   // Use explicit grid template columns for better control
                   const gridTemplateCols = isStorageInvoice 
@@ -1228,7 +1230,7 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                             <div>Packaging</div>
                           </>
                         )}
-                        <div>{isStorageInvoice ? 'Price per Pallet' : 'Unit Price'}</div>
+                        <div>{isStorageInvoice ? (isProductBaseStorage ? 'Price per Item' : 'Price per Pallet') : 'Unit Price'}</div>
                         <div>Amount</div>
                       </div>
                       {selectedInvoice.items.map((item, idx) => {
@@ -1272,7 +1274,14 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
                       <div className="text-right ml-2">
                         <p className="font-semibold text-sm">${Number((item as any).amount || 0).toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {((selectedInvoice as any).type === 'storage' ? 'Price per Pallet' : 'Unit Price')}: ${Number((item as any).unitPrice || 0).toFixed(2)}
+                          {(() => {
+                            const invoiceType = (selectedInvoice as any).type;
+                            const storageType = (selectedInvoice as any).storageType;
+                            if (invoiceType === 'storage') {
+                              return storageType === 'product_base' ? 'Price per Item' : 'Price per Pallet';
+                            }
+                            return 'Unit Price';
+                          })()}: ${Number((item as any).unitPrice || 0).toFixed(2)}
                         </p>
                       </div>
                     </div>
