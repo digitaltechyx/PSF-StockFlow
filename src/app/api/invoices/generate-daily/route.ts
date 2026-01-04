@@ -165,17 +165,34 @@ async function handleRequest(request: NextRequest) {
             sku = inventoryItem?.sku || undefined;
           }
 
-          allItems.push({
+          // Build item object, only including sku if it's defined
+          const item: {
+            quantity: number;
+            productName: string;
+            sku?: string;
+            shipDate: string;
+            packaging: string;
+            shipTo: string;
+            unitPrice: number;
+            amount: number;
+            shipmentId: string;
+          } = {
             quantity,
             productName: product.productName || "Unknown Item",
-            sku: sku,
             shipDate,
             packaging: `${product.packOf ?? 1} Nos.`,
             shipTo: shipment.shipTo || "",
             unitPrice,
             amount,
             shipmentId: shipment.id,
-          });
+          };
+
+          // Only include sku field if it has a value (Firestore doesn't allow undefined)
+          if (sku) {
+            item.sku = sku;
+          }
+
+          allItems.push(item);
         });
         
         // Aggregate additional services
