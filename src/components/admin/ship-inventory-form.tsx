@@ -275,7 +275,7 @@ export function ShipInventoryForm({ userId, inventory, prefillData, onSuccess }:
                           <div className="flex flex-col">
                             <span className="font-medium">{item.productName}</span>
                             <span className="text-xs text-muted-foreground">
-                              In Stock: {item.quantity}
+                              SKU: {item.sku || "N/A"} | In Stock: {item.quantity}
                             </span>
                             </div>
                         </label>

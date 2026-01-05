@@ -44,7 +44,7 @@ const shipmentGroupSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -332,7 +332,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
       palletSubType: undefined,
       shipments: [],
       date: new Date(),
-      shipTo: "",
+      remarks: undefined,
       service: "FBA/WFS/TFS",
       productType: "Standard",
     });
@@ -634,7 +634,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
           userId: user.uid,
           userName: userProfile.name || "Unknown User",
           date: dateTimestamp,
-          shipTo: group.shipTo || "",
+          remarks: group.remarks || undefined,
           shipmentType: group.shipmentType,
           labelUrl: labelUrl || "",
           status: "pending",
@@ -1115,7 +1115,12 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                                           }}
                                         />
                                         <label className="flex-1 text-sm cursor-pointer">
-                                          {item.productName} (In Stock: {item.quantity})
+                                          <div className="flex flex-col">
+                                            <span className="font-medium">{item.productName}</span>
+                                            <span className="text-xs text-muted-foreground">
+                                              SKU: {item.sku || "N/A"} | In Stock: {item.quantity}
+                                            </span>
+                                          </div>
                                         </label>
                                       </div>
                                     );
@@ -1288,15 +1293,15 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                       )}
                     />
 
-                    {/* Ship To */}
+                    {/* Remarks */}
                     <FormField
                       control={form.control}
-                      name={`shipmentGroups.${groupIndex}.shipTo`}
+                      name={`shipmentGroups.${groupIndex}.remarks`}
                       render={({ field }) => (
                         <FormItem className="flex-1 min-w-[160px]">
-                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Ship To</FormLabel>
+                          <FormLabel className="text-xs text-muted-foreground mb-1 block">Remarks (Optional)</FormLabel>
                           <FormControl>
-                            <Input placeholder="Enter destination" {...field} className="w-full" />
+                            <Textarea placeholder="Add any additional remarks or notes..." {...field} className="w-full min-h-[80px]" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

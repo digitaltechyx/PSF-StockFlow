@@ -131,7 +131,6 @@ async function handleRequest(request: NextRequest) {
         sku?: string;
         shipDate: string;
         packaging: string;
-        shipTo: string;
         unitPrice: number;
         amount: number;
         shipmentId: string;
@@ -172,7 +171,6 @@ async function handleRequest(request: NextRequest) {
             sku?: string;
             shipDate: string;
             packaging: string;
-            shipTo: string;
             unitPrice: number;
             amount: number;
             shipmentId: string;
@@ -181,7 +179,6 @@ async function handleRequest(request: NextRequest) {
             productName: product.productName || "Unknown Item",
             shipDate,
             packaging: `${product.packOf ?? 1} Nos.`,
-            shipTo: shipment.shipTo || "",
             unitPrice,
             amount,
             shipmentId: shipment.id,

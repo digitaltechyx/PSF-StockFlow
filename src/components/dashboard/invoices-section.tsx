@@ -646,7 +646,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                         <div>{isStorageInvoice ? 'Date' : (isContainerHandling ? 'Receiving Date' : 'Ship Date')}</div>
                         {!isStorageInvoice && !isContainerHandling && (
                           <>
-                            <div>Ship To</div>
+                            <div>SKU</div>
                             <div>Packaging</div>
                           </>
                         )}
@@ -658,7 +658,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                           ? (item as any).receivingDate 
                           : ((item as any).shipDate || '-');
                         const productName = (item as any).productName || (item as any).description || "—";
-                        const shipTo = (item as any).shipTo || "—";
+                        const sku = (item as any).sku || "—";
                         const packaging = (item as any).packaging || "—";
                         return (
                           <div key={`${productName}-${idx}`} className={`p-2 grid ${gridTemplateCols} gap-2 text-sm border-t`}>
@@ -667,7 +667,7 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                             <div>{dateValue}</div>
                             {!isStorageInvoice && !isContainerHandling && (
                               <>
-                                <div className="truncate" title={shipTo}>{shipTo}</div>
+                                <div className="truncate" title={sku}>{sku}</div>
                                 <div>{packaging}</div>
                               </>
                             )}
@@ -684,11 +684,19 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
               {/* Items Cards - Mobile */}
               <div className="sm:hidden space-y-3">
                 <h4 className="font-semibold text-sm mb-2">Items</h4>
-                {selectedInvoice.items.map((item, idx) => (
-                  <div key={`${((item as any).productName || (item as any).description || "item")}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                {selectedInvoice.items.map((item, idx) => {
+                  const isStorageInvoice = (selectedInvoice as any).type === 'storage';
+                  const isContainerHandling = (selectedInvoice as any).isContainerHandling || (selectedInvoice as any).type === 'container_handling';
+                  const baseProductName = (item as any).productName || (item as any).description || "—";
+                  // For shipment invoices, append SKU if available
+                  const productName = !isStorageInvoice && !isContainerHandling && (item as any).sku
+                    ? `${baseProductName} (SKU: ${(item as any).sku})`
+                    : baseProductName;
+                  return (
+                  <div key={`${productName}-${idx}`} className="border rounded-lg p-3 bg-muted/30 space-y-2">
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{(item as any).productName || (item as any).description || "—"}</p>
+                        <p className="font-semibold text-sm truncate">{productName}</p>
                         <p className="text-xs text-muted-foreground">Qty: {(item as any).quantity}</p>
                       </div>
                       <div className="text-right ml-2">
@@ -721,12 +729,12 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                           {!isStorageInvoice && !isContainerHandling && (
                             <>
                               <div>
+                                <p className="text-muted-foreground">SKU</p>
+                                <p className="font-medium">{(item as any).sku || "—"}</p>
+                              </div>
+                              <div>
                                 <p className="text-muted-foreground">Packaging</p>
                                 <p className="font-medium">{(item as any).packaging || "—"}</p>
-                              </div>
-                              <div className="col-span-2">
-                                <p className="text-muted-foreground">Ship To</p>
-                                <p className="font-medium break-words">{(item as any).shipTo || "—"}</p>
                               </div>
                             </>
                           )}
@@ -734,7 +742,8 @@ export function InvoicesSection({ invoices, loading }: InvoicesSectionProps) {
                       );
                     })()}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Totals */}

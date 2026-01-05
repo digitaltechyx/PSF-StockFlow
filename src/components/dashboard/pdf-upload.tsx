@@ -136,9 +136,12 @@ function InventorySelectButton({ inventory, selectedProductId, disabled, onSelec
                 onClick={() => handleSelect(item)}
               >
                 <Check className={`h-4 w-4 ${selectedProductId === item.id ? "opacity-100" : "opacity-0"}`} />
-                <span className="flex-1 truncate">
-                  {item.productName} (In Stock: {item.quantity})
-                </span>
+                <div className="flex-1">
+                  <div className="font-medium">{item.productName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    SKU: {item.sku || "N/A"} | In Stock: {item.quantity}
+                  </div>
+                </div>
               </button>
             ))}
             {filteredInventory.length === 0 && (

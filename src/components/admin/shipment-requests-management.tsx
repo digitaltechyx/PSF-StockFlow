@@ -63,7 +63,7 @@ export function ShipmentRequestsManagement({
   const { userProfile: adminProfile } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState<ShipmentRequest | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedShipTo, setSelectedShipTo] = useState<string | null>(null);
+  const [selectedRemarks, setSelectedRemarks] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // Normalize user ID (handle both id and uid fields) - ensure it's a valid string
@@ -342,7 +342,7 @@ export function ShipmentRequestsManagement({
             }
             return 0;
           })(),
-          shipTo: request.shipTo,
+          remarks: request.remarks,
           // Map service based on shipmentType
           service: (() => {
             if (request.shipmentType === 'box') {
@@ -564,7 +564,7 @@ export function ShipmentRequestsManagement({
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Ship To</TableHead>
+                  <TableHead>Remarks</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Requested Date</TableHead>
                   <TableHead>Status</TableHead>
@@ -577,15 +577,17 @@ export function ShipmentRequestsManagement({
                     <TableCell>{formatDate(request.date)}</TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        <span className="truncate max-w-[200px]">{request.shipTo}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          onClick={() => setSelectedShipTo(request.shipTo)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <span className="truncate max-w-[200px]">{request.remarks || "—"}</span>
+                        {request.remarks && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() => setSelectedRemarks(request.remarks || null)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>{request.shipments.length} product(s)</TableCell>
@@ -645,17 +647,17 @@ export function ShipmentRequestsManagement({
         />
       )}
 
-      {/* Ship To Dialog */}
-      <Dialog open={selectedShipTo !== null} onOpenChange={(open) => !open && setSelectedShipTo(null)}>
+      {/* Remarks Dialog */}
+      <Dialog open={selectedRemarks !== null} onOpenChange={(open) => !open && setSelectedRemarks(null)}>
         <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Ship To Address</DialogTitle>
+            <DialogTitle>Remarks</DialogTitle>
             <DialogDescription>
-              Full shipping destination address
+              Additional remarks or notes for this shipment
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 overflow-y-auto flex-1 min-h-0">
-            <p className="text-sm font-medium break-words break-all overflow-wrap-anywhere whitespace-pre-wrap">{selectedShipTo}</p>
+            <p className="text-sm font-medium break-words break-all overflow-wrap-anywhere whitespace-pre-wrap">{selectedRemarks}</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -974,10 +976,12 @@ function ReviewShipmentDialog({
                 <p className="text-sm font-medium">{formatDate(request.requestedAt)}</p>
               </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">Ship To</label>
-              <p className="text-sm font-medium">{request.shipTo}</p>
-            </div>
+            {request.remarks && (
+              <div>
+                <label className="text-sm font-medium">Remarks</label>
+                <p className="text-sm font-medium">{request.remarks}</p>
+              </div>
+            )}
             {/* Show Custom Dimensions if productType is Custom */}
             {request.productType === "Custom" && request.customDimensions && (
               <div>

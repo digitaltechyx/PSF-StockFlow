@@ -292,17 +292,17 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       currentY += 7;
     });
   } else {
-    // Regular invoice: 7 columns (Qty, Product, Date, Ship To, Pack, Unit Price, Amount)
+    // Regular invoice: 7 columns (Qty, Product, Date, SKU, Pack, Unit Price, Amount)
     const colAmount = tableRight;           // 185 (right-aligned)
     const colUnitPrice = colAmount - 22;    // right-aligned
     const colPackaging = colUnitPrice - 35; // extra spacing from Unit Price
-    const colShipTo = colPackaging - 26;    // 111 (left-aligned)
-    const colShipDate = colShipTo - 26;     // 85 (left-aligned)
+    const colSku = colPackaging - 26;       // 111 (left-aligned)
+    const colShipDate = colSku - 26;        // 85 (left-aligned)
 
     doc.text('QUANTITY', colQty, tableStartY);
     doc.text('PRODUCT', colProduct, tableStartY);
     doc.text('DATE', colShipDate, tableStartY);
-    doc.text('SHIP TO', colShipTo, tableStartY);
+    doc.text('SKU', colSku, tableStartY);
     doc.text('PACK', colPackaging, tableStartY);
     doc.text('UNIT PRICE', colUnitPrice, tableStartY, { align: 'right' });
     doc.text('AMOUNT', colAmount, tableStartY, { align: 'right' });
@@ -323,7 +323,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       const qty = Number(safeItem?.quantity || 0);
       const productName = String(safeItem?.productName || safeItem?.description || '');
       const shipDate = String(safeItem?.shipDate || '');
-      const shipTo = String(safeItem?.shipTo || '');
+      const sku = String(safeItem?.sku || '');
       const packaging = String(safeItem?.packaging || '');
       const unitPrice = Number(safeItem?.unitPrice || 0);
       const amount = Number(safeItem?.amount || 0);
@@ -332,7 +332,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
       doc.text(String(qty), colQty, currentY);
       doc.text(productName.substring(0, 30), colProduct, currentY);
       doc.text(shipDate.substring(0, 10), colShipDate, currentY);
-      doc.text(shipTo.substring(0, 14), colShipTo, currentY);
+      doc.text(sku.substring(0, 14), colSku, currentY);
       doc.text(packaging.substring(0, 12), colPackaging, currentY);
       doc.text(`$${unitPrice.toFixed(2)}`, colUnitPrice, currentY, { align: 'right' });
       doc.text(`$${amount.toFixed(2)}`, colAmount, currentY, { align: 'right' });

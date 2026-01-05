@@ -882,7 +882,6 @@ export function AdminInventoryManagement({
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
           : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
         packaging: `${shipped.packOf} Nos.`,
-        shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
         amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
@@ -1006,7 +1005,6 @@ export function AdminInventoryManagement({
           ? format(new Date(shipped.date), 'dd/MM/yyyy')
           : format(new Date(shipped.date.seconds * 1000), 'dd/MM/yyyy'),
         packaging: `${shipped.packOf} Nos.`,
-        shipTo: shipped.shipTo || '',
         unitPrice: shipped.unitPrice || 0,
         amount: ((shipped as any).unitsForPricing ?? (shipped as any).boxesShipped ?? shipped.shippedQty) * (shipped.unitPrice || 0),
       })),
@@ -1950,10 +1948,6 @@ export function AdminInventoryManagement({
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Package className="h-4 w-4 shrink-0" />
                           <span>Pack: <span className="font-semibold text-foreground">{item.packOf}</span></span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Truck className="h-4 w-4 shrink-0" />
-                          <span className="truncate" title={item.shipTo}>To: {item.shipTo}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Calendar className="h-4 w-4 shrink-0" />

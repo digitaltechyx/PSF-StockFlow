@@ -45,7 +45,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -114,7 +114,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -661,7 +661,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -728,7 +728,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -1294,13 +1294,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -1542,7 +1543,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -1611,7 +1612,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -2158,7 +2159,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -2225,7 +2226,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -2791,13 +2792,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -3039,7 +3041,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -3108,7 +3110,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -3655,7 +3657,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -3722,7 +3724,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -4288,13 +4290,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -4536,7 +4539,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -4605,7 +4608,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -5152,7 +5155,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -5219,7 +5222,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -5785,13 +5788,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -6033,7 +6037,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -6102,7 +6106,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -6649,7 +6653,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -6716,7 +6720,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -7282,13 +7286,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -7530,7 +7535,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -7599,7 +7604,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -8146,7 +8151,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -8213,7 +8218,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -8779,13 +8784,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -9027,7 +9033,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -9096,7 +9102,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -9643,7 +9649,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -9710,7 +9716,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -10276,13 +10282,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -10524,7 +10531,7 @@ const formSchema = z.object({
   palletSubType: z.enum(["existing_inventory", "forwarding"]).optional(),
   shipments: z.array(shipmentItemSchema).min(1, "Select at least one item to ship."),
   date: z.date({ required_error: "A shipping date is required." }),
-  shipTo: z.string().min(1, "Ship to destination is required."),
+  remarks: z.string().optional(),
   service: z.enum(["FBA/WFS/TFS", "FBM", "Box Forwarding"]).optional(),
   productType: z.enum(["Standard", "Large", "Custom"]).optional(),
   customDimensions: z.string().optional(),
@@ -10593,7 +10600,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -11140,7 +11147,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         userName: userProfile.name || "Unknown User",
         shipments: values.shipments,
         date: dateTimestamp,
-        shipTo: values.shipTo || "",
+        remarks: values.remarks || undefined,
         shipmentType: values.shipmentType,
         status: "pending",
         requestedBy: user.uid,
@@ -11207,7 +11214,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
         shipmentType: "product",
         palletSubType: undefined,
         shipments: [],
-        shipTo: "",
+        remarks: undefined,
         service: "FBA/WFS/TFS",
         productType: "Standard",
         customDimensions: undefined,
@@ -11773,13 +11780,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
 
             <FormField
               control={form.control}
-              name="shipTo"
+              name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ship To</FormLabel>
+                  <FormLabel>Remarks (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter destination (e.g., Customer Name, Address, Store Location)"
+                    <Textarea
+                      placeholder="Add any additional remarks or notes..."
+                      className="min-h-[80px]"
                       {...field}
                     />
                   </FormControl>
@@ -11968,6 +11976,14 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
             </div>
           </form>
         </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+
+
       </DialogContent>
     </Dialog>
   );
