@@ -925,6 +925,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -2421,6 +2422,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -3917,6 +3919,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -5413,6 +5416,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -6909,6 +6913,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -8405,6 +8410,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -9901,6 +9907,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
@@ -11397,6 +11404,7 @@ export function CreateShipmentRequestForm({ inventory }: CreateShipmentRequestFo
                         <div className="flex flex-col flex-1">
                           <span className="font-medium">{item.productName}</span>
                           <span className="text-xs text-muted-foreground">
+                            {item.sku && <span className="mr-2">SKU: {item.sku}</span>}
                             In Stock: {item.quantity}
                           </span>
                         </div>
