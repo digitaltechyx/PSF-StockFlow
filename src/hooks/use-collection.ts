@@ -128,4 +128,3 @@ export function useCollectionGroup<T>(collectionName: string, firestoreQuery?: Q
 
   return { data, loading, error };
 }
-

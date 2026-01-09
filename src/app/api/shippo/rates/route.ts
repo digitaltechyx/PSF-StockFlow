@@ -2,7 +2,40 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const SHIPPO_API_BASE = 'https://api.goshippo.com';
 
+const allowedOrigins = [
+  "https://prepservicesfba.com",
+  "https://www.prepservicesfba.com",
+  "http://localhost:3000", // For local testing
+];
+
+function buildCorsHeaders(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  const corsHeaders: Record<string, string> = {
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "false",
+  };
+
+  // Allow requests from allowed origins or if origin matches prepservicesfba.com domain
+  if (origin) {
+    if (allowedOrigins.includes(origin) || origin.includes('prepservicesfba.com')) {
+      corsHeaders["Access-Control-Allow-Origin"] = origin;
+    }
+  } else {
+    // If no origin header (e.g., same-origin request), allow it
+    corsHeaders["Access-Control-Allow-Origin"] = "*";
+  }
+
+  return corsHeaders;
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const corsHeaders = buildCorsHeaders(request);
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function POST(request: NextRequest) {
+  const corsHeaders = buildCorsHeaders(request);
   try {
     const body = await request.json();
     const { fromAddress, toAddress, parcel } = body;
@@ -11,7 +44,7 @@ export async function POST(request: NextRequest) {
     if (!fromAddress || !toAddress || !parcel) {
       return NextResponse.json(
         { error: 'Missing required fields: fromAddress, toAddress, parcel' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -21,7 +54,7 @@ export async function POST(request: NextRequest) {
           error: 'Shippo API key not configured',
           hint: 'Please add SHIPPO_API_KEY to your environment variables'
         },
-        { status: 500 }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -83,7 +116,7 @@ export async function POST(request: NextRequest) {
           error: 'Failed to create shipment',
           details: errorData.detail || errorData.message || 'Unknown error'
         },
-        { status: shipmentResponse.status }
+        { status: shipmentResponse.status, headers: corsHeaders }
       );
     }
 
@@ -106,7 +139,7 @@ export async function POST(request: NextRequest) {
           error: 'Failed to get rates',
           details: errorData.detail || errorData.message || 'Unknown error'
         },
-        { status: ratesResponse.status }
+        { status: ratesResponse.status, headers: corsHeaders }
       );
     }
 
@@ -137,7 +170,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       rates: formattedRates,
       shipment_id: shipment.object_id,
-    });
+    }, { headers: corsHeaders });
 
   } catch (error: any) {
     console.error('Error getting shipping rates:', error);
@@ -146,7 +179,7 @@ export async function POST(request: NextRequest) {
         error: 'Failed to get shipping rates',
         details: error.message 
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
