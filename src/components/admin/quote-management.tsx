@@ -314,9 +314,15 @@ export function QuoteManagement() {
         formData.shippingCost,
         formData.salesTax
       );
+      
+      // Remove undefined values from formData (Firestore doesn't allow undefined)
+      const cleanFormData = Object.fromEntries(
+        Object.entries(formData).filter(([_, value]) => value !== undefined)
+      );
+      
       if (editingQuoteId) {
         await updateDoc(doc(db, "quotes", editingQuoteId), {
-          ...formData,
+          ...cleanFormData,
           items,
           subtotal,
           salesTax,
@@ -327,7 +333,7 @@ export function QuoteManagement() {
         toast({ title: "Draft updated." });
       } else {
         await addDoc(collection(db, "quotes"), {
-          ...formData,
+          ...cleanFormData,
           items,
           subtotal,
           salesTax,
@@ -374,9 +380,15 @@ export function QuoteManagement() {
         formData.shippingCost,
         formData.salesTax
       );
+      
+      // Remove undefined values from formData (Firestore doesn't allow undefined)
+      const cleanFormData = Object.fromEntries(
+        Object.entries(formData).filter(([_, value]) => value !== undefined)
+      );
+      
       if (editingQuoteId) {
         await updateDoc(doc(db, "quotes", editingQuoteId), {
-          ...formData,
+          ...cleanFormData,
           items,
           subtotal,
           salesTax,
@@ -385,11 +397,11 @@ export function QuoteManagement() {
         });
         const quote = quotes.find((q) => q.id === editingQuoteId);
         if (quote) {
-          openEmailDialog({ ...quote, ...formData, items, subtotal, salesTax, total }, "send");
+          openEmailDialog({ ...quote, ...cleanFormData, items, subtotal, salesTax, total }, "send");
         }
       } else {
         const docRef = await addDoc(collection(db, "quotes"), {
-          ...formData,
+          ...cleanFormData,
           items,
           subtotal,
           salesTax,
@@ -399,7 +411,7 @@ export function QuoteManagement() {
           updatedAt: serverTimestamp(),
           createdBy: userProfile?.uid || "",
         });
-        openEmailDialog({ id: docRef.id, status: "draft", ...formData, items, subtotal, salesTax, total }, "send");
+        openEmailDialog({ id: docRef.id, status: "draft", ...cleanFormData, items, subtotal, salesTax, total }, "send");
       }
     } catch (error) {
       console.error("Failed to prepare send:", error);
