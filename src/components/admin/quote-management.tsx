@@ -97,6 +97,7 @@ interface Quote {
   recipientCity?: string;
   recipientState?: string;
   recipientZip?: string;
+  recipientCountry?: string;
   recipientPhone?: string;
   subject: string;
   message: string;
@@ -158,6 +159,7 @@ const createEmptyQuoteForm = (): Omit<Quote, "id" | "status" | "createdAt" | "up
     recipientCity: "",
     recipientState: "",
     recipientZip: "",
+    recipientCountry: "",
     recipientPhone: "",
     subject: "",
     message: "",
@@ -422,6 +424,7 @@ export function QuoteManagement() {
       recipientCity: quote.recipientCity || "",
       recipientState: quote.recipientState || "",
       recipientZip: quote.recipientZip || "",
+      recipientCountry: quote.recipientCountry || "",
       recipientPhone: quote.recipientPhone || "",
       subject: quote.subject,
       message: quote.message,
@@ -947,9 +950,9 @@ export function QuoteManagement() {
                       <div className="space-y-1">
                         <p className="font-semibold">{formData.recipientName || "—"}</p>
                         {formData.recipientAddress && <p>{formData.recipientAddress}</p>}
-                        {(formData.recipientCity || formData.recipientState || formData.recipientZip) && (
+                        {(formData.recipientCity || formData.recipientState || formData.recipientZip || formData.recipientCountry) && (
                           <p>
-                            {[formData.recipientCity, formData.recipientState, formData.recipientZip]
+                            {[formData.recipientCity, formData.recipientState, formData.recipientZip, formData.recipientCountry]
                               .filter(Boolean)
                               .join(", ")}
                           </p>
@@ -978,6 +981,17 @@ export function QuoteManagement() {
                               setFormData((prev) => ({ ...prev, recipientAddress: event.target.value }))
                             }
                             placeholder="Client address"
+                            className="h-9"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Country</Label>
+                          <Input
+                            value={formData.recipientCountry}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, recipientCountry: event.target.value }))
+                            }
+                            placeholder="Country"
                             className="h-9"
                           />
                         </div>
