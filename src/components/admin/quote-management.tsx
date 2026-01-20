@@ -302,7 +302,11 @@ export function QuoteManagement() {
   };
 
   const handleSaveDraft = async () => {
-    if (!validateForm()) return;
+    // For drafts, only validate that we have at least a reference number
+    if (!formData.reference.trim()) {
+      toast({ variant: "destructive", title: "Quotation number is required." });
+      return;
+    }
     setSaving(true);
     try {
       const { items, subtotal, salesTax, total } = calculateTotals(
@@ -320,6 +324,7 @@ export function QuoteManagement() {
           status: "draft",
           updatedAt: serverTimestamp(),
         });
+        toast({ title: "Draft updated." });
       } else {
         await addDoc(collection(db, "quotes"), {
           ...formData,
@@ -332,13 +337,17 @@ export function QuoteManagement() {
           updatedAt: serverTimestamp(),
           createdBy: userProfile?.uid || "",
         });
+        toast({ title: "Draft saved." });
       }
-      toast({ title: "Draft saved." });
       resetForm();
       setActiveTab("draft");
     } catch (error) {
       console.error("Failed to save draft:", error);
-      toast({ variant: "destructive", title: "Failed to save draft." });
+      toast({ 
+        variant: "destructive", 
+        title: "Failed to save draft.",
+        description: error instanceof Error ? error.message : "Please try again."
+      });
     } finally {
       setSaving(false);
     }
