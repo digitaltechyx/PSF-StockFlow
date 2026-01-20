@@ -145,8 +145,11 @@ const createEmptyQuoteForm = (): Omit<Quote, "id" | "status" | "createdAt" | "up
   const today = new Date();
   const validUntil = new Date(today);
   validUntil.setDate(today.getDate() + 7);
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
   return {
-    reference: `Q-${Date.now().toString().slice(-8)}`,
+    reference: `Q-${year}${month}-${randomNum}`,
     quoteDate: today.toISOString().slice(0, 10),
     validUntil: validUntil.toISOString().slice(0, 10),
     recipientName: "",
@@ -196,6 +199,25 @@ const formatDate = (value?: any) => {
     (value instanceof Date ? value : null);
   if (!date || Number.isNaN(date.getTime())) return "—";
   return date.toLocaleDateString();
+};
+
+const formatDateForDisplay = (dateString?: string) => {
+  if (!dateString) return "";
+  try {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  } catch {
+    return dateString;
+  }
+};
+
+const formatTermsAsBullets = (terms?: string) => {
+  if (!terms) return [];
+  return terms
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 };
 
 const calculateTotals = (items: QuoteLineItem[], shippingCost: number, salesTax: number) => {
@@ -866,33 +888,45 @@ export function QuoteManagement() {
                   <div className="text-sm text-muted-foreground space-y-2">
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
                       <span>Quotation Number:</span>
-                      <Input
-                        value={formData.reference}
-                        onChange={(event) =>
-                          setFormData((prev) => ({ ...prev, reference: event.target.value }))
-                        }
-                        className="h-8 w-44 text-center"
-                      />
+                      {isPrintMode ? (
+                        <span className="font-semibold text-amber-900">{formData.reference || "—"}</span>
+                      ) : (
+                        <Input
+                          value={formData.reference}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, reference: event.target.value }))
+                          }
+                          className="h-8 w-44 text-center"
+                        />
+                      )}
                       <span>Date:</span>
-                      <Input
-                        type="date"
-                        value={formData.quoteDate}
-                        onChange={(event) =>
-                          setFormData((prev) => ({ ...prev, quoteDate: event.target.value }))
-                        }
-                        className="h-8 w-40 text-center"
-                      />
+                      {isPrintMode ? (
+                        <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.quoteDate) || "—"}</span>
+                      ) : (
+                        <Input
+                          type="date"
+                          value={formData.quoteDate}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, quoteDate: event.target.value }))
+                          }
+                          className="h-8 w-40 text-center"
+                        />
+                      )}
                     </div>
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
                       <span>Valid Until:</span>
-                      <Input
-                        type="date"
-                        value={formData.validUntil}
-                        onChange={(event) =>
-                          setFormData((prev) => ({ ...prev, validUntil: event.target.value }))
-                        }
-                        className="h-8 w-40 text-center"
-                      />
+                      {isPrintMode ? (
+                        <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.validUntil) || "—"}</span>
+                      ) : (
+                        <Input
+                          type="date"
+                          value={formData.validUntil}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, validUntil: event.target.value }))
+                          }
+                          className="h-8 w-40 text-center"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -909,90 +943,106 @@ export function QuoteManagement() {
                   </div>
                   <div className="border border-amber-200/70 rounded-md p-4 text-sm space-y-3">
                     <p className="text-xs uppercase text-amber-700 font-semibold">To</p>
-                    <div className="grid gap-2">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Client Name</Label>
-                        <Input
-                          value={formData.recipientName}
-                          onChange={(event) =>
-                            setFormData((prev) => ({ ...prev, recipientName: event.target.value }))
-                          }
-                          placeholder="Client name"
-                          className="h-9"
-                        />
+                    {isPrintMode ? (
+                      <div className="space-y-1">
+                        <p className="font-semibold">{formData.recipientName || "—"}</p>
+                        {formData.recipientAddress && <p>{formData.recipientAddress}</p>}
+                        {(formData.recipientCity || formData.recipientState || formData.recipientZip) && (
+                          <p>
+                            {[formData.recipientCity, formData.recipientState, formData.recipientZip]
+                              .filter(Boolean)
+                              .join(", ")}
+                          </p>
+                        )}
+                        {formData.recipientPhone && <p>Phone: {formData.recipientPhone}</p>}
+                        {formData.recipientEmail && <p>Email: {formData.recipientEmail}</p>}
                       </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Address</Label>
-                        <Input
-                          value={formData.recipientAddress}
-                          onChange={(event) =>
-                            setFormData((prev) => ({ ...prev, recipientAddress: event.target.value }))
-                          }
-                          placeholder="Client address"
-                          className="h-9"
-                        />
+                    ) : (
+                      <div className="grid gap-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Client Name</Label>
+                          <Input
+                            value={formData.recipientName}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, recipientName: event.target.value }))
+                            }
+                            placeholder="Client name"
+                            className="h-9"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Address</Label>
+                          <Input
+                            value={formData.recipientAddress}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, recipientAddress: event.target.value }))
+                            }
+                            placeholder="Client address"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">City</Label>
+                            <Input
+                              value={formData.recipientCity}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, recipientCity: event.target.value }))
+                              }
+                              placeholder="City"
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">State</Label>
+                            <Input
+                              value={formData.recipientState}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, recipientState: event.target.value }))
+                              }
+                              placeholder="State"
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Zip Code</Label>
+                            <Input
+                              value={formData.recipientZip}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, recipientZip: event.target.value }))
+                              }
+                              placeholder="Zip"
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Phone</Label>
+                            <Input
+                              value={formData.recipientPhone}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, recipientPhone: event.target.value }))
+                              }
+                              placeholder="Phone"
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Email</Label>
+                            <Input
+                              value={formData.recipientEmail}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, recipientEmail: event.target.value }))
+                              }
+                              placeholder="client@email.com"
+                              type="email"
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">City</Label>
-                          <Input
-                            value={formData.recipientCity}
-                            onChange={(event) =>
-                              setFormData((prev) => ({ ...prev, recipientCity: event.target.value }))
-                            }
-                            placeholder="City"
-                            className="h-9"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">State</Label>
-                          <Input
-                            value={formData.recipientState}
-                            onChange={(event) =>
-                              setFormData((prev) => ({ ...prev, recipientState: event.target.value }))
-                            }
-                            placeholder="State"
-                            className="h-9"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Zip Code</Label>
-                          <Input
-                            value={formData.recipientZip}
-                            onChange={(event) =>
-                              setFormData((prev) => ({ ...prev, recipientZip: event.target.value }))
-                            }
-                            placeholder="Zip"
-                            className="h-9"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Phone</Label>
-                          <Input
-                            value={formData.recipientPhone}
-                            onChange={(event) =>
-                              setFormData((prev) => ({ ...prev, recipientPhone: event.target.value }))
-                            }
-                            placeholder="Phone"
-                            className="h-9"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Email</Label>
-                          <Input
-                            value={formData.recipientEmail}
-                            onChange={(event) =>
-                              setFormData((prev) => ({ ...prev, recipientEmail: event.target.value }))
-                            }
-                            placeholder="client@email.com"
-                            type="email"
-                            className="h-9"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
@@ -1012,52 +1062,66 @@ export function QuoteManagement() {
                           <th className="px-3 py-2 font-semibold w-24">Quantity</th>
                           <th className="px-3 py-2 font-semibold w-32">Unit Price ($)</th>
                           <th className="px-3 py-2 font-semibold w-32 text-right">Total Price ($)</th>
-                          <th className="px-3 py-2 font-semibold w-10 text-right quote-remove-column"></th>
+                          {!isPrintMode && <th className="px-3 py-2 font-semibold w-10 text-right quote-remove-column"></th>}
                         </tr>
                       </thead>
                       <tbody>
                         {formData.items.map((item, index) => (
                           <tr key={item.id} className="border-t border-amber-100">
                             <td className="px-3 py-2">
-                              <Input
-                                value={item.description}
-                                onChange={(event) => updateItem(index, "description", event.target.value)}
-                                placeholder="Manual field"
-                                className="h-8"
-                              />
+                              {isPrintMode ? (
+                                <span className="text-sm">{item.description || "—"}</span>
+                              ) : (
+                                <Input
+                                  value={item.description}
+                                  onChange={(event) => updateItem(index, "description", event.target.value)}
+                                  placeholder="Manual field"
+                                  className="h-8"
+                                />
+                              )}
                             </td>
                             <td className="px-3 py-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                value={item.quantity}
-                                onChange={(event) => updateItem(index, "quantity", event.target.value)}
-                                className="h-8"
-                              />
+                              {isPrintMode ? (
+                                <span className="text-sm">{item.quantity || 0}</span>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  value={item.quantity}
+                                  onChange={(event) => updateItem(index, "quantity", event.target.value)}
+                                  className="h-8"
+                                />
+                              )}
                             </td>
                             <td className="px-3 py-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.unitPrice}
-                                onChange={(event) => updateItem(index, "unitPrice", event.target.value)}
-                                className="h-8"
-                              />
+                              {isPrintMode ? (
+                                <span className="text-sm">${(item.unitPrice || 0).toFixed(2)}</span>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.unitPrice}
+                                  onChange={(event) => updateItem(index, "unitPrice", event.target.value)}
+                                  className="h-8"
+                                />
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right font-medium">
                               ${item.amount.toFixed(2)}
                             </td>
-                            <td className="px-3 py-2 text-right quote-remove-column">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeItem(index)}
-                                className="text-destructive h-8 w-8 quote-actions"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </td>
+                            {!isPrintMode && (
+                              <td className="px-3 py-2 text-right quote-remove-column">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeItem(index)}
+                                  className="text-destructive h-8 w-8 quote-actions"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1073,41 +1137,49 @@ export function QuoteManagement() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Sales Tax (6.625%)</span>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.salesTax}
-                        onChange={(event) => {
-                          const salesTax = Number(event.target.value || 0);
-                          const { items, subtotal, total } = calculateTotals(
-                            formData.items,
-                            formData.shippingCost,
-                            salesTax
-                          );
-                          setFormData((prev) => ({ ...prev, salesTax, items, subtotal, total }));
-                        }}
-                        className="h-8 w-28 text-right"
-                      />
+                      {isPrintMode ? (
+                        <span className="font-semibold">${formData.salesTax.toFixed(2)}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.salesTax}
+                          onChange={(event) => {
+                            const salesTax = Number(event.target.value || 0);
+                            const { items, subtotal, total } = calculateTotals(
+                              formData.items,
+                              formData.shippingCost,
+                              salesTax
+                            );
+                            setFormData((prev) => ({ ...prev, salesTax, items, subtotal, total }));
+                          }}
+                          className="h-8 w-28 text-right"
+                        />
+                      )}
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Shipping Cost</span>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.shippingCost}
-                        onChange={(event) => {
-                          const shippingCost = Number(event.target.value || 0);
-                          const { items, subtotal, salesTax, total } = calculateTotals(
-                            formData.items,
-                            shippingCost,
-                            formData.salesTax
-                          );
-                          setFormData((prev) => ({ ...prev, shippingCost, items, subtotal, salesTax, total }));
-                        }}
-                        className="h-8 w-28 text-right"
-                      />
+                      {isPrintMode ? (
+                        <span className="font-semibold">${formData.shippingCost.toFixed(2)}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.shippingCost}
+                          onChange={(event) => {
+                            const shippingCost = Number(event.target.value || 0);
+                            const { items, subtotal, salesTax, total } = calculateTotals(
+                              formData.items,
+                              shippingCost,
+                              formData.salesTax
+                            );
+                            setFormData((prev) => ({ ...prev, shippingCost, items, subtotal, salesTax, total }));
+                          }}
+                          className="h-8 w-28 text-right"
+                        />
+                      )}
                     </div>
                     <div className="flex items-center justify-between border-t border-amber-200 pt-2 text-amber-900 font-semibold">
                       <span>Grand Total</span>
@@ -1118,54 +1190,84 @@ export function QuoteManagement() {
 
                 <div className="border border-amber-200/70 rounded-md p-4 space-y-2">
                   <p className="text-xs uppercase text-amber-700 font-semibold">Terms &amp; Conditions</p>
-                  <Textarea
-                    value={formData.terms}
-                    onChange={(event) =>
-                      setFormData((prev) => ({ ...prev, terms: event.target.value }))
-                    }
-                    rows={6}
-                    className="text-xs leading-5"
-                  />
+                  {isPrintMode ? (
+                    <ul className="text-xs leading-5 space-y-1 list-disc list-inside text-amber-900">
+                      {formatTermsAsBullets(formData.terms).map((term, idx) => (
+                        <li key={idx}>{term}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <Textarea
+                      value={formData.terms}
+                      onChange={(event) =>
+                        setFormData((prev) => ({ ...prev, terms: event.target.value }))
+                      }
+                      rows={6}
+                      className="text-xs leading-5"
+                    />
+                  )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 text-sm">
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">Prepared By</Label>
-                    <Input
-                      value={formData.preparedBy}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, preparedBy: event.target.value }))
-                      }
-                      className="h-9"
-                    />
-                    <Label className="text-xs text-muted-foreground">Date</Label>
-                    <Input
-                      type="date"
-                      value={formData.preparedDate}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, preparedDate: event.target.value }))
-                      }
-                      className="h-9"
-                    />
+                    {isPrintMode ? (
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{formData.preparedBy || "—"}</p>
+                        {formData.preparedDate && (
+                          <p className="text-xs text-muted-foreground">{formatDateForDisplay(formData.preparedDate)}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <Input
+                          value={formData.preparedBy}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, preparedBy: event.target.value }))
+                          }
+                          className="h-9"
+                        />
+                        <Label className="text-xs text-muted-foreground">Date</Label>
+                        <Input
+                          type="date"
+                          value={formData.preparedDate}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, preparedDate: event.target.value }))
+                          }
+                          className="h-9"
+                        />
+                      </>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">Approved By</Label>
-                    <Input
-                      value={formData.approvedBy}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, approvedBy: event.target.value }))
-                      }
-                      className="h-9"
-                    />
-                    <Label className="text-xs text-muted-foreground">Date</Label>
-                    <Input
-                      type="date"
-                      value={formData.approvedDate}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, approvedDate: event.target.value }))
-                      }
-                      className="h-9"
-                    />
+                    {isPrintMode ? (
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{formData.approvedBy || "—"}</p>
+                        {formData.approvedDate && (
+                          <p className="text-xs text-muted-foreground">{formatDateForDisplay(formData.approvedDate)}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <Input
+                          value={formData.approvedBy}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, approvedBy: event.target.value }))
+                          }
+                          className="h-9"
+                        />
+                        <Label className="text-xs text-muted-foreground">Date</Label>
+                        <Input
+                          type="date"
+                          value={formData.approvedDate}
+                          onChange={(event) =>
+                            setFormData((prev) => ({ ...prev, approvedDate: event.target.value }))
+                          }
+                          className="h-9"
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

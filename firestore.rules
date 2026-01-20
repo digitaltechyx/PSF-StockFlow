@@ -154,6 +154,18 @@ service cloud.firestore {
       allow list: if isCommissionAgent();
     }
 
+    // ---- QUOTES (Quotation Management) ----
+    match /quotes/{quoteId} {
+      // Admin/sub_admin only: full access to create, read, update, delete quotes.
+      allow read, write: if isAdminOrSubAdmin();
+    }
+
+    // ---- QUOTE INVOICES (Converted Quotes) ----
+    match /quote_invoices/{invoiceId} {
+      // Admin/sub_admin only: full access to create, read, update, delete converted quote invoices.
+      allow read, write: if isAdminOrSubAdmin();
+    }
+
     // ---- ADMIN OVERRIDE ----
     // Ensures admin/sub_admin never sees "Missing or insufficient permissions"
     // for top-level admin-managed collections not explicitly listed above.
