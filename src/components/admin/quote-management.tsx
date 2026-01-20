@@ -198,14 +198,13 @@ const formatDate = (value?: any) => {
   return date.toLocaleDateString();
 };
 
-const calculateTotals = (items: QuoteLineItem[], shippingCost: number) => {
+const calculateTotals = (items: QuoteLineItem[], shippingCost: number, salesTax: number) => {
   const normalized = items.map((item) => ({
     ...item,
     amount: Number(item.quantity || 0) * Number(item.unitPrice || 0),
   }));
   const subtotal = normalized.reduce((sum, item) => sum + (item.amount || 0), 0);
-  const salesTax = subtotal * TAX_RATE;
-  const total = subtotal + salesTax + Number(shippingCost || 0);
+  const total = subtotal + Number(salesTax || 0) + Number(shippingCost || 0);
   return { items: normalized, subtotal, salesTax, total };
 };
 
@@ -281,7 +280,11 @@ export function QuoteManagement() {
     if (!validateForm()) return;
     setSaving(true);
     try {
-      const { items, subtotal, salesTax, total } = calculateTotals(formData.items, formData.shippingCost);
+      const { items, subtotal, salesTax, total } = calculateTotals(
+        formData.items,
+        formData.shippingCost,
+        formData.salesTax
+      );
       if (editingQuoteId) {
         await updateDoc(doc(db, "quotes", editingQuoteId), {
           ...formData,
@@ -332,7 +335,11 @@ export function QuoteManagement() {
     if (!validateForm()) return;
     setSaving(true);
     try {
-      const { items, subtotal, salesTax, total } = calculateTotals(formData.items, formData.shippingCost);
+      const { items, subtotal, salesTax, total } = calculateTotals(
+        formData.items,
+        formData.shippingCost,
+        formData.salesTax
+      );
       if (editingQuoteId) {
         await updateDoc(doc(db, "quotes", editingQuoteId), {
           ...formData,
@@ -647,20 +654,32 @@ export function QuoteManagement() {
     } else {
       updated[index][field] = value as never;
     }
-    const { items, subtotal, salesTax, total } = calculateTotals(updated, formData.shippingCost);
+    const { items, subtotal, salesTax, total } = calculateTotals(
+      updated,
+      formData.shippingCost,
+      formData.salesTax
+    );
     setFormData((prev) => ({ ...prev, items, subtotal, salesTax, total }));
   };
 
   const addItem = () => {
     const updated = [...formData.items, createEmptyItem()];
-    const { items, subtotal, salesTax, total } = calculateTotals(updated, formData.shippingCost);
+    const { items, subtotal, salesTax, total } = calculateTotals(
+      updated,
+      formData.shippingCost,
+      formData.salesTax
+    );
     setFormData((prev) => ({ ...prev, items, subtotal, salesTax, total }));
   };
 
   const removeItem = (index: number) => {
     const updated = formData.items.filter((_, idx) => idx !== index);
     const fallback = updated.length ? updated : [createEmptyItem()];
-    const { items, subtotal, salesTax, total } = calculateTotals(fallback, formData.shippingCost);
+    const { items, subtotal, salesTax, total } = calculateTotals(
+      fallback,
+      formData.shippingCost,
+      formData.salesTax
+    );
     setFormData((prev) => ({ ...prev, items, subtotal, salesTax, total }));
   };
 
@@ -1027,7 +1046,22 @@ export function QuoteManagement() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Sales Tax (6.625%)</span>
-                      <span className="font-semibold">${formData.salesTax.toFixed(2)}</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.salesTax}
+                        onChange={(event) => {
+                          const salesTax = Number(event.target.value || 0);
+                          const { items, subtotal, total } = calculateTotals(
+                            formData.items,
+                            formData.shippingCost,
+                            salesTax
+                          );
+                          setFormData((prev) => ({ ...prev, salesTax, items, subtotal, total }));
+                        }}
+                        className="h-8 w-28 text-right"
+                      />
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Shipping Cost</span>
@@ -1038,7 +1072,11 @@ export function QuoteManagement() {
                         value={formData.shippingCost}
                         onChange={(event) => {
                           const shippingCost = Number(event.target.value || 0);
-                          const { items, subtotal, salesTax, total } = calculateTotals(formData.items, shippingCost);
+                          const { items, subtotal, salesTax, total } = calculateTotals(
+                            formData.items,
+                            shippingCost,
+                            formData.salesTax
+                          );
                           setFormData((prev) => ({ ...prev, shippingCost, items, subtotal, salesTax, total }));
                         }}
                         className="h-8 w-28 text-right"
