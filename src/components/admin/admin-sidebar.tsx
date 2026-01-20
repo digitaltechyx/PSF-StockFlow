@@ -226,6 +226,13 @@ export function AdminSidebar() {
       requiredFeature: "manage_invoices" as const,
     },
     {
+      title: "Quote Management",
+      url: "/admin/dashboard/quotes",
+      icon: Briefcase,
+      color: "text-emerald-600",
+      requiredFeature: "admin_dashboard" as const,
+    },
+    {
       title: "Pricing",
       url: "/admin/dashboard/pricing",
       icon: DollarSign,

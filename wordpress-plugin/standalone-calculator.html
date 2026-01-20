@@ -263,37 +263,277 @@
       margin-left: 8px;
     }
 
-    /* Responsive Design */
-    @media (max-width: 768px) {
+    /* Responsive Design - Tablet */
+    @media (max-width: 1024px) {
       #psf-shipping-calculator-standalone {
+        max-width: 100%;
         padding: 15px;
       }
       
       .psf-calc-container {
-        padding: 20px;
+        padding: 25px;
       }
       
-      .psf-dimensions-row,
-      .psf-weight-row {
-        flex-direction: column;
+      .psf-results-title {
+        font-size: 20px;
+      }
+    }
+
+    /* Responsive Design - Mobile & Small Tablets */
+    @media (max-width: 768px) {
+      #psf-shipping-calculator-standalone {
+        padding: 10px;
       }
       
-      .psf-dimensions-row .psf-form-group:last-child,
-      .psf-weight-row .psf-form-group:last-child {
+      .psf-calc-container {
+        padding: 20px 15px;
+        border-radius: 8px;
+      }
+      
+      .psf-form-group {
+        margin-bottom: 18px;
+      }
+      
+      .psf-form-group label {
+        font-size: 13px;
+        margin-bottom: 6px;
+      }
+      
+      .psf-form-group input,
+      .psf-form-group select {
+        padding: 12px;
+        font-size: 16px; /* Prevents zoom on iOS */
+        border-radius: 8px;
+      }
+      
+      /* Dimensions Row - Keep horizontal on mobile */
+      .psf-dimensions-row {
+        flex-direction: row;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+      
+      .psf-dimensions-row .psf-form-group {
         flex: 1;
+        margin-bottom: 0;
+        min-width: 0; /* Allow flex items to shrink */
+      }
+      
+      .psf-dimensions-row .psf-form-group input {
+        padding: 10px 8px;
+        font-size: 14px;
+        text-align: center;
+      }
+      
+      .psf-dimensions-row .psf-form-group:last-child {
+        flex: 0 0 90px;
+        min-width: 90px;
+      }
+      
+      .psf-dimensions-row .psf-form-group:last-child select {
+        padding: 10px 6px;
+        font-size: 13px;
+      }
+      
+      /* Weight Row - Keep horizontal on mobile */
+      .psf-weight-row {
+        flex-direction: row;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+      
+      .psf-weight-row .psf-form-group {
+        flex: 1;
+        margin-bottom: 0;
+        min-width: 0;
+      }
+      
+      .psf-weight-row .psf-form-group input {
+        padding: 10px 8px;
+        font-size: 14px;
+      }
+      
+      .psf-weight-row .psf-form-group:last-child {
+        flex: 0 0 80px;
+        min-width: 80px;
+      }
+      
+      .psf-weight-row .psf-form-group:last-child select {
+        padding: 10px 6px;
+        font-size: 13px;
+      }
+      
+      .psf-calc-submit {
+        margin-top: 25px;
+      }
+      
+      .psf-calc-btn {
+        width: 100%;
+        padding: 14px 20px;
+        font-size: 16px;
+        min-width: auto;
+      }
+      
+      .psf-results-title {
+        font-size: 18px;
+        margin-bottom: 15px;
+      }
+      
+      .psf-calc-results {
+        margin-top: 30px;
+        padding-top: 20px;
+      }
+      
+      /* Rates Table - Mobile Optimized */
+      .psf-rates-table-wrapper {
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -15px;
+        padding: 0 15px;
       }
       
       .psf-rates-table {
         font-size: 12px;
+        min-width: 600px; /* Minimum width for horizontal scroll */
       }
       
-      .psf-rates-table th,
+      .psf-rates-table th {
+        padding: 12px 8px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      
       .psf-rates-table td {
-        padding: 10px 8px;
+        padding: 12px 8px;
+        font-size: 12px;
+      }
+      
+      .psf-carrier-logo {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      
+      .psf-carrier-name {
+        font-size: 14px;
+      }
+      
+      .psf-service-name {
+        font-size: 12px;
       }
       
       .psf-rate-price {
         font-size: 18px;
+      }
+      
+      .psf-best-rate-badge {
+        font-size: 9px;
+        padding: 2px 6px;
+        margin-left: 4px;
+      }
+    }
+
+    /* Responsive Design - Small Mobile */
+    @media (max-width: 480px) {
+      #psf-shipping-calculator-standalone {
+        padding: 8px;
+      }
+      
+      .psf-calc-container {
+        padding: 15px 12px;
+      }
+      
+      .psf-form-group {
+        margin-bottom: 16px;
+      }
+      
+      .psf-form-group label {
+        font-size: 12px;
+        margin-bottom: 5px;
+      }
+      
+      .psf-form-group input,
+      .psf-form-group select {
+        padding: 11px;
+        font-size: 16px;
+      }
+      
+      .psf-dimensions-row,
+      .psf-weight-row {
+        gap: 6px;
+      }
+      
+      .psf-dimensions-row .psf-form-group:last-child {
+        flex: 0 0 85px;
+        min-width: 85px;
+      }
+      
+      .psf-weight-row .psf-form-group:last-child {
+        flex: 0 0 75px;
+        min-width: 75px;
+      }
+      
+      .psf-dimensions-row .psf-form-group input,
+      .psf-weight-row .psf-form-group input {
+        padding: 10px 6px;
+        font-size: 14px;
+      }
+      
+      .psf-dimensions-row .psf-form-group:last-child select,
+      .psf-weight-row .psf-form-group:last-child select {
+        padding: 10px 4px;
+        font-size: 12px;
+      }
+      
+      .psf-calc-btn {
+        padding: 13px 18px;
+        font-size: 15px;
+      }
+      
+      .psf-results-title {
+        font-size: 16px;
+      }
+      
+      .psf-rates-table {
+        font-size: 11px;
+        min-width: 550px;
+      }
+      
+      .psf-rates-table th {
+        padding: 10px 6px;
+        font-size: 10px;
+      }
+      
+      .psf-rates-table td {
+        padding: 10px 6px;
+        font-size: 11px;
+      }
+      
+      .psf-rate-price {
+        font-size: 16px;
+      }
+      
+      .psf-carrier-name {
+        font-size: 13px;
+      }
+    }
+
+    /* Landscape Mobile */
+    @media (max-width: 768px) and (orientation: landscape) {
+      .psf-dimensions-row {
+        gap: 10px;
+      }
+      
+      .psf-dimensions-row .psf-form-group:last-child {
+        flex: 0 0 110px;
+        min-width: 110px;
+      }
+      
+      .psf-weight-row {
+        gap: 10px;
+      }
+      
+      .psf-weight-row .psf-form-group:last-child {
+        flex: 0 0 90px;
+        min-width: 90px;
       }
     }
   </style>
