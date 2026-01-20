@@ -496,9 +496,26 @@ export function QuoteManagement() {
         body: formData,
       });
       
-      const responseData = await response.json();
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get("content-type");
+      let responseData: any = {};
+      
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          responseData = await response.json();
+        } catch (jsonError) {
+          // If JSON parsing fails, get text response
+          const textResponse = await response.text();
+          throw new Error(`Server error: ${textResponse.substring(0, 200)}`);
+        }
+      } else {
+        // Non-JSON response (likely HTML error page)
+        const textResponse = await response.text();
+        throw new Error(`Server returned: ${textResponse.substring(0, 200)}`);
+      }
+      
       if (!response.ok) {
-        throw new Error(responseData.error || "Email request failed");
+        throw new Error(responseData.error || `Email request failed (${response.status})`);
       }
 
       const logEntry: QuoteEmailLog = {
