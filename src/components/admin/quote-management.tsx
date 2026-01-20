@@ -230,6 +230,7 @@ export function QuoteManagement() {
   const [decisionStatus, setDecisionStatus] = useState<"accepted" | "lost">("accepted");
   const [decisionDetails, setDecisionDetails] = useState<QuoteDecisionDetails>({});
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isPrintMode, setIsPrintMode] = useState(false);
   const [emailForm, setEmailForm] = useState({
     to: "",
     subject: "",
@@ -563,7 +564,9 @@ export function QuoteManagement() {
 
   const handleDownloadPdf = async () => {
     if (!quoteTemplateRef.current) return;
+    setIsPrintMode(true);
     try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
       const canvas = await html2canvas(quoteTemplateRef.current, {
         backgroundColor: "#ffffff",
         scale: 2,
@@ -597,6 +600,8 @@ export function QuoteManagement() {
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       toast({ variant: "destructive", title: "Failed to export PDF." });
+    } finally {
+      setIsPrintMode(false);
     }
   };
 
@@ -830,9 +835,31 @@ export function QuoteManagement() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <style jsx global>{`
+                .quote-print-mode input,
+                .quote-print-mode textarea {
+                  border-color: transparent !important;
+                  background: transparent !important;
+                  box-shadow: none !important;
+                  padding-left: 0 !important;
+                  padding-right: 0 !important;
+                }
+
+                .quote-print-mode textarea {
+                  resize: none !important;
+                }
+
+                .quote-print-mode .quote-remove-column,
+                .quote-print-mode .quote-actions {
+                  display: none !important;
+                }
+              `}</style>
               <div
                 ref={quoteTemplateRef}
-                className="bg-white border-2 border-amber-700/70 rounded-md p-6 shadow-sm max-w-[794px] mx-auto space-y-6"
+                className={cn(
+                  "bg-white border-2 border-amber-700/70 rounded-md p-6 shadow-sm max-w-[794px] mx-auto space-y-6",
+                  isPrintMode && "quote-print-mode"
+                )}
               >
                 <div className="space-y-2 text-center">
                   <h2 className="text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
@@ -972,7 +999,7 @@ export function QuoteManagement() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wide">Itemized Quotation Details</h3>
-                    <Button variant="outline" size="sm" onClick={addItem}>
+                    <Button variant="outline" size="sm" onClick={addItem} className="quote-actions">
                       <Plus className="h-4 w-4 mr-1" />
                       Add Item
                     </Button>
@@ -985,7 +1012,7 @@ export function QuoteManagement() {
                           <th className="px-3 py-2 font-semibold w-24">Quantity</th>
                           <th className="px-3 py-2 font-semibold w-32">Unit Price ($)</th>
                           <th className="px-3 py-2 font-semibold w-32 text-right">Total Price ($)</th>
-                          <th className="px-3 py-2 font-semibold w-10 text-right"></th>
+                          <th className="px-3 py-2 font-semibold w-10 text-right quote-remove-column"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1021,12 +1048,12 @@ export function QuoteManagement() {
                             <td className="px-3 py-2 text-right font-medium">
                               ${item.amount.toFixed(2)}
                             </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-3 py-2 text-right quote-remove-column">
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => removeItem(index)}
-                                className="text-destructive h-8 w-8"
+                                className="text-destructive h-8 w-8 quote-actions"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1140,46 +1167,6 @@ export function QuoteManagement() {
                       className="h-9"
                     />
                   </div>
-                </div>
-              </div>
-
-              <div className="max-w-[794px] mx-auto space-y-3 border border-border rounded-md p-4 bg-muted/20">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="subject">Email Subject</Label>
-                    <Input
-                      id="subject"
-                      value={formData.subject}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, subject: event.target.value }))
-                      }
-                      placeholder="Quotation for services"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="message">Email Message</Label>
-                    <Textarea
-                      id="message"
-                      value={formData.message}
-                      onChange={(event) =>
-                        setFormData((prev) => ({ ...prev, message: event.target.value }))
-                      }
-                      placeholder="Write the email message that will be sent with this quote."
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Additional Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(event) =>
-                      setFormData((prev) => ({ ...prev, notes: event.target.value }))
-                    }
-                    placeholder="Internal notes for this quotation"
-                    rows={2}
-                  />
                 </div>
               </div>
 
