@@ -35,12 +35,20 @@ export async function POST(request: Request) {
     const transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpSecure,
+      secure: smtpSecure, // true for 465, false for other ports
+      requireTLS: !smtpSecure, // require TLS for non-SSL ports
       auth: {
         user: smtpUser,
         pass: smtpPassword,
       },
+      tls: {
+        // Do not fail on invalid certs
+        rejectUnauthorized: false,
+      },
     });
+
+    // Verify connection configuration
+    await transporter.verify();
 
     await transporter.sendMail({
       from: smtpFromName ? `${smtpFromName} <${smtpFrom}>` : smtpFrom,
@@ -53,6 +61,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Email send error:", error);
-    return NextResponse.json({ error: "Failed to send email." }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Failed to send email.";
+    return NextResponse.json({ 
+      error: errorMessage,
+      details: error instanceof Error ? error.stack : undefined
+    }, { status: 500 });
   }
 }

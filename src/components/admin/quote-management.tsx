@@ -495,8 +495,10 @@ export function QuoteManagement() {
         method: "POST",
         body: formData,
       });
+      
+      const responseData = await response.json();
       if (!response.ok) {
-        throw new Error("Email request failed");
+        throw new Error(responseData.error || "Email request failed");
       }
 
       const logEntry: QuoteEmailLog = {
@@ -530,7 +532,12 @@ export function QuoteManagement() {
       setActiveTab("sent");
     } catch (error) {
       console.error("Failed to send email:", error);
-      toast({ variant: "destructive", title: "Failed to send email." });
+      const errorMessage = error instanceof Error ? error.message : "Failed to send email. Please check your SMTP configuration.";
+      toast({ 
+        variant: "destructive", 
+        title: "Failed to send email.",
+        description: errorMessage
+      });
     } finally {
       setIsSendingEmail(false);
     }
@@ -737,30 +744,43 @@ export function QuoteManagement() {
   const renderQuoteRow = (quote: Quote, options?: { showActions?: boolean; showFollowUp?: boolean }) => {
     const followUpCount = quote.followUpCount ?? 0;
     const followUpLimitReached = followUpCount >= FOLLOW_UP_LIMIT;
+    const isDraft = quote.status === "draft";
+    
+    // For drafts, use 4 columns (hide follow-up count)
+    // For others, use 5 columns
+    const gridCols = isDraft 
+      ? "grid-cols-[1.2fr_1.4fr_0.8fr_1fr]"
+      : "grid-cols-[1.2fr_1.4fr_0.8fr_0.8fr_0.8fr]";
+    
     return (
       <div
         key={quote.id}
         className={cn(
-          "grid grid-cols-[1.2fr_1.4fr_0.8fr_0.8fr_0.8fr] gap-3 items-center border-b px-3 py-3 text-sm",
+          "grid gap-3 items-center border-b px-3 py-3 text-sm",
+          gridCols,
           followUpLimitReached && options?.showFollowUp ? "bg-red-50 border-red-200" : "border-border"
         )}
       >
         <div>
-          <p className="font-medium">{quote.recipientName}</p>
-          <p className="text-xs text-muted-foreground break-all">{quote.recipientEmail}</p>
+          <p className="font-medium">{quote.recipientName || "—"}</p>
+          <p className="text-xs text-muted-foreground break-all">{quote.recipientEmail || "—"}</p>
         </div>
         <div>
           <p className="font-medium">{quote.reference}</p>
-          <p className="text-xs text-muted-foreground">Sent: {formatDate(quote.sentAt)}</p>
+          {!isDraft && (
+            <p className="text-xs text-muted-foreground">Sent: {formatDate(quote.sentAt)}</p>
+          )}
         </div>
         <div>
           <Badge variant="secondary" className="capitalize">
             {quote.status === "sent" && followUpCount > 0 ? "Follow Up" : quote.status}
           </Badge>
         </div>
-        <div className="text-xs">
-          {followUpCount}/{FOLLOW_UP_LIMIT} follow ups
-        </div>
+        {!isDraft && (
+          <div className="text-xs">
+            {followUpCount}/{FOLLOW_UP_LIMIT} follow ups
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           {options?.showActions && (
             <>
