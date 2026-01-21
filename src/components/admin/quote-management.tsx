@@ -235,6 +235,13 @@ const calculateTotals = (items: QuoteLineItem[], shippingCost: number, salesTax:
 export function QuoteManagement() {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
+
+  const toBase64 = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    bytes.forEach((b) => (binary += String.fromCharCode(b)));
+    return btoa(binary);
+  };
   const quoteTemplateRef = useRef<HTMLDivElement | null>(null);
   const quotesQuery = useMemo(
     () => query(collection(db, "quotes"), orderBy("createdAt", "desc")),
@@ -504,6 +511,7 @@ export function QuoteManagement() {
       const headers: HeadersInit = {
         Authorization: `Bearer ${idToken}`,
       };
+      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
       const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
       if (vercelBypass) {
         headers["x-vercel-protection-bypass"] = vercelBypass;
@@ -512,15 +520,41 @@ export function QuoteManagement() {
         console.log("[Email Send] Vercel bypass header missing");
       }
 
-      const apiUrl = vercelBypass
-        ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
-        : "/api/email/send";
+      let response: Response;
+      if (externalEmailApi) {
+        const attachmentsPayload = await Promise.all(
+          emailForm.attachments.map(async (file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataBase64: toBase64(await file.arrayBuffer()),
+          }))
+        );
 
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers,
-        body: formData,
-      });
+        response = await fetch(externalEmailApi, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: emailForm.to.trim(),
+            subject: emailForm.subject.trim(),
+            message: emailForm.message || "",
+            attachments: attachmentsPayload,
+          }),
+        });
+      } else {
+        const apiUrl = vercelBypass
+          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+          : "/api/email/send";
+
+        response = await fetch(apiUrl, {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+      }
       
       console.log("[Email Send] Response status:", response.status);
       
