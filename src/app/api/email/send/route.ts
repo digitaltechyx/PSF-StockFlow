@@ -27,27 +27,43 @@ function isAdminLikeUserDoc(data: any): boolean {
 async function requireAdmin(request: NextRequest) {
   const header = request.headers.get("authorization") || "";
   if (!header.startsWith("Bearer ")) {
-    return { ok: false as const, status: 401, error: "Unauthorized" };
+    console.error("[Email API] No Authorization header or not Bearer token");
+    return { ok: false as const, status: 401, error: "Unauthorized: Missing or invalid authorization header" };
   }
 
   const token = header.slice("Bearer ".length).trim();
-  if (!token) return { ok: false as const, status: 401, error: "Unauthorized" };
+  if (!token) {
+    console.error("[Email API] Empty token");
+    return { ok: false as const, status: 401, error: "Unauthorized: Empty token" };
+  }
 
   try {
     const decoded = await adminAuth().verifyIdToken(token);
     const uid = decoded?.uid;
-    if (!uid) return { ok: false as const, status: 401, error: "Unauthorized" };
+    if (!uid) {
+      console.error("[Email API] No UID in decoded token");
+      return { ok: false as const, status: 401, error: "Unauthorized: Invalid token" };
+    }
 
     const db = adminDb();
     const snap = await db.collection("users").doc(uid).get();
     const data = snap.exists ? snap.data() : null;
+    
+    if (!snap.exists) {
+      console.error(`[Email API] User document not found for UID: ${uid}`);
+      return { ok: false as const, status: 403, error: "Forbidden: User profile not found" };
+    }
+    
     if (!isAdminLikeUserDoc(data)) {
-      return { ok: false as const, status: 403, error: "Forbidden" };
+      console.error(`[Email API] User ${uid} is not an admin. Data:`, JSON.stringify(data, null, 2));
+      return { ok: false as const, status: 403, error: "Forbidden: Admin access required" };
     }
 
+    console.log(`[Email API] Admin access granted for UID: ${uid}`);
     return { ok: true as const, uid };
-  } catch {
-    return { ok: false as const, status: 401, error: "Unauthorized" };
+  } catch (error: any) {
+    console.error("[Email API] Token verification error:", error?.message || error);
+    return { ok: false as const, status: 401, error: `Unauthorized: ${error?.message || "Token verification failed"}` };
   }
 }
 

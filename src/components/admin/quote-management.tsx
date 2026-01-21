@@ -491,6 +491,10 @@ export function QuoteManagement() {
         throw new Error("Please re-login and try again.");
       }
 
+      console.log("[Email Send] User UID:", user?.uid);
+      console.log("[Email Send] User profile:", userProfile);
+      console.log("[Email Send] Token obtained:", idToken ? "Yes" : "No");
+
       const formData = new FormData();
       formData.append("to", emailForm.to.trim());
       formData.append("subject", emailForm.subject.trim());
@@ -504,6 +508,8 @@ export function QuoteManagement() {
         },
         body: formData,
       });
+      
+      console.log("[Email Send] Response status:", response.status);
       
       // Check if response is JSON before parsing
       const contentType = response.headers.get("content-type");
