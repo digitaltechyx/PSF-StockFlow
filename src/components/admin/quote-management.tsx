@@ -233,7 +233,7 @@ const calculateTotals = (items: QuoteLineItem[], shippingCost: number, salesTax:
 };
 
 export function QuoteManagement() {
-  const { userProfile } = useAuth();
+  const { userProfile, user } = useAuth();
   const { toast } = useToast();
   const quoteTemplateRef = useRef<HTMLDivElement | null>(null);
   const quotesQuery = useMemo(
@@ -485,6 +485,12 @@ export function QuoteManagement() {
     }
     setIsSendingEmail(true);
     try {
+      // Get Firebase ID token for authentication
+      const idToken = user ? await user.getIdToken() : "";
+      if (!idToken) {
+        throw new Error("Please re-login and try again.");
+      }
+
       const formData = new FormData();
       formData.append("to", emailForm.to.trim());
       formData.append("subject", emailForm.subject.trim());
@@ -493,6 +499,9 @@ export function QuoteManagement() {
 
       const response = await fetch("/api/email/send", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
         body: formData,
       });
       
