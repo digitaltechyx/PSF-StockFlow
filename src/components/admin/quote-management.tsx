@@ -507,9 +507,16 @@ export function QuoteManagement() {
       const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
       if (vercelBypass) {
         headers["x-vercel-protection-bypass"] = vercelBypass;
+        console.log("[Email Send] Vercel bypass header set");
+      } else {
+        console.log("[Email Send] Vercel bypass header missing");
       }
 
-      const response = await fetch("/api/email/send", {
+      const apiUrl = vercelBypass
+        ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+        : "/api/email/send";
+
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers,
         body: formData,
