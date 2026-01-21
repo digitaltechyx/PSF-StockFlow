@@ -501,11 +501,17 @@ export function QuoteManagement() {
       formData.append("message", emailForm.message || "");
       emailForm.attachments.forEach((file) => formData.append("attachments", file));
 
+      const headers: HeadersInit = {
+        Authorization: `Bearer ${idToken}`,
+      };
+      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+      if (vercelBypass) {
+        headers["x-vercel-protection-bypass"] = vercelBypass;
+      }
+
       const response = await fetch("/api/email/send", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers,
         body: formData,
       });
       
@@ -524,8 +530,14 @@ export function QuoteManagement() {
           throw new Error(`Server error: ${textResponse.substring(0, 200)}`);
         }
       } else {
-        // Non-JSON response (likely HTML error page)
+        // Non-JSON response (likely HTML/text error page)
         const textResponse = await response.text();
+        const vercelId = response.headers.get("x-vercel-id");
+        if (response.status === 403 && (vercelId || textResponse.toLowerCase().includes("forbidden"))) {
+          throw new Error(
+            "Request blocked by deployment protection. If this is a Vercel-protected dev domain, add a bypass token in NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS."
+          );
+        }
         throw new Error(`Server returned: ${textResponse.substring(0, 200)}`);
       }
       
