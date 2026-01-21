@@ -8,6 +8,17 @@ function normalizeRole(v: any): string {
   return String(v || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
 
+function isAdminLikeToken(claims: any): boolean {
+  if (!claims) return false;
+  if (claims.admin === true || claims.isAdmin === true) return true;
+  if (claims.sub_admin === true || claims.subAdmin === true || claims.isSubAdmin === true) return true;
+  const role = normalizeRole(claims.role);
+  if (role === "admin" || role === "sub_admin" || role === "subadmin") return true;
+  const roles = Array.isArray(claims.roles) ? claims.roles.map(normalizeRole) : [];
+  if (roles.includes("admin") || roles.includes("sub_admin") || roles.includes("subadmin")) return true;
+  return false;
+}
+
 function isAdminLikeUserDoc(data: any): boolean {
   if (!data) return false;
   if (data.isAdmin === true || data.admin === true || data.is_admin === true) return true;
@@ -43,6 +54,11 @@ async function requireAdmin(request: NextRequest) {
     if (!uid) {
       console.error("[Email API] No UID in decoded token");
       return { ok: false as const, status: 401, error: "Unauthorized: Invalid token" };
+    }
+
+    if (isAdminLikeToken(decoded)) {
+      console.log(`[Email API] Admin access granted via token for UID: ${uid}`);
+      return { ok: true as const, uid };
     }
 
     const db = adminDb();
