@@ -97,13 +97,14 @@ exports.sendQuoteEmail = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = Number(process.env.SMTP_PORT || 587);
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPassword = process.env.SMTP_PASSWORD;
-    const smtpSecure = process.env.SMTP_SECURE === "true";
-    const smtpFrom = process.env.SMTP_FROM || smtpUser;
-    const smtpFromName = process.env.SMTP_FROM_NAME || "Prep Services FBA";
+    const smtpConfig = (functions.config() && functions.config().smtp) || {};
+    const smtpHost = smtpConfig.host || process.env.SMTP_HOST;
+    const smtpPort = Number(smtpConfig.port || process.env.SMTP_PORT || 587);
+    const smtpUser = smtpConfig.user || process.env.SMTP_USER;
+    const smtpPassword = smtpConfig.password || process.env.SMTP_PASSWORD;
+    const smtpSecure = String(smtpConfig.secure || process.env.SMTP_SECURE || "false") === "true";
+    const smtpFrom = smtpConfig.from || process.env.SMTP_FROM || smtpUser;
+    const smtpFromName = smtpConfig.from_name || process.env.SMTP_FROM_NAME || "Prep Services FBA";
 
     if (!smtpHost || !smtpUser || !smtpPassword) {
       res.status(500).json({ error: "SMTP credentials are not configured." });
