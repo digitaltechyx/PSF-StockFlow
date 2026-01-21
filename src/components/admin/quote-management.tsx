@@ -604,7 +604,10 @@ export function QuoteManagement() {
         status: "sent",
         sentAt: activeEmailQuote.sentAt || new Date(),
         followUpCount,
-        lastFollowUpAt: emailMode === "follow_up" ? new Date() : activeEmailQuote.lastFollowUpAt,
+        lastFollowUpAt:
+          emailMode === "follow_up"
+            ? new Date()
+            : activeEmailQuote.lastFollowUpAt ?? null,
         emailLog: [...(activeEmailQuote.emailLog || []), logEntry],
         updatedAt: serverTimestamp(),
       };
