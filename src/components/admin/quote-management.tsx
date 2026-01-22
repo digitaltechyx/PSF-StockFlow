@@ -1015,52 +1015,63 @@ export function QuoteManagement() {
                   isPrintMode && "quote-print-mode"
                 )}
               >
-                <div className="space-y-2 text-center">
-                  <h2 className="text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
-                  <div className="text-sm text-muted-foreground space-y-2">
-                    <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-                      <span>Quotation Number:</span>
-                      {isPrintMode ? (
-                        <span className="font-semibold text-amber-900">{formData.reference || "—"}</span>
-                      ) : (
-                        <Input
-                          value={formData.reference}
-                          onChange={(event) =>
-                            setFormData((prev) => ({ ...prev, reference: event.target.value }))
-                          }
-                          className="h-8 w-44 text-center"
-                        />
-                      )}
-                      <span>Date:</span>
-                      {isPrintMode ? (
-                        <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.quoteDate) || "—"}</span>
-                      ) : (
-                        <Input
-                          type="date"
-                          value={formData.quoteDate}
-                          onChange={(event) =>
-                            setFormData((prev) => ({ ...prev, quoteDate: event.target.value }))
-                          }
-                          className="h-8 w-40 text-center"
-                        />
-                      )}
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex justify-center sm:justify-start">
+                      <img
+                        src="https://prepservicesfba.com/wp-content/uploads/2024/07/3.png"
+                        alt="Prep Services FBA"
+                        className="h-14 w-auto object-contain"
+                      />
                     </div>
-                    <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-                      <span>Valid Until:</span>
-                      {isPrintMode ? (
-                        <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.validUntil) || "—"}</span>
-                      ) : (
-                        <Input
-                          type="date"
-                          value={formData.validUntil}
-                          onChange={(event) =>
-                            setFormData((prev) => ({ ...prev, validUntil: event.target.value }))
-                          }
-                          className="h-8 w-40 text-center"
-                        />
-                      )}
+                    <div className="text-sm text-muted-foreground space-y-2 sm:text-right">
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <span>Quotation Number:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formData.reference || "—"}</span>
+                          ) : (
+                            <Input
+                              value={formData.reference}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, reference: event.target.value }))
+                              }
+                              className="h-8 w-44 text-center"
+                            />
+                          )}
+                          <span>Date:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.quoteDate) || "—"}</span>
+                          ) : (
+                            <Input
+                              type="date"
+                              value={formData.quoteDate}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, quoteDate: event.target.value }))
+                              }
+                              className="h-8 w-40 text-center"
+                            />
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <span>Valid Until:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.validUntil) || "—"}</span>
+                          ) : (
+                            <Input
+                              type="date"
+                              value={formData.validUntil}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, validUntil: event.target.value }))
+                              }
+                              className="h-8 w-40 text-center"
+                            />
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                  <h2 className="text-center text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -1413,6 +1424,9 @@ export function QuoteManagement() {
                     )}
                   </div>
                 </div>
+                <p className="text-center text-sm text-amber-900">
+                  We appreciate the opportunity to do business with you.
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-3">
