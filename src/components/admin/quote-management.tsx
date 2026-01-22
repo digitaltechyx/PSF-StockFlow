@@ -263,6 +263,8 @@ export function QuoteManagement() {
   const [decisionDetails, setDecisionDetails] = useState<QuoteDecisionDetails>({});
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showConvertedOnly, setShowConvertedOnly] = useState(false);
   const [emailForm, setEmailForm] = useState({
     to: "",
     subject: "",
@@ -282,6 +284,47 @@ export function QuoteManagement() {
   const sentQuotes = quotes.filter((q) => q.status === "sent");
   const acceptedQuotes = quotes.filter((q) => q.status === "accepted");
   const lostQuotes = quotes.filter((q) => q.status === "lost");
+  const filteredDraftQuotes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return draftQuotes;
+    return draftQuotes.filter((quote) =>
+      [quote.reference, quote.recipientName, quote.recipientEmail]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [draftQuotes, searchQuery]);
+  const filteredSentQuotes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return sentQuotes;
+    return sentQuotes.filter((quote) =>
+      [quote.reference, quote.recipientName, quote.recipientEmail]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [sentQuotes, searchQuery]);
+  const filteredAcceptedQuotes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return acceptedQuotes;
+    return acceptedQuotes.filter((quote) =>
+      [quote.reference, quote.recipientName, quote.recipientEmail]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [acceptedQuotes, searchQuery]);
+  const filteredLostQuotes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return lostQuotes;
+    return lostQuotes.filter((quote) =>
+      [quote.reference, quote.recipientName, quote.recipientEmail]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [lostQuotes, searchQuery]);
+  const filteredConvertibleQuotes = useMemo(() => {
+    const base = filteredAcceptedQuotes;
+    if (!showConvertedOnly) return base;
+    return base.filter((quote) => Boolean(quote.convertedInvoiceId));
+  }, [filteredAcceptedQuotes, showConvertedOnly]);
 
   const resetForm = () => {
     setFormData(createEmptyQuoteForm());
@@ -875,6 +918,41 @@ export function QuoteManagement() {
     } catch (error) {
       console.error("Failed to preview PDF:", error);
       toast({ variant: "destructive", title: "Failed to preview PDF." });
+    } finally {
+      setActiveTab(restoreState.activeTab);
+      setFormData(restoreState.formData);
+      setEditingQuoteId(restoreState.editingQuoteId);
+    }
+  };
+
+  const handleDownloadQuotePdf = async (quote: Quote) => {
+    const restoreState = {
+      activeTab,
+      formData,
+      editingQuoteId,
+    };
+    try {
+      setFormData(mapQuoteToFormData(quote));
+      setEditingQuoteId(quote.id);
+      if (activeTab !== "new") {
+        setActiveTab("new");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const pdfFile = await generateQuotePdfFile(quote.reference);
+      if (!pdfFile) {
+        throw new Error("Failed to generate quote PDF.");
+      }
+      const pdfUrl = URL.createObjectURL(pdfFile);
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = pdfFile.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+    } catch (error) {
+      console.error("Failed to download PDF:", error);
+      toast({ variant: "destructive", title: "Failed to download PDF." });
     } finally {
       setActiveTab(restoreState.activeTab);
       setFormData(restoreState.formData);
@@ -1600,13 +1678,18 @@ export function QuoteManagement() {
               <CardTitle>Draft Quotes</CardTitle>
               <CardDescription>Edit, send, or delete draft quotations.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : draftQuotes.length ? (
-                draftQuotes.map((quote) => renderQuoteRow(quote, { showActions: true }))
+              ) : filteredDraftQuotes.length ? (
+                filteredDraftQuotes.map((quote) => renderQuoteRow(quote, { showActions: true }))
               ) : (
                 <p className="text-sm text-muted-foreground">No draft quotes yet.</p>
               )}
@@ -1620,13 +1703,18 @@ export function QuoteManagement() {
               <CardTitle>Sent Quotes</CardTitle>
               <CardDescription>All sent quotations with recipient details.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : sentQuotes.length ? (
-                sentQuotes.map((quote) => renderQuoteRow(quote))
+              ) : filteredSentQuotes.length ? (
+                filteredSentQuotes.map((quote) => renderQuoteRow(quote))
               ) : (
                 <p className="text-sm text-muted-foreground">No sent quotes yet.</p>
               )}
@@ -1642,13 +1730,18 @@ export function QuoteManagement() {
                 Send follow-ups or mark the quote as accepted or lost.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : sentQuotes.length ? (
-                sentQuotes.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))
+              ) : filteredSentQuotes.length ? (
+                filteredSentQuotes.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))
               ) : (
                 <p className="text-sm text-muted-foreground">No quotes to follow up.</p>
               )}
@@ -1668,13 +1761,18 @@ export function QuoteManagement() {
                 Download
               </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : acceptedQuotes.length ? (
-                acceptedQuotes.map((quote) => renderQuoteRow(quote))
+              ) : filteredAcceptedQuotes.length ? (
+                filteredAcceptedQuotes.map((quote) => renderQuoteRow(quote))
               ) : (
                 <p className="text-sm text-muted-foreground">No accepted quotes yet.</p>
               )}
@@ -1694,13 +1792,18 @@ export function QuoteManagement() {
                 Download
               </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : lostQuotes.length ? (
-                lostQuotes.map((quote) => renderQuoteRow(quote))
+              ) : filteredLostQuotes.length ? (
+                filteredLostQuotes.map((quote) => renderQuoteRow(quote))
               ) : (
                 <p className="text-sm text-muted-foreground">No lost quotes yet.</p>
               )}
@@ -1714,13 +1817,28 @@ export function QuoteManagement() {
               <CardTitle>Convert to Invoice</CardTitle>
               <CardDescription>Convert accepted quotations into invoices.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+              <div className="flex items-center justify-end">
+                <Button
+                  variant={showConvertedOnly ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowConvertedOnly((prev) => !prev)}
+                >
+                  {showConvertedOnly ? "Showing Converted" : "Show Converted Only"}
+                </Button>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : acceptedQuotes.length ? (
-                acceptedQuotes.map((quote) => (
+              ) : filteredConvertibleQuotes.length ? (
+                <>
+                  {filteredConvertibleQuotes.map((quote) => (
                   <div key={quote.id} className="flex items-center justify-between border-b py-3 text-sm">
                     <div>
                       <p className="font-medium">{quote.reference}</p>
@@ -1728,16 +1846,29 @@ export function QuoteManagement() {
                         {quote.recipientName} ({quote.recipientEmail})
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={Boolean(quote.convertedInvoiceId)}
-                      onClick={() => handleConvertToInvoice(quote)}
-                    >
-                      {quote.convertedInvoiceId ? "Converted" : "Convert to Invoice"}
-                    </Button>
+                    {quote.convertedInvoiceId ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDownloadQuotePdf(quote)}>
+                          <Download className="h-4 w-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConvertToInvoice(quote)}
+                      >
+                        Convert to Invoice
+                      </Button>
+                    )}
                   </div>
-                ))
+                  ))}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No accepted quotes to convert.</p>
               )}
