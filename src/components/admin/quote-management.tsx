@@ -371,7 +371,7 @@ export function QuoteManagement() {
     setActiveEmailQuote(quote);
     setEmailForm({
       to: quote.recipientEmail,
-      subject: quote.subject || `Quotation ${quote.reference}`,
+      subject: quote.subject || `Prep Services FBA - Quotation ${quote.reference}`,
       message: quote.message || "",
       attachments: [],
     });
