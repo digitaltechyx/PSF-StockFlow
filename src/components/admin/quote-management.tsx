@@ -1732,6 +1732,11 @@ export function QuoteManagement() {
                   setEmailForm((prev) => ({ ...prev, attachments: files }));
                 }}
               />
+              {emailMode === "send" && (
+                <div className="text-xs text-muted-foreground">
+                  The quotation PDF will be attached automatically when you send.
+                </div>
+              )}
               {emailForm.attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {emailForm.attachments.map((file) => (
