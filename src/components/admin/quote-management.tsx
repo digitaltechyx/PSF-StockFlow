@@ -1022,7 +1022,7 @@ export function QuoteManagement() {
                       <img
                         src="https://prepservicesfba.com/wp-content/uploads/2024/07/3.png"
                         alt="Prep Services FBA"
-                        className="h-14 w-auto object-contain"
+                        className="h-20 w-auto object-contain"
                       />
                     </div>
                     <div className="text-sm text-muted-foreground space-y-2 sm:text-right">
