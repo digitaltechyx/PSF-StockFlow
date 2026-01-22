@@ -404,6 +404,13 @@ export function QuoteManagement() {
   const openEmailDialog = (quote: Quote, mode: "send" | "follow_up") => {
     setEmailMode(mode);
     setActiveEmailQuote(quote);
+    if (mode === "send") {
+      setFormData(mapQuoteToFormData(quote));
+      setEditingQuoteId(quote.id);
+      if (activeTab !== "new") {
+        setActiveTab("new");
+      }
+    }
     setEmailForm({
       to: quote.recipientEmail,
       subject: quote.subject || `Prep Services FBA - Quotation ${quote.reference}`,
@@ -439,7 +446,15 @@ export function QuoteManagement() {
         });
         const quote = quotes.find((q) => q.id === editingQuoteId);
         if (quote) {
-          openEmailDialog({ ...quote, ...cleanFormData, items, subtotal, salesTax, total }, "send");
+          const preparedQuote = {
+            ...quote,
+            ...(cleanFormData as Omit<Quote, "id" | "status">),
+            items,
+            subtotal,
+            salesTax,
+            total,
+          } as Quote;
+          openEmailDialog(preparedQuote, "send");
         }
       } else {
         const docRef = await addDoc(collection(db, "quotes"), {
@@ -453,7 +468,16 @@ export function QuoteManagement() {
           updatedAt: serverTimestamp(),
           createdBy: userProfile?.uid || "",
         });
-        openEmailDialog({ id: docRef.id, status: "draft", ...cleanFormData, items, subtotal, salesTax, total }, "send");
+        const preparedQuote = {
+          id: docRef.id,
+          status: "draft",
+          ...(cleanFormData as Omit<Quote, "id" | "status">),
+          items,
+          subtotal,
+          salesTax,
+          total,
+        } as Quote;
+        openEmailDialog(preparedQuote, "send");
       }
     } catch (error) {
       console.error("Failed to prepare send:", error);
