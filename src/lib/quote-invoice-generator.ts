@@ -76,15 +76,10 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   const sectionGap = 6;
   const colWidth = (pageWidth - margin * 2 - sectionGap) / 2;
 
-  const sectionTop = y - 3;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Company Details", margin, y);
-  doc.text("Sold To", margin + colWidth + sectionGap, y);
-  y += 5;
+  const boxPaddingX = 4;
+  const boxPaddingY = 4;
+  const lineHeight = 4.5;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
   const leftLines = [
     data.company.name,
     data.company.addressLine || "",
@@ -102,19 +97,29 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     data.soldTo.email ? `Email: ${data.soldTo.email}` : "",
   ].filter(Boolean);
 
-  const maxLines = Math.max(leftLines.length, rightLines.length);
-  for (let i = 0; i < maxLines; i += 1) {
-    if (leftLines[i]) doc.text(leftLines[i], margin, y);
-    if (rightLines[i]) doc.text(rightLines[i], margin + colWidth + sectionGap, y);
-    y += 4.5;
+  const contentLines = Math.max(leftLines.length, rightLines.length);
+  const boxHeight = boxPaddingY * 2 + 5 + contentLines * lineHeight;
+
+  doc.setDrawColor(232, 193, 132);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, y - 2, colWidth, boxHeight, 2, 2);
+  doc.roundedRect(margin + colWidth + sectionGap, y - 2, colWidth, boxHeight, 2, 2);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("Company Details", margin + boxPaddingX, y + 3);
+  doc.text("Sold To", margin + colWidth + sectionGap + boxPaddingX, y + 3);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  let textY = y + 3 + lineHeight;
+  for (let i = 0; i < contentLines; i += 1) {
+    if (leftLines[i]) doc.text(leftLines[i], margin + boxPaddingX, textY);
+    if (rightLines[i]) doc.text(rightLines[i], margin + colWidth + sectionGap + boxPaddingX, textY);
+    textY += lineHeight;
   }
 
-  const sectionBottom = y + 2;
-  doc.setDrawColor(232, 193, 132);
-  doc.rect(margin, sectionTop, colWidth, sectionBottom - sectionTop);
-  doc.rect(margin + colWidth + sectionGap, sectionTop, colWidth, sectionBottom - sectionTop);
-
-  y += 6;
+  y += boxHeight + 4;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.text(
