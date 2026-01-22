@@ -45,7 +45,7 @@ interface InvoiceData {
   storageType?: string;
 }
 
-export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
+async function buildInvoiceDoc(data: InvoiceData): Promise<jsPDF> {
   try {
     // Validate required data
     if (!data.invoiceNumber || !data.date || !data.items || data.items.length === 0) {
@@ -450,15 +450,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     doc.setFontSize(9);
     doc.text('WE APPRECIATE YOUR BUSINESS', (pageWidth - rightGutter) / 2, 280, { align: 'center' });
     
-    // Save the PDF
-    try {
-      const fileName = `Invoice-${data.invoiceNumber}.pdf`;
-      doc.save(fileName);
-      console.log('PDF generated and saved successfully:', fileName);
-    } catch (saveError) {
-      console.error('Error saving PDF:', saveError);
-      throw new Error(`Failed to save PDF: ${saveError instanceof Error ? saveError.message : 'Unknown error'}`);
-    }
+    return doc;
   } catch (error) {
     console.error('Error generating invoice PDF:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -470,6 +462,23 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
     });
     throw new Error(`Failed to generate PDF: ${errorMessage}`);
   }
+}
+
+export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
+  const doc = await buildInvoiceDoc(data);
+  try {
+    const fileName = `Invoice-${data.invoiceNumber}.pdf`;
+    doc.save(fileName);
+    console.log('PDF generated and saved successfully:', fileName);
+  } catch (saveError) {
+    console.error('Error saving PDF:', saveError);
+    throw new Error(`Failed to save PDF: ${saveError instanceof Error ? saveError.message : 'Unknown error'}`);
+  }
+}
+
+export async function generateInvoicePDFBlob(data: InvoiceData): Promise<Blob> {
+  const doc = await buildInvoiceDoc(data);
+  return doc.output("blob");
 }
 
 export { generateInvoiceNumber } from "./invoice-utils";

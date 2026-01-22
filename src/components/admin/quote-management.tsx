@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { generateInvoicePDFBlob } from "@/lib/invoice-generator";
 import {
   Badge,
 } from "@/components/ui/badge";
@@ -122,6 +123,7 @@ interface Quote {
   acceptedDetails?: QuoteDecisionDetails;
   lostDetails?: QuoteDecisionDetails;
   convertedInvoiceId?: string;
+  convertedInvoiceNumber?: string;
   convertedAt?: any;
 }
 
@@ -786,6 +788,42 @@ export function QuoteManagement() {
     setDecisionDialogOpen(true);
   };
 
+  const buildInvoiceDataFromQuote = (quote: Quote) => {
+    const invoiceNumber = quote.convertedInvoiceNumber || `INV-${quote.reference}`;
+    const recipientAddress = [
+      quote.recipientAddress,
+      quote.recipientCity,
+      quote.recipientState,
+      quote.recipientZip,
+      quote.recipientCountry,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const invoiceDate = quote.convertedAt ? formatDate(quote.convertedAt) : formatDateForDisplay(quote.quoteDate);
+    return {
+      invoiceNumber,
+      date: invoiceDate || formatDateForDisplay(quote.quoteDate) || "—",
+      orderNumber: `ORD-${quote.reference}`,
+      soldTo: {
+        name: quote.recipientName || "",
+        email: quote.recipientEmail || "",
+        phone: quote.recipientPhone || "",
+        address: recipientAddress,
+      },
+      fbm: "Quotation Invoice",
+      items: quote.items.map((item) => ({
+        quantity: Number(item.quantity || 0),
+        productName: item.description || "",
+        packaging: "—",
+        shipTo: recipientAddress || "—",
+        unitPrice: Number(item.unitPrice || 0),
+        amount: Number(item.amount || 0),
+      })),
+      subtotal: quote.subtotal,
+      grandTotal: quote.total,
+    };
+  };
+
   const submitDecision = async () => {
     if (!decisionQuote) return;
     setSaving(true);
@@ -812,8 +850,13 @@ export function QuoteManagement() {
   const handleConvertToInvoice = async (quote: Quote) => {
     setSaving(true);
     try {
+      const invoiceNumber = quote.convertedInvoiceNumber || `INV-${quote.reference}`;
+      const invoiceDate = new Date().toISOString().slice(0, 10);
       const invoiceDoc = await addDoc(collection(db, "quote_invoices"), {
         quoteId: quote.id,
+        invoiceNumber,
+        invoiceDate,
+        orderNumber: `ORD-${quote.reference}`,
         reference: quote.reference,
         quoteDate: quote.quoteDate,
         validUntil: quote.validUntil,
@@ -840,6 +883,7 @@ export function QuoteManagement() {
       });
       await updateDoc(doc(db, "quotes", quote.id), {
         convertedInvoiceId: invoiceDoc.id,
+        convertedInvoiceNumber: invoiceNumber,
         convertedAt: serverTimestamp(),
       });
       toast({ title: "Quote converted to invoice." });
@@ -960,6 +1004,37 @@ export function QuoteManagement() {
     }
   };
 
+  const handleViewInvoicePdf = async (quote: Quote) => {
+    try {
+      const invoiceData = buildInvoiceDataFromQuote(quote);
+      const pdfBlob = await generateInvoicePDFBlob(invoiceData);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+    } catch (error) {
+      console.error("Failed to preview invoice PDF:", error);
+      toast({ variant: "destructive", title: "Failed to preview invoice." });
+    }
+  };
+
+  const handleDownloadInvoicePdf = async (quote: Quote) => {
+    try {
+      const invoiceData = buildInvoiceDataFromQuote(quote);
+      const pdfBlob = await generateInvoicePDFBlob(invoiceData);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = `Invoice-${invoiceData.invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+    } catch (error) {
+      console.error("Failed to download invoice PDF:", error);
+      toast({ variant: "destructive", title: "Failed to download invoice." });
+    }
+  };
+
   const downloadCsv = (rows: Quote[], filename: string) => {
     if (!rows.length) {
       toast({ variant: "destructive", title: "No data to export." });
@@ -1043,6 +1118,14 @@ export function QuoteManagement() {
     setFormData((prev) => ({ ...prev, items, subtotal, salesTax, total }));
   };
 
+  const statusLabel =
+    decisionStatus === "lost" ? "rejected" : decisionStatus;
+  const getQuoteStatusLabel = (quote: Quote, followUpCount: number) => {
+    if (quote.status === "sent" && followUpCount > 0) return "Follow Up";
+    if (quote.status === "lost") return "Rejected";
+    return quote.status;
+  };
+
   const renderQuoteRow = (quote: Quote, options?: { showActions?: boolean; showFollowUp?: boolean }) => {
     const followUpCount = quote.followUpCount ?? 0;
     const followUpLimitReached = followUpCount >= FOLLOW_UP_LIMIT;
@@ -1075,7 +1158,7 @@ export function QuoteManagement() {
         </div>
         <div>
           <Badge variant="secondary" className="capitalize">
-            {quote.status === "sent" && followUpCount > 0 ? "Follow Up" : quote.status}
+            {getQuoteStatusLabel(quote, followUpCount)}
           </Badge>
         </div>
         {!isDraft && (
@@ -1121,7 +1204,7 @@ export function QuoteManagement() {
               </Button>
               <Button variant="outline" size="sm" onClick={() => handleDecision(quote, "lost")}>
                 <XCircle className="h-4 w-4 mr-1 text-red-600" />
-                Lost
+                Reject
               </Button>
             </>
           )}
@@ -1177,7 +1260,7 @@ export function QuoteManagement() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Lost</CardTitle>
+          <CardTitle>Rejected</CardTitle>
             <CardDescription>Closed quotations</CardDescription>
           </CardHeader>
           <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
@@ -1191,7 +1274,7 @@ export function QuoteManagement() {
           <TabsTrigger value="sent">Sent</TabsTrigger>
           <TabsTrigger value="follow_up">Follow Up</TabsTrigger>
           <TabsTrigger value="accepted">Accepted</TabsTrigger>
-          <TabsTrigger value="lost">Lost</TabsTrigger>
+        <TabsTrigger value="lost">Rejected</TabsTrigger>
           <TabsTrigger value="convert">Convert to Invoice</TabsTrigger>
         </TabsList>
 
@@ -1727,7 +1810,7 @@ export function QuoteManagement() {
             <CardHeader>
               <CardTitle>Follow Up</CardTitle>
               <CardDescription>
-                Send follow-ups or mark the quote as accepted or lost.
+                Send follow-ups or mark the quote as accepted or rejected.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1784,10 +1867,10 @@ export function QuoteManagement() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Lost Quotes</CardTitle>
-                <CardDescription>Quotes marked as lost.</CardDescription>
+                <CardTitle>Rejected Quotes</CardTitle>
+                <CardDescription>Quotes marked as rejected.</CardDescription>
               </div>
-              <Button variant="outline" onClick={() => downloadCsv(lostQuotes, "lost-quotes.csv")}>
+              <Button variant="outline" onClick={() => downloadCsv(lostQuotes, "rejected-quotes.csv")}>
                 <Download className="h-4 w-4 mr-1" />
                 Download
               </Button>
@@ -1805,7 +1888,7 @@ export function QuoteManagement() {
               ) : filteredLostQuotes.length ? (
                 filteredLostQuotes.map((quote) => renderQuoteRow(quote))
               ) : (
-                <p className="text-sm text-muted-foreground">No lost quotes yet.</p>
+                <p className="text-sm text-muted-foreground">No rejected quotes yet.</p>
               )}
             </CardContent>
           </Card>
@@ -1848,11 +1931,11 @@ export function QuoteManagement() {
                     </div>
                     {quote.convertedInvoiceId ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
+                        <Button variant="outline" size="sm" onClick={() => handleViewInvoicePdf(quote)}>
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDownloadQuotePdf(quote)}>
+                        <Button variant="outline" size="sm" onClick={() => handleDownloadInvoicePdf(quote)}>
                           <Download className="h-4 w-4 mr-1" />
                           Download
                         </Button>
@@ -1953,7 +2036,7 @@ export function QuoteManagement() {
       <Dialog open={decisionDialogOpen} onOpenChange={setDecisionDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="capitalize">Mark as {decisionStatus}</DialogTitle>
+            <DialogTitle className="capitalize">Mark as {statusLabel}</DialogTitle>
             <DialogDescription>
               Add optional client details for this quote.
             </DialogDescription>
