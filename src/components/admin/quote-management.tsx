@@ -711,6 +711,7 @@ export function QuoteManagement() {
       const canvas = await html2canvas(quoteTemplateRef.current, {
         backgroundColor: "#ffffff",
         scale: 2,
+        useCORS: true,
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
@@ -1020,7 +1021,7 @@ export function QuoteManagement() {
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex justify-center sm:justify-start">
                       <img
-                        src="https://prepservicesfba.com/wp-content/uploads/2024/07/3.png"
+                        src="/quote-logo.png"
                         alt="Prep Services FBA"
                         className="h-20 w-auto object-contain"
                       />
