@@ -46,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   CheckCircle,
   Download,
+  Eye,
   Loader2,
   Mail,
   Pencil,
@@ -851,6 +852,36 @@ export function QuoteManagement() {
     }
   };
 
+  const handleViewPdf = async (quote: Quote) => {
+    const restoreState = {
+      activeTab,
+      formData,
+      editingQuoteId,
+    };
+    try {
+      setFormData(mapQuoteToFormData(quote));
+      setEditingQuoteId(quote.id);
+      if (activeTab !== "new") {
+        setActiveTab("new");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const pdfFile = await generateQuotePdfFile(quote.reference);
+      if (!pdfFile) {
+        throw new Error("Failed to generate quote PDF.");
+      }
+      const pdfUrl = URL.createObjectURL(pdfFile);
+      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+    } catch (error) {
+      console.error("Failed to preview PDF:", error);
+      toast({ variant: "destructive", title: "Failed to preview PDF." });
+    } finally {
+      setActiveTab(restoreState.activeTab);
+      setFormData(restoreState.formData);
+      setEditingQuoteId(restoreState.editingQuoteId);
+    }
+  };
+
   const downloadCsv = (rows: Quote[], filename: string) => {
     if (!rows.length) {
       toast({ variant: "destructive", title: "No data to export." });
@@ -975,6 +1006,10 @@ export function QuoteManagement() {
           </div>
         )}
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
+            <Eye className="h-4 w-4 mr-1" />
+            View
+          </Button>
           {options?.showActions && (
             <>
               <Button variant="outline" size="sm" onClick={() => handleEditQuote(quote)}>
