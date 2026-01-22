@@ -790,13 +790,7 @@ export function QuoteManagement() {
 
   const buildInvoiceDataFromQuote = (quote: Quote) => {
     const invoiceNumber = quote.convertedInvoiceNumber || `INV-${quote.reference}`;
-    const recipientAddress = [
-      quote.recipientAddress,
-      quote.recipientCity,
-      quote.recipientState,
-      quote.recipientZip,
-      quote.recipientCountry,
-    ]
+    const recipientCityStateZip = [quote.recipientCity, quote.recipientState, quote.recipientZip]
       .filter(Boolean)
       .join(", ");
     const invoiceDate = quote.convertedAt ? formatDate(quote.convertedAt) : formatDateForDisplay(quote.quoteDate);
@@ -808,7 +802,9 @@ export function QuoteManagement() {
         name: quote.recipientName || "",
         email: quote.recipientEmail || "",
         phone: quote.recipientPhone || "",
-        address: recipientAddress,
+        addressLine: quote.recipientAddress || "",
+        cityStateZip: recipientCityStateZip,
+        country: quote.recipientCountry || "",
       },
       items: quote.items.map((item) => ({
         description: item.description || "",
@@ -1013,7 +1009,8 @@ export function QuoteManagement() {
           name: COMPANY_INFO.name,
           email: COMPANY_INFO.email,
           phone: COMPANY_INFO.phone,
-          address: COMPANY_INFO.addressLines.join(", "),
+          addressLine: COMPANY_INFO.addressLines[0] || "",
+          cityStateZip: COMPANY_INFO.addressLines[1] || "",
         },
         soldTo: invoiceData.soldTo,
         items: invoiceData.items,
@@ -1041,7 +1038,8 @@ export function QuoteManagement() {
           name: COMPANY_INFO.name,
           email: COMPANY_INFO.email,
           phone: COMPANY_INFO.phone,
-          address: COMPANY_INFO.addressLines.join(", "),
+          addressLine: COMPANY_INFO.addressLines[0] || "",
+          cityStateZip: COMPANY_INFO.addressLines[1] || "",
         },
         soldTo: invoiceData.soldTo,
         items: invoiceData.items,

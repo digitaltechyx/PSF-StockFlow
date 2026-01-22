@@ -4,7 +4,9 @@ interface QuoteInvoiceParty {
   name: string;
   email?: string;
   phone?: string;
-  address?: string;
+  addressLine?: string;
+  cityStateZip?: string;
+  country?: string;
 }
 
 interface QuoteInvoiceItem {
@@ -74,6 +76,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   const sectionGap = 6;
   const colWidth = (pageWidth - margin * 2 - sectionGap) / 2;
 
+  const sectionTop = y - 3;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.text("Company Details", margin, y);
@@ -84,13 +87,17 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   doc.setFontSize(9);
   const leftLines = [
     data.company.name,
-    data.company.address || "",
+    data.company.addressLine || "",
+    data.company.cityStateZip || "",
+    data.company.country || "",
     data.company.phone ? `Phone: ${data.company.phone}` : "",
     data.company.email ? `Email: ${data.company.email}` : "",
   ].filter(Boolean);
   const rightLines = [
     data.soldTo.name,
-    data.soldTo.address || "",
+    data.soldTo.addressLine || "",
+    data.soldTo.cityStateZip || "",
+    data.soldTo.country || "",
     data.soldTo.phone ? `Phone: ${data.soldTo.phone}` : "",
     data.soldTo.email ? `Email: ${data.soldTo.email}` : "",
   ].filter(Boolean);
@@ -101,6 +108,11 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     if (rightLines[i]) doc.text(rightLines[i], margin + colWidth + sectionGap, y);
     y += 4.5;
   }
+
+  const sectionBottom = y + 2;
+  doc.setDrawColor(232, 193, 132);
+  doc.rect(margin, sectionTop, colWidth, sectionBottom - sectionTop);
+  doc.rect(margin + colWidth + sectionGap, sectionTop, colWidth, sectionBottom - sectionTop);
 
   y += 6;
   doc.setFont("helvetica", "bold");
