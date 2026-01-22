@@ -287,6 +287,41 @@ export function QuoteManagement() {
     setEditingQuoteId(null);
   };
 
+  const mapQuoteToFormData = (quote: Quote) => ({
+    reference: quote.reference,
+    quoteDate: quote.quoteDate,
+    validUntil: quote.validUntil,
+    recipientName: quote.recipientName,
+    recipientEmail: quote.recipientEmail,
+    recipientAddress: quote.recipientAddress || "",
+    recipientCity: quote.recipientCity || "",
+    recipientState: quote.recipientState || "",
+    recipientZip: quote.recipientZip || "",
+    recipientCountry: quote.recipientCountry || "",
+    recipientPhone: quote.recipientPhone || "",
+    subject: quote.subject || "",
+    message: quote.message || "",
+    notes: quote.notes || "",
+    terms: quote.terms || "",
+    items: quote.items.length ? quote.items : [createEmptyItem()],
+    subtotal: quote.subtotal,
+    salesTax: quote.salesTax || 0,
+    shippingCost: quote.shippingCost || 0,
+    total: quote.total,
+    preparedBy: quote.preparedBy || "",
+    approvedBy: quote.approvedBy || "",
+    preparedDate: quote.preparedDate || "",
+    approvedDate: quote.approvedDate || "",
+    sentAt: quote.sentAt,
+    followUpCount: quote.followUpCount ?? 0,
+    lastFollowUpAt: quote.lastFollowUpAt,
+    emailLog: quote.emailLog ?? [],
+    acceptedDetails: quote.acceptedDetails,
+    lostDetails: quote.lostDetails,
+    convertedInvoiceId: quote.convertedInvoiceId,
+    convertedAt: quote.convertedAt,
+  });
+
   const validateForm = () => {
     if (!formData.recipientName.trim()) {
       toast({ variant: "destructive", title: "Recipient name is required." });
@@ -442,42 +477,51 @@ export function QuoteManagement() {
   };
 
   const handleEditQuote = (quote: Quote) => {
-    setFormData({
-      reference: quote.reference,
-      quoteDate: quote.quoteDate,
-      validUntil: quote.validUntil,
-      recipientName: quote.recipientName,
-      recipientEmail: quote.recipientEmail,
-      recipientAddress: quote.recipientAddress || "",
-      recipientCity: quote.recipientCity || "",
-      recipientState: quote.recipientState || "",
-      recipientZip: quote.recipientZip || "",
-      recipientCountry: quote.recipientCountry || "",
-      recipientPhone: quote.recipientPhone || "",
-      subject: quote.subject,
-      message: quote.message,
-      notes: quote.notes,
-      terms: quote.terms,
-      items: quote.items.length ? quote.items : [createEmptyItem()],
-      subtotal: quote.subtotal,
-      salesTax: quote.salesTax || 0,
-      shippingCost: quote.shippingCost || 0,
-      total: quote.total,
-      preparedBy: quote.preparedBy || "",
-      approvedBy: quote.approvedBy || "",
-      preparedDate: quote.preparedDate || "",
-      approvedDate: quote.approvedDate || "",
-      sentAt: quote.sentAt,
-      followUpCount: quote.followUpCount ?? 0,
-      lastFollowUpAt: quote.lastFollowUpAt,
-      emailLog: quote.emailLog ?? [],
-      acceptedDetails: quote.acceptedDetails,
-      lostDetails: quote.lostDetails,
-      convertedInvoiceId: quote.convertedInvoiceId,
-      convertedAt: quote.convertedAt,
-    });
+    setFormData(mapQuoteToFormData(quote));
     setEditingQuoteId(quote.id);
     setActiveTab("new");
+  };
+
+  const generateQuotePdfFile = async (reference: string) => {
+    if (!quoteTemplateRef.current) return null;
+    setIsPrintMode(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const canvas = await html2canvas(quoteTemplateRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let y = 0;
+
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      } else {
+        let remainingHeight = imgHeight;
+        while (remainingHeight > 0) {
+          pdf.addImage(imgData, "PNG", 0, y, imgWidth, imgHeight);
+          remainingHeight -= pageHeight;
+          y -= pageHeight;
+          if (remainingHeight > 0) {
+            pdf.addPage();
+          }
+        }
+      }
+      const pdfBlob = pdf.output("blob");
+      return new File([pdfBlob], `${reference || "quotation"}.pdf`, { type: "application/pdf" });
+    } finally {
+      setIsPrintMode(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -491,7 +535,38 @@ export function QuoteManagement() {
       return;
     }
     setIsSendingEmail(true);
+    let restoreState: {
+      activeTab: string;
+      formData: typeof formData;
+      editingQuoteId: string | null;
+    } | null = null;
     try {
+      let attachmentsToSend = emailForm.attachments;
+
+      if (emailMode === "send") {
+        const needsTemplateRefresh =
+          activeTab !== "new" ||
+          !quoteTemplateRef.current ||
+          formData.reference !== activeEmailQuote.reference;
+        if (needsTemplateRefresh) {
+          restoreState = { activeTab, formData, editingQuoteId };
+          setFormData(mapQuoteToFormData(activeEmailQuote));
+          setEditingQuoteId(activeEmailQuote.id);
+          if (activeTab !== "new") {
+            setActiveTab("new");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+
+        const autoAttachment = await generateQuotePdfFile(
+          activeEmailQuote.reference || formData.reference
+        );
+        if (!autoAttachment) {
+          throw new Error("Failed to generate quote PDF attachment.");
+        }
+        attachmentsToSend = [autoAttachment, ...emailForm.attachments];
+      }
+
       // Get Firebase ID token for authentication
       const idToken = user ? await user.getIdToken() : "";
       if (!idToken) {
@@ -502,11 +577,11 @@ export function QuoteManagement() {
       console.log("[Email Send] User profile:", userProfile);
       console.log("[Email Send] Token obtained:", idToken ? "Yes" : "No");
 
-      const formData = new FormData();
-      formData.append("to", emailForm.to.trim());
-      formData.append("subject", emailForm.subject.trim());
-      formData.append("message", emailForm.message || "");
-      emailForm.attachments.forEach((file) => formData.append("attachments", file));
+      const payload = new FormData();
+      payload.append("to", emailForm.to.trim());
+      payload.append("subject", emailForm.subject.trim());
+      payload.append("message", emailForm.message || "");
+      attachmentsToSend.forEach((file) => payload.append("attachments", file));
 
       const headers: HeadersInit = {
         Authorization: `Bearer ${idToken}`,
@@ -523,7 +598,7 @@ export function QuoteManagement() {
       let response: Response;
       if (externalEmailApi) {
         const attachmentsPayload = await Promise.all(
-          emailForm.attachments.map(async (file) => ({
+          attachmentsToSend.map(async (file) => ({
             name: file.name,
             type: file.type,
             size: file.size,
@@ -552,7 +627,7 @@ export function QuoteManagement() {
         response = await fetch(apiUrl, {
           method: "POST",
           headers,
-          body: formData,
+          body: payload,
         });
       }
       
@@ -591,7 +666,7 @@ export function QuoteManagement() {
         to: emailForm.to.trim(),
         subject: emailForm.subject.trim(),
         message: emailForm.message || "",
-        attachments: emailForm.attachments.map((file) => ({
+        attachments: attachmentsToSend.map((file) => ({
           name: file.name,
           size: file.size,
         })),
@@ -621,6 +696,11 @@ export function QuoteManagement() {
     } catch (error) {
       console.error("Failed to send email:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to send email. Please check your SMTP configuration.";
+      if (restoreState) {
+        setActiveTab(restoreState.activeTab);
+        setFormData(restoreState.formData);
+        setEditingQuoteId(restoreState.editingQuoteId);
+      }
       toast({ 
         variant: "destructive", 
         title: "Failed to send email.",
