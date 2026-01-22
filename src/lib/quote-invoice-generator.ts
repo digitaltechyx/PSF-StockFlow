@@ -104,6 +104,24 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
 
   y += 6;
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text(
+    "NOTE: Please make all payments to Prep Services FBA LLC. All prices are F.O.B.",
+    margin,
+    y
+  );
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.text("FOB POINT:", margin, y);
+  doc.text("NEW JERSEY", margin + 32, y);
+  y += 4.5;
+  doc.text("TERMS:", margin, y);
+  doc.text("NET", margin + 32, y);
+  y += 4.5;
+  doc.text("SHIPPED VIA:", margin, y);
+  doc.text("Standard", margin + 32, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.text("Item Description", margin, y);
   doc.text("Qty", margin + 92, y);
