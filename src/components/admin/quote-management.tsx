@@ -129,7 +129,7 @@ const TAX_RATE = 0.06625;
 
 const COMPANY_INFO = {
   name: "Prep Services FBA",
-  addressLines: ["700 Atrium Way", "Mount Laurel, NJ 08054"],
+  addressLines: ["7000 Atrium Way B05", "Mount Laurel, NJ, 08054"],
   phone: "+1-347-661-3010",
   email: "info@prepservicesfba.com",
 };
@@ -1016,6 +1016,7 @@ export function QuoteManagement() {
                 )}
               >
                 <div className="space-y-4">
+                  <h2 className="text-center text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex justify-center sm:justify-start">
                       <img
@@ -1039,6 +1040,8 @@ export function QuoteManagement() {
                               className="h-8 w-44 text-center"
                             />
                           )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
                           <span>Date:</span>
                           {isPrintMode ? (
                             <span className="font-semibold text-amber-900">{formatDateForDisplay(formData.quoteDate) || "—"}</span>
@@ -1071,7 +1074,6 @@ export function QuoteManagement() {
                       </div>
                     </div>
                   </div>
-                  <h2 className="text-center text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
