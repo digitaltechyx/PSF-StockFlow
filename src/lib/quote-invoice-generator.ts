@@ -1,0 +1,141 @@
+import jsPDF from "jspdf";
+
+interface QuoteInvoiceParty {
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+interface QuoteInvoiceItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+interface QuoteInvoiceData {
+  invoiceNumber: string;
+  invoiceDate: string;
+  company: QuoteInvoiceParty;
+  soldTo: QuoteInvoiceParty;
+  items: QuoteInvoiceItem[];
+  subtotal: number;
+  salesTax: number;
+  shippingCost: number;
+  total: number;
+}
+
+const loadLogo = async (src: string): Promise<HTMLImageElement | null> => {
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = src;
+    await new Promise((resolve) => {
+      img.onload = () => resolve(null);
+      img.onerror = () => resolve(null);
+      setTimeout(() => resolve(null), 1200);
+    });
+    return img;
+  } catch {
+    return null;
+  }
+};
+
+export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promise<Blob> {
+  if (!data.invoiceNumber || !data.invoiceDate || data.items.length === 0) {
+    throw new Error("Missing required invoice data.");
+  }
+
+  const doc = new jsPDF("p", "mm", "a4");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  let y = margin;
+
+  const logo = await loadLogo("/quote-logo.png");
+  if (logo) {
+    doc.addImage(logo, "PNG", margin, y, 28, 18);
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("INVOICE", pageWidth - margin, y + 4, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Invoice #: ${data.invoiceNumber}`, pageWidth - margin, y + 12, { align: "right" });
+  doc.text(`Date: ${data.invoiceDate}`, pageWidth - margin, y + 18, { align: "right" });
+
+  y += 26;
+  doc.setDrawColor(232, 193, 132);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 6;
+
+  const sectionGap = 6;
+  const colWidth = (pageWidth - margin * 2 - sectionGap) / 2;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Company Details", margin, y);
+  doc.text("Sold To", margin + colWidth + sectionGap, y);
+  y += 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const leftLines = [
+    data.company.name,
+    data.company.address || "",
+    data.company.phone ? `Phone: ${data.company.phone}` : "",
+    data.company.email ? `Email: ${data.company.email}` : "",
+  ].filter(Boolean);
+  const rightLines = [
+    data.soldTo.name,
+    data.soldTo.address || "",
+    data.soldTo.phone ? `Phone: ${data.soldTo.phone}` : "",
+    data.soldTo.email ? `Email: ${data.soldTo.email}` : "",
+  ].filter(Boolean);
+
+  const maxLines = Math.max(leftLines.length, rightLines.length);
+  for (let i = 0; i < maxLines; i += 1) {
+    if (leftLines[i]) doc.text(leftLines[i], margin, y);
+    if (rightLines[i]) doc.text(rightLines[i], margin + colWidth + sectionGap, y);
+    y += 4.5;
+  }
+
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Item Description", margin, y);
+  doc.text("Qty", margin + 92, y);
+  doc.text("Unit Price", margin + 120, y);
+  doc.text("Amount", pageWidth - margin, y, { align: "right" });
+  y += 3;
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  data.items.forEach((item) => {
+    if (y > 265) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.text(item.description.substring(0, 50), margin, y);
+    doc.text(String(item.quantity), margin + 92, y);
+    doc.text(`$${item.unitPrice.toFixed(2)}`, margin + 120, y);
+    doc.text(`$${item.amount.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+    y += 5;
+  });
+
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Subtotal: $${data.subtotal.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+  y += 5;
+  doc.text(`Sales Tax: $${data.salesTax.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+  y += 5;
+  doc.text(`Shipping: $${data.shippingCost.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+  y += 6;
+  doc.text(`Total: $${data.total.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+
+  return doc.output("blob");
+}

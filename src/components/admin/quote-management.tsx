@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { generateInvoicePDFBlob } from "@/lib/invoice-generator";
+import { generateQuoteInvoicePdfBlob } from "@/lib/quote-invoice-generator";
 import {
   Badge,
 } from "@/components/ui/badge";
@@ -810,17 +810,16 @@ export function QuoteManagement() {
         phone: quote.recipientPhone || "",
         address: recipientAddress,
       },
-      fbm: "Quotation Invoice",
       items: quote.items.map((item) => ({
+        description: item.description || "",
         quantity: Number(item.quantity || 0),
-        productName: item.description || "",
-        packaging: "—",
-        shipTo: recipientAddress || "—",
         unitPrice: Number(item.unitPrice || 0),
         amount: Number(item.amount || 0),
       })),
       subtotal: quote.subtotal,
-      grandTotal: quote.total,
+      salesTax: quote.salesTax || 0,
+      shippingCost: quote.shippingCost || 0,
+      total: quote.total,
     };
   };
 
@@ -1007,7 +1006,22 @@ export function QuoteManagement() {
   const handleViewInvoicePdf = async (quote: Quote) => {
     try {
       const invoiceData = buildInvoiceDataFromQuote(quote);
-      const pdfBlob = await generateInvoicePDFBlob(invoiceData);
+      const pdfBlob = await generateQuoteInvoicePdfBlob({
+        invoiceNumber: invoiceData.invoiceNumber,
+        invoiceDate: invoiceData.date,
+        company: {
+          name: COMPANY_INFO.name,
+          email: COMPANY_INFO.email,
+          phone: COMPANY_INFO.phone,
+          address: COMPANY_INFO.addressLines.join(", "),
+        },
+        soldTo: invoiceData.soldTo,
+        items: invoiceData.items,
+        subtotal: invoiceData.subtotal,
+        salesTax: invoiceData.salesTax,
+        shippingCost: invoiceData.shippingCost,
+        total: invoiceData.total,
+      });
       const pdfUrl = URL.createObjectURL(pdfBlob);
       window.open(pdfUrl, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
@@ -1020,7 +1034,22 @@ export function QuoteManagement() {
   const handleDownloadInvoicePdf = async (quote: Quote) => {
     try {
       const invoiceData = buildInvoiceDataFromQuote(quote);
-      const pdfBlob = await generateInvoicePDFBlob(invoiceData);
+      const pdfBlob = await generateQuoteInvoicePdfBlob({
+        invoiceNumber: invoiceData.invoiceNumber,
+        invoiceDate: invoiceData.date,
+        company: {
+          name: COMPANY_INFO.name,
+          email: COMPANY_INFO.email,
+          phone: COMPANY_INFO.phone,
+          address: COMPANY_INFO.addressLines.join(", "),
+        },
+        soldTo: invoiceData.soldTo,
+        items: invoiceData.items,
+        subtotal: invoiceData.subtotal,
+        salesTax: invoiceData.salesTax,
+        shippingCost: invoiceData.shippingCost,
+        total: invoiceData.total,
+      });
       const pdfUrl = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
       link.href = pdfUrl;
@@ -1941,13 +1970,19 @@ export function QuoteManagement() {
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleConvertToInvoice(quote)}
-                      >
-                        Convert to Invoice
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleConvertToInvoice(quote)}
+                        >
+                          Convert to Invoice
+                        </Button>
+                      </div>
                     )}
                   </div>
                   ))}
