@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import {
@@ -45,6 +45,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   CheckCircle,
   Download,
@@ -218,6 +225,20 @@ const formatDateForDisplay = (dateString?: string) => {
   }
 };
 
+// Helper function to check if a quote is expired
+const isQuoteExpired = (validUntil?: string): boolean => {
+  if (!validUntil) return false;
+  try {
+    const validDate = new Date(validUntil);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    validDate.setHours(0, 0, 0, 0);
+    return validDate < today;
+  } catch {
+    return false;
+  }
+};
+
 const formatTermsAsBullets = (terms?: string) => {
   if (!terms) return [];
   return terms
@@ -283,6 +304,22 @@ export function QuoteManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteQuote, setDeleteQuote] = useState<Quote | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
+  // Address Book state
+  const [addressBookFilter, setAddressBookFilter] = useState<"all" | "draft" | "sent" | "accepted" | "rejected">("all");
+  const [addressBookSearch, setAddressBookSearch] = useState("");
+  const [downloadType, setDownloadType] = useState<"all" | "draft" | "sent" | "accepted" | "rejected">("all");
+  
+  // Expired status filter state for each tab
+  const [sentStatusFilter, setSentStatusFilter] = useState<"all" | "active" | "expired">("all");
+  const [followUpStatusFilter, setFollowUpStatusFilter] = useState<"all" | "active" | "expired">("all");
+  const [acceptedStatusFilter, setAcceptedStatusFilter] = useState<"all" | "active" | "expired">("all");
+  const [rejectedStatusFilter, setRejectedStatusFilter] = useState<"all" | "active" | "expired">("all");
+  const [convertStatusFilter, setConvertStatusFilter] = useState<"all" | "active" | "expired">("all");
 
   const statusCounts = useMemo(() => {
     const counts = { draft: 0, sent: 0, accepted: 0, lost: 0 };
@@ -306,37 +343,259 @@ export function QuoteManagement() {
     );
   }, [draftQuotes, searchQuery]);
   const filteredSentQuotes = useMemo(() => {
+    let filtered = sentQuotes;
+    
+    // Apply expired status filter
+    if (sentStatusFilter !== "all") {
+      filtered = filtered.filter((quote) => {
+        const expired = isQuoteExpired(quote.validUntil);
+        return sentStatusFilter === "expired" ? expired : !expired;
+      });
+    }
+    
+    // Apply search filter
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return sentQuotes;
-    return sentQuotes.filter((quote) =>
-      [quote.reference, quote.recipientName, quote.recipientEmail]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query))
-    );
-  }, [sentQuotes, searchQuery]);
+    if (query) {
+      filtered = filtered.filter((quote) =>
+        [quote.reference, quote.recipientName, quote.recipientEmail]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
+  }, [sentQuotes, searchQuery, sentStatusFilter]);
   const filteredAcceptedQuotes = useMemo(() => {
+    let filtered = acceptedQuotes;
+    
+    // Apply expired status filter
+    if (acceptedStatusFilter !== "all") {
+      filtered = filtered.filter((quote) => {
+        const expired = isQuoteExpired(quote.validUntil);
+        return acceptedStatusFilter === "expired" ? expired : !expired;
+      });
+    }
+    
+    // Apply search filter
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return acceptedQuotes;
-    return acceptedQuotes.filter((quote) =>
-      [quote.reference, quote.recipientName, quote.recipientEmail]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query))
-    );
-  }, [acceptedQuotes, searchQuery]);
+    if (query) {
+      filtered = filtered.filter((quote) =>
+        [quote.reference, quote.recipientName, quote.recipientEmail]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
+  }, [acceptedQuotes, searchQuery, acceptedStatusFilter]);
   const filteredLostQuotes = useMemo(() => {
+    let filtered = lostQuotes;
+    
+    // Apply expired status filter
+    if (rejectedStatusFilter !== "all") {
+      filtered = filtered.filter((quote) => {
+        const expired = isQuoteExpired(quote.validUntil);
+        return rejectedStatusFilter === "expired" ? expired : !expired;
+      });
+    }
+    
+    // Apply search filter
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return lostQuotes;
-    return lostQuotes.filter((quote) =>
-      [quote.reference, quote.recipientName, quote.recipientEmail]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query))
-    );
-  }, [lostQuotes, searchQuery]);
+    if (query) {
+      filtered = filtered.filter((quote) =>
+        [quote.reference, quote.recipientName, quote.recipientEmail]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
+  }, [lostQuotes, searchQuery, rejectedStatusFilter]);
   const filteredConvertibleQuotes = useMemo(() => {
-    const base = filteredAcceptedQuotes;
-    if (!showConvertedOnly) return base;
-    return base.filter((quote) => Boolean(quote.convertedInvoiceId));
-  }, [filteredAcceptedQuotes, showConvertedOnly]);
+    let base = acceptedQuotes;
+    
+    // Apply expired status filter
+    if (convertStatusFilter !== "all") {
+      base = base.filter((quote) => {
+        const expired = isQuoteExpired(quote.validUntil);
+        return convertStatusFilter === "expired" ? expired : !expired;
+      });
+    }
+    
+    // Apply search filter
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      base = base.filter((quote) =>
+        [quote.reference, quote.recipientName, quote.recipientEmail]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query))
+      );
+    }
+    
+    // Apply converted filter
+    if (showConvertedOnly) {
+      base = base.filter((quote) => Boolean(quote.convertedInvoiceId));
+    }
+    
+    return base;
+  }, [acceptedQuotes, searchQuery, convertStatusFilter, showConvertedOnly]);
+
+  // Filtered delete logs
+  const filteredDeleteLogs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return deleteLogs;
+    return deleteLogs.filter((log: any) =>
+      log.reference?.toLowerCase().includes(query) ||
+      log.recipientName?.toLowerCase().includes(query) ||
+      log.recipientEmail?.toLowerCase().includes(query)
+    );
+  }, [deleteLogs, searchQuery]);
+
+  // Address Book filtered quotes
+  const addressBookQuotes = useMemo(() => {
+    let filtered = quotes;
+    
+    // Apply status filter
+    if (addressBookFilter !== "all") {
+      filtered = filtered.filter((quote) => {
+        if (addressBookFilter === "rejected") {
+          return quote.status === "lost";
+        }
+        return quote.status === addressBookFilter;
+      });
+    }
+    
+    // Apply search filter
+    const query = addressBookSearch.trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter((quote) =>
+        [quote.reference, quote.recipientName, quote.recipientEmail]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
+  }, [quotes, addressBookFilter, addressBookSearch]);
+
+  // Pagination helper function
+  const getPaginatedData = <T,>(data: T[], page: number) => {
+    const totalPages = Math.ceil(data.length / itemsPerPage);
+    const startIndex = (page - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedData = data.slice(startIndex, endIndex);
+    return { paginatedData, totalPages, startIndex, endIndex };
+  };
+
+  // Reset page when tab changes or search query changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    setCurrentPage(1);
+  };
+
+  // Reset page when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, sentStatusFilter, followUpStatusFilter, acceptedStatusFilter, rejectedStatusFilter, convertStatusFilter]);
+
+  // Auto-delete drafts older than 7 days
+  useEffect(() => {
+    const checkAndAutoDeleteOldDrafts = async () => {
+      if (loading || !quotes.length) return;
+
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const oldDrafts = draftQuotes.filter((quote) => {
+        if (!quote.createdAt && !quote.updatedAt) return false;
+        
+        // Get the most recent date (updatedAt if exists, otherwise createdAt)
+        const dateToCheck = quote.updatedAt || quote.createdAt;
+        let quoteDate: Date | null = null;
+        
+        if (dateToCheck) {
+          if (typeof dateToCheck === 'string') {
+            quoteDate = new Date(dateToCheck);
+          } else if (dateToCheck && typeof dateToCheck === 'object' && 'toDate' in dateToCheck) {
+            quoteDate = dateToCheck.toDate();
+          } else if (dateToCheck && typeof dateToCheck === 'object' && 'seconds' in dateToCheck) {
+            quoteDate = new Date((dateToCheck as any).seconds * 1000);
+          }
+        }
+        
+        if (!quoteDate || isNaN(quoteDate.getTime())) return false;
+        
+        return quoteDate < sevenDaysAgo;
+      });
+
+      if (oldDrafts.length === 0) return;
+
+      // Process each old draft
+      for (const quote of oldDrafts) {
+        try {
+          // Prepare deletion log data
+          const deletionLogData: any = {
+            quoteId: quote.id,
+            reference: quote.reference || "",
+            recipientName: quote.recipientName || "",
+            recipientEmail: quote.recipientEmail || "",
+            recipientAddress: quote.recipientAddress || "",
+            recipientCity: quote.recipientCity || "",
+            recipientState: quote.recipientState || "",
+            recipientZip: quote.recipientZip || "",
+            recipientCountry: quote.recipientCountry || "",
+            recipientPhone: quote.recipientPhone || "",
+            status: quote.status || "draft",
+            subtotal: quote.subtotal || 0,
+            salesTax: quote.salesTax || 0,
+            shippingCost: quote.shippingCost || 0,
+            total: quote.total || 0,
+            items: quote.items || [],
+            quoteDate: quote.quoteDate || "",
+            validUntil: quote.validUntil || "",
+            terms: quote.terms || "",
+            preparedBy: quote.preparedBy || "",
+            approvedBy: quote.approvedBy || "",
+            reason: "Auto-deleted: Draft older than 7 days without action",
+            deletedBy: "system",
+            deletedByName: "System (Auto-delete)",
+            deletedAt: serverTimestamp(),
+            followUpCount: quote.followUpCount || 0,
+            autoDeleted: true,
+          };
+
+          // Only include timestamp fields if they exist
+          if (quote.createdAt) {
+            deletionLogData.createdAt = quote.createdAt;
+          }
+          if (quote.updatedAt) {
+            deletionLogData.updatedAt = quote.updatedAt;
+          }
+
+          // Filter out undefined values
+          const cleanLogData = Object.fromEntries(
+            Object.entries(deletionLogData).filter(([_, value]) => value !== undefined)
+          );
+
+          // Save deletion log
+          await addDoc(collection(db, "quote_delete_logs"), cleanLogData);
+          
+          // Delete the quote
+          await deleteDoc(doc(db, "quotes", quote.id));
+        } catch (error) {
+          console.error(`Failed to auto-delete draft ${quote.id}:`, error);
+        }
+      }
+
+      if (oldDrafts.length > 0) {
+        toast({ 
+          title: `${oldDrafts.length} draft(s) auto-deleted`, 
+          description: "Drafts older than 7 days have been moved to the Deleted tab."
+        });
+      }
+    };
+
+    checkAndAutoDeleteOldDrafts();
+  }, [quotes, loading, draftQuotes]);
 
   const resetForm = () => {
     setFormData(createEmptyQuoteForm());
@@ -1220,9 +1479,21 @@ export function QuoteManagement() {
       "Reference",
       "Recipient Name",
       "Recipient Email",
+      "Recipient Address",
+      "Recipient City",
+      "Recipient State",
+      "Recipient Zip",
+      "Recipient Country",
+      "Recipient Phone",
       "Status",
+      "Quote Date",
+      "Valid Until",
       "Sent At",
       "Follow Ups",
+      "Subtotal",
+      "Sales Tax",
+      "Shipping Cost",
+      "Total",
       "Client Name",
       "Client Email",
       "Client Contact",
@@ -1235,9 +1506,21 @@ export function QuoteManagement() {
         quote.reference,
         quote.recipientName,
         quote.recipientEmail,
-        quote.status,
+        quote.recipientAddress || "",
+        quote.recipientCity || "",
+        quote.recipientState || "",
+        quote.recipientZip || "",
+        quote.recipientCountry || "",
+        quote.recipientPhone || "",
+        quote.status === "lost" ? "rejected" : quote.status,
+        formatDateForDisplay(quote.quoteDate),
+        formatDateForDisplay(quote.validUntil),
         formatDate(quote.sentAt),
         `${quote.followUpCount ?? 0}/${FOLLOW_UP_LIMIT}`,
+        quote.subtotal || 0,
+        quote.salesTax || 0,
+        quote.shippingCost || 0,
+        quote.total || 0,
         details?.clientName || "",
         details?.clientEmail || "",
         details?.clientContact || "",
@@ -1256,6 +1539,36 @@ export function QuoteManagement() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleAddressBookDownload = () => {
+    let dataToDownload: Quote[] = [];
+    let filename = "";
+
+    switch (downloadType) {
+      case "all":
+        dataToDownload = quotes;
+        filename = "all-quotes.csv";
+        break;
+      case "draft":
+        dataToDownload = draftQuotes;
+        filename = "draft-quotes.csv";
+        break;
+      case "sent":
+        dataToDownload = sentQuotes;
+        filename = "sent-quotes.csv";
+        break;
+      case "accepted":
+        dataToDownload = acceptedQuotes;
+        filename = "accepted-quotes.csv";
+        break;
+      case "rejected":
+        dataToDownload = lostQuotes;
+        filename = "rejected-quotes.csv";
+        break;
+    }
+
+    downloadCsv(dataToDownload, filename);
   };
 
   const updateItem = (index: number, field: keyof QuoteLineItem, value: string) => {
@@ -1306,6 +1619,7 @@ export function QuoteManagement() {
     const followUpCount = quote.followUpCount ?? 0;
     const followUpLimitReached = followUpCount >= FOLLOW_UP_LIMIT;
     const isDraft = quote.status === "draft";
+    const isExpired = isQuoteExpired(quote.validUntil);
     
     // For drafts, use 4 columns (hide follow-up count)
     // For others, use 5 columns
@@ -1332,10 +1646,15 @@ export function QuoteManagement() {
             <p className="text-xs text-muted-foreground">Sent: {formatDate(quote.sentAt)}</p>
           )}
         </div>
-        <div>
+        <div className="flex flex-col gap-1">
           <Badge variant="secondary" className="capitalize">
             {getQuoteStatusLabel(quote, followUpCount)}
           </Badge>
+          {isExpired && (
+            <Badge variant="destructive" className="text-xs">
+              Expired
+            </Badge>
+          )}
         </div>
         {!isDraft && (
           <div className="text-xs">
@@ -1403,47 +1722,54 @@ export function QuoteManagement() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader>
-            <CardTitle>Draft</CardTitle>
-            <CardDescription>Saved but not sent</CardDescription>
-          </CardHeader>
-          <CardContent className="text-3xl font-semibold">{statusCounts.draft}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sent</CardTitle>
-            <CardDescription>Awaiting response</CardDescription>
-          </CardHeader>
-          <CardContent className="text-3xl font-semibold">{statusCounts.sent}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Follow Up</CardTitle>
-            <CardDescription>Active follow-ups</CardDescription>
-          </CardHeader>
-          <CardContent className="text-3xl font-semibold">
-            {sentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Accepted</CardTitle>
-            <CardDescription>Won quotations</CardDescription>
-          </CardHeader>
-          <CardContent className="text-3xl font-semibold">{statusCounts.accepted}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-          <CardTitle>Rejected</CardTitle>
-            <CardDescription>Closed quotations</CardDescription>
-          </CardHeader>
-          <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
-        </Card>
+      <div className="space-y-4">
+        {/* First Row: Accepted and Rejected */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Accepted</CardTitle>
+              <CardDescription>Won quotations</CardDescription>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{statusCounts.accepted}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Rejected</CardTitle>
+              <CardDescription>Closed quotations</CardDescription>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
+          </Card>
+        </div>
+        
+        {/* Second Row: Draft, Sent, and Follow Up */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader>
+              <CardTitle>Draft</CardTitle>
+              <CardDescription>Saved but not sent</CardDescription>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{statusCounts.draft}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Sent</CardTitle>
+              <CardDescription>Awaiting response</CardDescription>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{statusCounts.sent}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Follow Up</CardTitle>
+              <CardDescription>Active follow-ups</CardDescription>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">
+              {sentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="flex flex-wrap gap-2">
           <TabsTrigger value="new">New</TabsTrigger>
           <TabsTrigger value="draft">Draft</TabsTrigger>
@@ -1453,6 +1779,7 @@ export function QuoteManagement() {
         <TabsTrigger value="lost">Rejected</TabsTrigger>
           <TabsTrigger value="convert">Convert to Invoice</TabsTrigger>
           <TabsTrigger value="deleted">Deleted</TabsTrigger>
+          <TabsTrigger value="address_book">Address Book</TabsTrigger>
         </TabsList>
 
         <TabsContent value="new" className="space-y-4">
@@ -1949,7 +2276,37 @@ export function QuoteManagement() {
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredDraftQuotes.length ? (
-                filteredDraftQuotes.map((quote) => renderQuoteRow(quote, { showActions: true }))
+                <>
+                  {getPaginatedData(filteredDraftQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showActions: true }))}
+                  {filteredDraftQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredDraftQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredDraftQuotes, currentPage).endIndex, filteredDraftQuotes.length)} of {filteredDraftQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredDraftQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredDraftQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredDraftQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No draft quotes yet.</p>
               )}
@@ -1964,17 +2321,60 @@ export function QuoteManagement() {
               <CardDescription>All sent quotations with recipient details.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name, email, or reference"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+                <Select value={sentStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setSentStatusFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredSentQuotes.length ? (
-                filteredSentQuotes.map((quote) => renderQuoteRow(quote))
+                <>
+                  {getPaginatedData(filteredSentQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  {filteredSentQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredSentQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredSentQuotes, currentPage).endIndex, filteredSentQuotes.length)} of {filteredSentQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredSentQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredSentQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredSentQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No sent quotes yet.</p>
               )}
@@ -1991,20 +2391,71 @@ export function QuoteManagement() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name, email, or reference"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+                <Select value={followUpStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setFollowUpStatusFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : filteredSentQuotes.length ? (
-                filteredSentQuotes.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))
-              ) : (
-                <p className="text-sm text-muted-foreground">No quotes to follow up.</p>
-              )}
+              ) : (() => {
+                // Apply expired filter for follow up tab
+                const followUpFiltered = filteredSentQuotes.filter((quote) => {
+                  if (followUpStatusFilter === "all") return true;
+                  const expired = isQuoteExpired(quote.validUntil);
+                  return followUpStatusFilter === "expired" ? expired : !expired;
+                });
+                return followUpFiltered.length ? (
+                  <>
+                    {getPaginatedData(followUpFiltered, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))}
+                    {followUpFiltered.length > itemsPerPage && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                        <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                          Showing {getPaginatedData(followUpFiltered, currentPage).startIndex + 1} to {Math.min(getPaginatedData(followUpFiltered, currentPage).endIndex, followUpFiltered.length)} of {followUpFiltered.length} records
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-xs sm:text-sm px-2">
+                            {currentPage} / {getPaginatedData(followUpFiltered, currentPage).totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(followUpFiltered, currentPage).totalPages, p + 1))}
+                            disabled={currentPage >= getPaginatedData(followUpFiltered, currentPage).totalPages}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No quotes to follow up.</p>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -2022,17 +2473,60 @@ export function QuoteManagement() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name, email, or reference"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+                <Select value={acceptedStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setAcceptedStatusFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredAcceptedQuotes.length ? (
-                filteredAcceptedQuotes.map((quote) => renderQuoteRow(quote))
+                <>
+                  {getPaginatedData(filteredAcceptedQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  {filteredAcceptedQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredAcceptedQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredAcceptedQuotes, currentPage).endIndex, filteredAcceptedQuotes.length)} of {filteredAcceptedQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredAcceptedQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredAcceptedQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredAcceptedQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No accepted quotes yet.</p>
               )}
@@ -2053,17 +2547,60 @@ export function QuoteManagement() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name, email, or reference"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+                <Select value={rejectedStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setRejectedStatusFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredLostQuotes.length ? (
-                filteredLostQuotes.map((quote) => renderQuoteRow(quote))
+                <>
+                  {getPaginatedData(filteredLostQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  {filteredLostQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredLostQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredLostQuotes, currentPage).endIndex, filteredLostQuotes.length)} of {filteredLostQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredLostQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredLostQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredLostQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No rejected quotes yet.</p>
               )}
@@ -2078,11 +2615,24 @@ export function QuoteManagement() {
               <CardDescription>Convert accepted quotations into invoices.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name, email, or reference"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+                <Select value={convertStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setConvertStatusFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-center justify-end">
                 <Button
                   variant={showConvertedOnly ? "default" : "outline"}
@@ -2098,7 +2648,7 @@ export function QuoteManagement() {
                 </div>
               ) : filteredConvertibleQuotes.length ? (
                 <>
-                  {filteredConvertibleQuotes.map((quote) => (
+                  {getPaginatedData(filteredConvertibleQuotes, currentPage).paginatedData.map((quote) => (
                   <div key={quote.id} className="flex items-center justify-between border-b py-3 text-sm">
                     <div>
                       <p className="font-medium">{quote.reference}</p>
@@ -2134,6 +2684,34 @@ export function QuoteManagement() {
                     )}
                   </div>
                   ))}
+                  {filteredConvertibleQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredConvertibleQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredConvertibleQuotes, currentPage).endIndex, filteredConvertibleQuotes.length)} of {filteredConvertibleQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredConvertibleQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredConvertibleQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredConvertibleQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">No accepted quotes to convert.</p>
@@ -2158,19 +2736,10 @@ export function QuoteManagement() {
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : deleteLogs.length ? (
-                <div className="space-y-3">
-                  {deleteLogs
-                    .filter((log) => {
-                      const query = searchQuery.trim().toLowerCase();
-                      if (!query) return true;
-                      return (
-                        log.reference?.toLowerCase().includes(query) ||
-                        log.recipientName?.toLowerCase().includes(query) ||
-                        log.recipientEmail?.toLowerCase().includes(query)
-                      );
-                    })
-                    .map((log) => (
+              ) : filteredDeleteLogs.length ? (
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(filteredDeleteLogs, currentPage).paginatedData.map((log) => (
                       <div
                         key={log.id}
                         className="border rounded-lg p-4 space-y-3 bg-muted/30"
@@ -2182,7 +2751,14 @@ export function QuoteManagement() {
                               {log.recipientName || "—"} ({log.recipientEmail || "—"})
                             </p>
                           </div>
-                          <Badge variant="destructive">Deleted</Badge>
+                          <div className="flex flex-col items-end gap-1">
+                            <Badge variant="destructive">Deleted</Badge>
+                            {log.autoDeleted && (
+                              <Badge variant="outline" className="text-xs">
+                                Auto-deleted
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <div className="grid gap-2 text-sm">
                           <div className="flex items-center gap-2">
@@ -2218,9 +2794,172 @@ export function QuoteManagement() {
                         </div>
                       </div>
                     ))}
-                </div>
+                  </div>
+                  {filteredDeleteLogs.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredDeleteLogs, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredDeleteLogs, currentPage).endIndex, filteredDeleteLogs.length)} of {filteredDeleteLogs.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredDeleteLogs, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredDeleteLogs, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredDeleteLogs, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No deleted quotes found.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="address_book" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Draft</CardTitle>
+                <CardDescription>Saved but not sent</CardDescription>
+              </CardHeader>
+              <CardContent className="text-3xl font-semibold">{statusCounts.draft}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Sent</CardTitle>
+                <CardDescription>Awaiting response</CardDescription>
+              </CardHeader>
+              <CardContent className="text-3xl font-semibold">{statusCounts.sent}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Accepted</CardTitle>
+                <CardDescription>Won quotations</CardDescription>
+              </CardHeader>
+              <CardContent className="text-3xl font-semibold">{statusCounts.accepted}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Rejected</CardTitle>
+                <CardDescription>Closed quotations</CardDescription>
+              </CardHeader>
+              <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Address Book</CardTitle>
+              <CardDescription>View all quotes with filters and search.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Search by name, email, or reference"
+                    value={addressBookSearch}
+                    onChange={(event) => {
+                      setAddressBookSearch(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+                <Select
+                  value={addressBookFilter}
+                  onValueChange={(value: "all" | "draft" | "sent" | "accepted" | "rejected") => {
+                    setAddressBookFilter(value);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="sent">Sent</SelectItem>
+                    <SelectItem value="accepted">Accepted</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <Select
+                    value={downloadType}
+                    onValueChange={(value: "all" | "draft" | "sent" | "accepted" | "rejected") => {
+                      setDownloadType(value);
+                    }}
+                  >
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Download type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="sent">Sent</SelectItem>
+                      <SelectItem value="accepted">Accepted</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={handleAddressBookDownload}>
+                    <Download className="h-4 w-4 mr-1" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+              {loading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : addressBookQuotes.length ? (
+                <>
+                  {getPaginatedData(addressBookQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  {addressBookQuotes.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(addressBookQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(addressBookQuotes, currentPage).endIndex, addressBookQuotes.length)} of {addressBookQuotes.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(addressBookQuotes, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(addressBookQuotes, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(addressBookQuotes, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No quotes found.</p>
               )}
             </CardContent>
           </Card>
