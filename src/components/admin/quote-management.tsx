@@ -557,26 +557,26 @@ export function QuoteManagement() {
     }
     setSaving(true);
     try {
-      // Save deletion log before deleting
-      await addDoc(collection(db, "quote_delete_logs"), {
+      // Prepare deletion log data, filtering out undefined values and handling timestamps
+      const deletionLogData: any = {
         quoteId: deleteQuote.id,
-        reference: deleteQuote.reference,
-        recipientName: deleteQuote.recipientName,
-        recipientEmail: deleteQuote.recipientEmail,
+        reference: deleteQuote.reference || "",
+        recipientName: deleteQuote.recipientName || "",
+        recipientEmail: deleteQuote.recipientEmail || "",
         recipientAddress: deleteQuote.recipientAddress || "",
         recipientCity: deleteQuote.recipientCity || "",
         recipientState: deleteQuote.recipientState || "",
         recipientZip: deleteQuote.recipientZip || "",
         recipientCountry: deleteQuote.recipientCountry || "",
         recipientPhone: deleteQuote.recipientPhone || "",
-        status: deleteQuote.status,
-        subtotal: deleteQuote.subtotal,
+        status: deleteQuote.status || "draft",
+        subtotal: deleteQuote.subtotal || 0,
         salesTax: deleteQuote.salesTax || 0,
         shippingCost: deleteQuote.shippingCost || 0,
-        total: deleteQuote.total,
-        items: deleteQuote.items,
-        quoteDate: deleteQuote.quoteDate,
-        validUntil: deleteQuote.validUntil,
+        total: deleteQuote.total || 0,
+        items: deleteQuote.items || [],
+        quoteDate: deleteQuote.quoteDate || "",
+        validUntil: deleteQuote.validUntil || "",
         terms: deleteQuote.terms || "",
         preparedBy: deleteQuote.preparedBy || "",
         approvedBy: deleteQuote.approvedBy || "",
@@ -584,10 +584,27 @@ export function QuoteManagement() {
         deletedBy: userProfile?.uid || "",
         deletedByName: userProfile?.name || userProfile?.email || "Unknown",
         deletedAt: serverTimestamp(),
-        createdAt: deleteQuote.createdAt,
-        sentAt: deleteQuote.sentAt,
         followUpCount: deleteQuote.followUpCount || 0,
-      });
+      };
+
+      // Only include timestamp fields if they exist and are valid
+      if (deleteQuote.createdAt) {
+        deletionLogData.createdAt = deleteQuote.createdAt;
+      }
+      if (deleteQuote.sentAt) {
+        deletionLogData.sentAt = deleteQuote.sentAt;
+      }
+      if (deleteQuote.lastFollowUpAt) {
+        deletionLogData.lastFollowUpAt = deleteQuote.lastFollowUpAt;
+      }
+
+      // Filter out undefined values
+      const cleanLogData = Object.fromEntries(
+        Object.entries(deletionLogData).filter(([_, value]) => value !== undefined)
+      );
+
+      // Save deletion log before deleting
+      await addDoc(collection(db, "quote_delete_logs"), cleanLogData);
       
       // Delete the quote
       await deleteDoc(doc(db, "quotes", deleteQuote.id));
@@ -595,9 +612,18 @@ export function QuoteManagement() {
       setDeleteDialogOpen(false);
       setDeleteQuote(null);
       setDeleteReason("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete quote:", error);
-      toast({ variant: "destructive", title: "Failed to delete quote." });
+      const errorMessage = error?.message || error?.code || "Unknown error occurred";
+      toast({ 
+        variant: "destructive", 
+        title: "Failed to delete quote.",
+        description: errorMessage.includes("permission") 
+          ? "You don't have permission to delete quotes. Please contact an administrator."
+          : errorMessage.includes("not-found")
+          ? "Quote not found. It may have already been deleted."
+          : `Error: ${errorMessage.substring(0, 100)}`
+      });
     } finally {
       setSaving(false);
     }
