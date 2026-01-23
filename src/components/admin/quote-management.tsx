@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useRef, useState } from "react";
@@ -251,6 +252,12 @@ export function QuoteManagement() {
     []
   );
   const { data: quotes, loading } = useCollection<Quote>("quotes", quotesQuery);
+  
+  const deleteLogsQuery = useMemo(
+    () => query(collection(db, "quote_delete_logs"), orderBy("deletedAt", "desc")),
+    []
+  );
+  const { data: deleteLogs, loading: deleteLogsLoading } = useCollection<any>("quote_delete_logs", deleteLogsQuery);
 
   const [activeTab, setActiveTab] = useState("new");
   const [formData, setFormData] = useState(createEmptyQuoteForm());
@@ -273,6 +280,9 @@ export function QuoteManagement() {
     message: "",
     attachments: [] as File[],
   });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteQuote, setDeleteQuote] = useState<Quote | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
 
   const statusCounts = useMemo(() => {
     const counts = { draft: 0, sent: 0, accepted: 0, lost: 0 };
@@ -533,11 +543,58 @@ export function QuoteManagement() {
     }
   };
 
-  const handleDeleteQuote = async (quoteId: string) => {
+  const handleDeleteQuote = (quote: Quote) => {
+    setDeleteQuote(quote);
+    setDeleteReason("");
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteQuote = async () => {
+    if (!deleteQuote) return;
+    if (!deleteReason.trim()) {
+      toast({ variant: "destructive", title: "Please provide a reason for deletion." });
+      return;
+    }
     setSaving(true);
     try {
-      await deleteDoc(doc(db, "quotes", quoteId));
-      toast({ title: "Quote deleted." });
+      // Save deletion log before deleting
+      await addDoc(collection(db, "quote_delete_logs"), {
+        quoteId: deleteQuote.id,
+        reference: deleteQuote.reference,
+        recipientName: deleteQuote.recipientName,
+        recipientEmail: deleteQuote.recipientEmail,
+        recipientAddress: deleteQuote.recipientAddress || "",
+        recipientCity: deleteQuote.recipientCity || "",
+        recipientState: deleteQuote.recipientState || "",
+        recipientZip: deleteQuote.recipientZip || "",
+        recipientCountry: deleteQuote.recipientCountry || "",
+        recipientPhone: deleteQuote.recipientPhone || "",
+        status: deleteQuote.status,
+        subtotal: deleteQuote.subtotal,
+        salesTax: deleteQuote.salesTax || 0,
+        shippingCost: deleteQuote.shippingCost || 0,
+        total: deleteQuote.total,
+        items: deleteQuote.items,
+        quoteDate: deleteQuote.quoteDate,
+        validUntil: deleteQuote.validUntil,
+        terms: deleteQuote.terms || "",
+        preparedBy: deleteQuote.preparedBy || "",
+        approvedBy: deleteQuote.approvedBy || "",
+        reason: deleteReason.trim(),
+        deletedBy: userProfile?.uid || "",
+        deletedByName: userProfile?.name || userProfile?.email || "Unknown",
+        deletedAt: serverTimestamp(),
+        createdAt: deleteQuote.createdAt,
+        sentAt: deleteQuote.sentAt,
+        followUpCount: deleteQuote.followUpCount || 0,
+      });
+      
+      // Delete the quote
+      await deleteDoc(doc(db, "quotes", deleteQuote.id));
+      toast({ title: "Quote deleted and logged." });
+      setDeleteDialogOpen(false);
+      setDeleteQuote(null);
+      setDeleteReason("");
     } catch (error) {
       console.error("Failed to delete quote:", error);
       toast({ variant: "destructive", title: "Failed to delete quote." });
@@ -999,6 +1056,72 @@ export function QuoteManagement() {
     }
   };
 
+  const mapDeleteLogToFormData = (log: any) => ({
+    reference: log.reference || "",
+    quoteDate: log.quoteDate || "",
+    validUntil: log.validUntil || "",
+    recipientName: log.recipientName || "",
+    recipientEmail: log.recipientEmail || "",
+    recipientAddress: log.recipientAddress || "",
+    recipientCity: log.recipientCity || "",
+    recipientState: log.recipientState || "",
+    recipientZip: log.recipientZip || "",
+    recipientCountry: log.recipientCountry || "",
+    recipientPhone: log.recipientPhone || "",
+    subject: "",
+    message: "",
+    notes: "",
+    terms: log.terms || "",
+    items: log.items?.length ? log.items : [createEmptyItem()],
+    subtotal: log.subtotal || 0,
+    salesTax: log.salesTax || 0,
+    shippingCost: log.shippingCost || 0,
+    total: log.total || 0,
+    preparedBy: log.preparedBy || "",
+    approvedBy: log.approvedBy || "",
+    preparedDate: "",
+    approvedDate: "",
+    sentAt: log.sentAt,
+    followUpCount: log.followUpCount ?? 0,
+    lastFollowUpAt: log.lastFollowUpAt,
+    emailLog: [],
+    acceptedDetails: undefined,
+    lostDetails: undefined,
+    convertedInvoiceId: undefined,
+    convertedAt: undefined,
+  });
+
+  const handleViewDeletedQuote = async (log: any) => {
+    const restoreState = {
+      activeTab,
+      formData,
+      editingQuoteId,
+    };
+    try {
+      const formDataFromLog = mapDeleteLogToFormData(log);
+      setFormData(formDataFromLog);
+      setEditingQuoteId(null);
+      if (activeTab !== "new") {
+        setActiveTab("new");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const pdfFile = await generateQuotePdfFile(log.reference || "deleted-quote");
+      if (!pdfFile) {
+        throw new Error("Failed to generate quote PDF.");
+      }
+      const pdfUrl = URL.createObjectURL(pdfFile);
+      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+    } catch (error) {
+      console.error("Failed to preview PDF:", error);
+      toast({ variant: "destructive", title: "Failed to preview PDF." });
+    } finally {
+      setActiveTab(restoreState.activeTab);
+      setFormData(restoreState.formData);
+      setEditingQuoteId(restoreState.editingQuoteId);
+    }
+  };
+
   const handleViewInvoicePdf = async (quote: Quote) => {
     try {
       const invoiceData = buildInvoiceDataFromQuote(quote);
@@ -1208,7 +1331,7 @@ export function QuoteManagement() {
                 <Send className="h-4 w-4 mr-1" />
                 Send
               </Button>
-              <Button variant="destructive" size="sm" onClick={() => handleDeleteQuote(quote.id)}>
+              <Button variant="destructive" size="sm" onClick={() => handleDeleteQuote(quote)}>
                 <Trash2 className="h-4 w-4 mr-1" />
                 Delete
               </Button>
@@ -1303,6 +1426,7 @@ export function QuoteManagement() {
           <TabsTrigger value="accepted">Accepted</TabsTrigger>
         <TabsTrigger value="lost">Rejected</TabsTrigger>
           <TabsTrigger value="convert">Convert to Invoice</TabsTrigger>
+          <TabsTrigger value="deleted">Deleted</TabsTrigger>
         </TabsList>
 
         <TabsContent value="new" className="space-y-4">
@@ -1991,6 +2115,90 @@ export function QuoteManagement() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="deleted" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Deleted Quotes</CardTitle>
+              <CardDescription>View deletion logs for removed quotations.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Search by name, email, or reference"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+              {deleteLogsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : deleteLogs.length ? (
+                <div className="space-y-3">
+                  {deleteLogs
+                    .filter((log) => {
+                      const query = searchQuery.trim().toLowerCase();
+                      if (!query) return true;
+                      return (
+                        log.reference?.toLowerCase().includes(query) ||
+                        log.recipientName?.toLowerCase().includes(query) ||
+                        log.recipientEmail?.toLowerCase().includes(query)
+                      );
+                    })
+                    .map((log) => (
+                      <div
+                        key={log.id}
+                        className="border rounded-lg p-4 space-y-3 bg-muted/30"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <p className="font-semibold text-lg">{log.reference || "—"}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {log.recipientName || "—"} ({log.recipientEmail || "—"})
+                            </p>
+                          </div>
+                          <Badge variant="destructive">Deleted</Badge>
+                        </div>
+                        <div className="grid gap-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Deleted By:</span>
+                            <span>{log.deletedByName || "Unknown"}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Deleted At:</span>
+                            <span>{formatDate(log.deletedAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Original Status:</span>
+                            <Badge variant="secondary" className="capitalize">
+                              {log.status || "—"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Total Amount:</span>
+                            <span>${(log.total || 0).toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <div className="border-t pt-3">
+                          <p className="text-sm font-medium mb-1">Deletion Reason:</p>
+                          <p className="text-sm text-muted-foreground bg-background p-3 rounded-md border">
+                            {log.reason || "No reason provided"}
+                          </p>
+                        </div>
+                        <div className="flex justify-end pt-2">
+                          <Button variant="outline" size="sm" onClick={() => handleViewDeletedQuote(log)}>
+                            <Eye className="h-4 w-4 mr-1" />
+                            View Quote
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No deleted quotes found.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
@@ -2130,6 +2338,51 @@ export function QuoteManagement() {
             <Button onClick={submitDecision} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Quote</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for deleting this quote. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteQuote && (
+            <div className="space-y-4">
+              <div className="p-3 bg-muted rounded-md space-y-1 text-sm">
+                <p className="font-medium">Quote Reference: {deleteQuote.reference}</p>
+                <p className="text-muted-foreground">
+                  {deleteQuote.recipientName} ({deleteQuote.recipientEmail})
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="deleteReason">Deletion Reason *</Label>
+                <Textarea
+                  id="deleteReason"
+                  value={deleteReason}
+                  onChange={(event) => setDeleteReason(event.target.value)}
+                  placeholder="Enter the reason for deleting this quote..."
+                  rows={4}
+                  className="resize-none"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => {
+              setDeleteDialogOpen(false);
+              setDeleteQuote(null);
+              setDeleteReason("");
+            }}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteQuote} disabled={saving || !deleteReason.trim()}>
+              {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+              Delete Quote
             </Button>
           </DialogFooter>
         </DialogContent>
