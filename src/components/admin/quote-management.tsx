@@ -63,6 +63,12 @@ import {
   Send,
   Trash2,
   XCircle,
+  FileText,
+  Clock,
+  TrendingUp,
+  X,
+  Archive,
+  BookOpen,
 } from "lucide-react";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "lost";
@@ -1631,9 +1637,9 @@ export function QuoteManagement() {
       <div
         key={quote.id}
         className={cn(
-          "grid gap-3 items-center border-b px-3 py-3 text-sm",
+          "grid gap-3 items-center border-b px-4 py-4 text-sm rounded-lg transition-all hover:shadow-md hover:bg-gray-50/50 dark:hover:bg-gray-900/50",
           gridCols,
-          followUpLimitReached && options?.showFollowUp ? "bg-red-50 border-red-200" : "border-border"
+          followUpLimitReached && options?.showFollowUp ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 shadow-sm" : "border-border hover:border-gray-300 dark:hover:border-gray-700"
         )}
       >
         <div>
@@ -1662,21 +1668,41 @@ export function QuoteManagement() {
           </div>
         )}
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleViewPdf(quote)}
+            className="hover:bg-blue-50 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 transition-all"
+          >
             <Eye className="h-4 w-4 mr-1" />
             View
           </Button>
           {options?.showActions && (
             <>
-              <Button variant="outline" size="sm" onClick={() => handleEditQuote(quote)}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleEditQuote(quote)}
+                className="hover:bg-blue-50 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 transition-all"
+              >
                 <Pencil className="h-4 w-4 mr-1" />
                 Edit
               </Button>
-              <Button variant="outline" size="sm" onClick={() => openEmailDialog(quote, "send")}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => openEmailDialog(quote, "send")}
+                className="hover:bg-purple-50 dark:hover:bg-purple-950/30 border-purple-200 dark:border-purple-800 transition-all"
+              >
                 <Send className="h-4 w-4 mr-1" />
                 Send
               </Button>
-              <Button variant="destructive" size="sm" onClick={() => handleDeleteQuote(quote)}>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={() => handleDeleteQuote(quote)}
+                className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-md hover:shadow-lg transition-all"
+              >
                 <Trash2 className="h-4 w-4 mr-1" />
                 Delete
               </Button>
@@ -1689,15 +1715,26 @@ export function QuoteManagement() {
                 size="sm"
                 disabled={followUpLimitReached}
                 onClick={() => openEmailDialog(quote, "follow_up")}
+                className="hover:bg-orange-50 dark:hover:bg-orange-950/30 border-orange-200 dark:border-orange-800 transition-all disabled:opacity-50"
               >
                 <Mail className="h-4 w-4 mr-1" />
                 Follow Up
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleDecision(quote, "accepted")}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleDecision(quote, "accepted")}
+                className="hover:bg-green-50 dark:hover:bg-green-950/30 border-green-200 dark:border-green-800 transition-all"
+              >
                 <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
                 Accepted
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleDecision(quote, "lost")}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleDecision(quote, "lost")}
+                className="hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-800 transition-all"
+              >
                 <XCircle className="h-4 w-4 mr-1 text-red-600" />
                 Reject
               </Button>
@@ -1715,81 +1752,219 @@ export function QuoteManagement() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quote Management</h1>
-        <p className="text-muted-foreground mt-1">
-          Create, send, and track quotation follow-ups
-        </p>
+      {/* Header Section */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-amber-900/20 border border-amber-200/50 dark:border-amber-800/50 p-6 shadow-lg">
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-md">
+              <FileText className="h-6 w-6 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-amber-900 to-orange-900 dark:from-amber-100 dark:to-orange-100 bg-clip-text text-transparent">
+              Quote Management
+            </h1>
+          </div>
+          <p className="text-amber-800/80 dark:text-amber-200/80 ml-12">
+            Create, send, and track quotation follow-ups with ease
+          </p>
+        </div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-amber-200/30 to-orange-200/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
       </div>
 
+      {/* Status Cards */}
       <div className="space-y-4">
         {/* First Row: Accepted and Rejected */}
         <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Accepted</CardTitle>
-              <CardDescription>Won quotations</CardDescription>
+          <Card className="relative overflow-hidden border-2 border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 hover:shadow-xl transition-all duration-300 group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-200/40 to-emerald-200/40 rounded-full blur-2xl"></div>
+            <CardHeader className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-green-700 dark:text-green-300 flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    Accepted
+                  </CardTitle>
+                  <CardDescription className="text-green-600/80 dark:text-green-400/80">Won quotations</CardDescription>
+                </div>
+                <div className="p-3 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-md group-hover:scale-110 transition-transform">
+                  <TrendingUp className="h-6 w-6 text-white" />
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="text-3xl font-semibold">{statusCounts.accepted}</CardContent>
+            <CardContent className="relative z-10">
+              <div className="text-4xl font-bold text-green-700 dark:text-green-300">{statusCounts.accepted}</div>
+            </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Rejected</CardTitle>
-              <CardDescription>Closed quotations</CardDescription>
+          
+          <Card className="relative overflow-hidden border-2 border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 hover:shadow-xl transition-all duration-300 group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-red-200/40 to-rose-200/40 rounded-full blur-2xl"></div>
+            <CardHeader className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-red-700 dark:text-red-300 flex items-center gap-2">
+                    <X className="h-5 w-5" />
+                    Rejected
+                  </CardTitle>
+                  <CardDescription className="text-red-600/80 dark:text-red-400/80">Closed quotations</CardDescription>
+                </div>
+                <div className="p-3 rounded-lg bg-gradient-to-br from-red-500 to-rose-600 shadow-md group-hover:scale-110 transition-transform">
+                  <XCircle className="h-6 w-6 text-white" />
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
+            <CardContent className="relative z-10">
+              <div className="text-4xl font-bold text-red-700 dark:text-red-300">{statusCounts.lost}</div>
+            </CardContent>
           </Card>
         </div>
         
         {/* Second Row: Draft, Sent, and Follow Up */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Draft</CardTitle>
-              <CardDescription>Saved but not sent</CardDescription>
+          <Card className="relative overflow-hidden border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 hover:shadow-xl transition-all duration-300 group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-200/40 to-cyan-200/40 rounded-full blur-2xl"></div>
+            <CardHeader className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Draft
+                  </CardTitle>
+                  <CardDescription className="text-blue-600/80 dark:text-blue-400/80">Saved but not sent</CardDescription>
+                </div>
+                <div className="p-3 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md group-hover:scale-110 transition-transform">
+                  <Archive className="h-6 w-6 text-white" />
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="text-3xl font-semibold">{statusCounts.draft}</CardContent>
+            <CardContent className="relative z-10">
+              <div className="text-4xl font-bold text-blue-700 dark:text-blue-300">{statusCounts.draft}</div>
+            </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Sent</CardTitle>
-              <CardDescription>Awaiting response</CardDescription>
+          
+          <Card className="relative overflow-hidden border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 hover:shadow-xl transition-all duration-300 group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-200/40 to-pink-200/40 rounded-full blur-2xl"></div>
+            <CardHeader className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                    <Send className="h-5 w-5" />
+                    Sent
+                  </CardTitle>
+                  <CardDescription className="text-purple-600/80 dark:text-purple-400/80">Awaiting response</CardDescription>
+                </div>
+                <div className="p-3 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md group-hover:scale-110 transition-transform">
+                  <Mail className="h-6 w-6 text-white" />
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="text-3xl font-semibold">{statusCounts.sent}</CardContent>
+            <CardContent className="relative z-10">
+              <div className="text-4xl font-bold text-purple-700 dark:text-purple-300">{statusCounts.sent}</div>
+            </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Follow Up</CardTitle>
-              <CardDescription>Active follow-ups</CardDescription>
+          
+          <Card className="relative overflow-hidden border-2 border-orange-200 dark:border-orange-800 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 hover:shadow-xl transition-all duration-300 group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-200/40 to-amber-200/40 rounded-full blur-2xl"></div>
+            <CardHeader className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-orange-700 dark:text-orange-300 flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Follow Up
+                  </CardTitle>
+                  <CardDescription className="text-orange-600/80 dark:text-orange-400/80">Active follow-ups</CardDescription>
+                </div>
+                <div className="p-3 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 shadow-md group-hover:scale-110 transition-transform">
+                  <Mail className="h-6 w-6 text-white" />
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="text-3xl font-semibold">
-              {sentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
+            <CardContent className="relative z-10">
+              <div className="text-4xl font-bold text-orange-700 dark:text-orange-300">
+                {sentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
+              </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="flex flex-wrap gap-2">
-          <TabsTrigger value="new">New</TabsTrigger>
-          <TabsTrigger value="draft">Draft</TabsTrigger>
-          <TabsTrigger value="sent">Sent</TabsTrigger>
-          <TabsTrigger value="follow_up">Follow Up</TabsTrigger>
-          <TabsTrigger value="accepted">Accepted</TabsTrigger>
-        <TabsTrigger value="lost">Rejected</TabsTrigger>
-          <TabsTrigger value="convert">Convert to Invoice</TabsTrigger>
-          <TabsTrigger value="deleted">Deleted</TabsTrigger>
-          <TabsTrigger value="address_book">Address Book</TabsTrigger>
-        </TabsList>
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-2 shadow-sm">
+          <TabsList className="flex flex-wrap gap-2 bg-transparent">
+            <TabsTrigger 
+              value="new" 
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New
+            </TabsTrigger>
+            <TabsTrigger 
+              value="draft"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Draft
+            </TabsTrigger>
+            <TabsTrigger 
+              value="sent"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Sent
+            </TabsTrigger>
+            <TabsTrigger 
+              value="follow_up"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Follow Up
+            </TabsTrigger>
+            <TabsTrigger 
+              value="accepted"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Accepted
+            </TabsTrigger>
+            <TabsTrigger 
+              value="lost"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              Rejected
+            </TabsTrigger>
+            <TabsTrigger 
+              value="convert"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Convert to Invoice
+            </TabsTrigger>
+            <TabsTrigger 
+              value="deleted"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-gray-500 data-[state=active]:to-gray-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <Archive className="h-4 w-4 mr-2" />
+              Deleted
+            </TabsTrigger>
+            <TabsTrigger 
+              value="address_book"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              Address Book
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="new" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5 text-primary" />
+          <Card className="border-2 border-gray-200 dark:border-gray-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b border-gray-200 dark:border-gray-800">
+              <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md">
+                  <Plus className="h-5 w-5 text-white" />
+                </div>
                 {editingQuoteId ? "Edit Quote" : "New Quote"}
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-blue-600/80 dark:text-blue-400/80">
                 Fill out the quotation template and save or send it.
               </CardDescription>
             </CardHeader>
@@ -2237,20 +2412,37 @@ export function QuoteManagement() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" onClick={handleSaveDraft} disabled={saving}>
-                  {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+                <Button 
+                  variant="outline" 
+                  onClick={handleSaveDraft} 
+                  disabled={saving}
+                  className="border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:border-blue-300 dark:hover:border-blue-700 transition-all"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
                   Save as Draft
                 </Button>
-                <Button onClick={handleSendFromForm} disabled={saving}>
+                <Button 
+                  onClick={handleSendFromForm} 
+                  disabled={saving}
+                  className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-md hover:shadow-lg transition-all"
+                >
                   {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
                   Send
                 </Button>
-                <Button variant="outline" onClick={handleDownloadPdf}>
+                <Button 
+                  variant="outline" 
+                  onClick={handleDownloadPdf}
+                  className="border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-700 transition-all"
+                >
                   <Download className="h-4 w-4 mr-1" />
                   Download PDF
                 </Button>
                 {editingQuoteId && (
-                  <Button variant="ghost" onClick={resetForm}>
+                  <Button 
+                    variant="ghost" 
+                    onClick={resetForm}
+                    className="hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                  >
                     Cancel Edit
                   </Button>
                 )}
@@ -2260,10 +2452,15 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="draft" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Draft Quotes</CardTitle>
-              <CardDescription>Edit, send, or delete draft quotations.</CardDescription>
+          <Card className="border-2 border-blue-200 dark:border-blue-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b border-blue-200 dark:border-blue-800">
+              <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                Draft Quotes
+              </CardTitle>
+              <CardDescription className="text-blue-600/80 dark:text-blue-400/80">Edit, send, or delete draft quotations.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
@@ -2315,10 +2512,15 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="sent" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sent Quotes</CardTitle>
-              <CardDescription>All sent quotations with recipient details.</CardDescription>
+          <Card className="border-2 border-purple-200 dark:border-purple-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-b border-purple-200 dark:border-purple-800">
+              <CardTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md">
+                  <Send className="h-5 w-5 text-white" />
+                </div>
+                Sent Quotes
+              </CardTitle>
+              <CardDescription className="text-purple-600/80 dark:text-purple-400/80">All sent quotations with recipient details.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
@@ -2383,10 +2585,15 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="follow_up" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Follow Up</CardTitle>
-              <CardDescription>
+          <Card className="border-2 border-orange-200 dark:border-orange-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border-b border-orange-200 dark:border-orange-800">
+              <CardTitle className="flex items-center gap-2 text-orange-700 dark:text-orange-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 shadow-md">
+                  <Clock className="h-5 w-5 text-white" />
+                </div>
+                Follow Up
+              </CardTitle>
+              <CardDescription className="text-orange-600/80 dark:text-orange-400/80">
                 Send follow-ups or mark the quote as accepted or rejected.
               </CardDescription>
             </CardHeader>
@@ -2461,13 +2668,18 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="accepted" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Accepted Quotes</CardTitle>
-                <CardDescription>Quotes marked as accepted.</CardDescription>
+          <Card className="border-2 border-green-200 dark:border-green-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-b border-green-200 dark:border-green-800 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-md">
+                  <CheckCircle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-green-700 dark:text-green-300">Accepted Quotes</CardTitle>
+                  <CardDescription className="text-green-600/80 dark:text-green-400/80">Quotes marked as accepted.</CardDescription>
+                </div>
               </div>
-              <Button variant="outline" onClick={() => downloadCsv(acceptedQuotes, "accepted-quotes.csv")}>
+              <Button variant="outline" className="bg-white dark:bg-gray-800 hover:bg-green-50 dark:hover:bg-green-950/30 border-green-200 dark:border-green-800" onClick={() => downloadCsv(acceptedQuotes, "accepted-quotes.csv")}>
                 <Download className="h-4 w-4 mr-1" />
                 Download
               </Button>
@@ -2535,13 +2747,18 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="lost" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Rejected Quotes</CardTitle>
-                <CardDescription>Quotes marked as rejected.</CardDescription>
+          <Card className="border-2 border-red-200 dark:border-red-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 border-b border-red-200 dark:border-red-800 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-red-500 to-rose-600 shadow-md">
+                  <XCircle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-red-700 dark:text-red-300">Rejected Quotes</CardTitle>
+                  <CardDescription className="text-red-600/80 dark:text-red-400/80">Quotes marked as rejected.</CardDescription>
+                </div>
               </div>
-              <Button variant="outline" onClick={() => downloadCsv(lostQuotes, "rejected-quotes.csv")}>
+              <Button variant="outline" className="bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-800" onClick={() => downloadCsv(lostQuotes, "rejected-quotes.csv")}>
                 <Download className="h-4 w-4 mr-1" />
                 Download
               </Button>
@@ -2609,10 +2826,15 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="convert" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Convert to Invoice</CardTitle>
-              <CardDescription>Convert accepted quotations into invoices.</CardDescription>
+          <Card className="border-2 border-indigo-200 dark:border-indigo-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-b border-indigo-200 dark:border-indigo-800">
+              <CardTitle className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                Convert to Invoice
+              </CardTitle>
+              <CardDescription className="text-indigo-600/80 dark:text-indigo-400/80">Convert accepted quotations into invoices.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
@@ -2721,10 +2943,15 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="deleted" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Deleted Quotes</CardTitle>
-              <CardDescription>View deletion logs for removed quotations.</CardDescription>
+          <Card className="border-2 border-gray-200 dark:border-gray-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-950/30 dark:to-slate-950/30 border-b border-gray-200 dark:border-gray-800">
+              <CardTitle className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-gray-500 to-slate-600 shadow-md">
+                  <Archive className="h-5 w-5 text-white" />
+                </div>
+                Deleted Quotes
+              </CardTitle>
+              <CardDescription className="text-gray-600/80 dark:text-gray-400/80">View deletion logs for removed quotations.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
@@ -2863,10 +3090,15 @@ export function QuoteManagement() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Address Book</CardTitle>
-              <CardDescription>View all quotes with filters and search.</CardDescription>
+          <Card className="border-2 border-amber-200 dark:border-amber-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b border-amber-200 dark:border-amber-800">
+              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-md">
+                  <BookOpen className="h-5 w-5 text-white" />
+                </div>
+                Address Book
+              </CardTitle>
+              <CardDescription className="text-amber-600/80 dark:text-amber-400/80">View all quotes with filters and search.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
