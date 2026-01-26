@@ -82,7 +82,7 @@ interface QuoteLineItem {
 }
 
 interface QuoteEmailLog {
-  type: "send" | "follow_up";
+  type: "send" | "follow_up" | "invoice";
   to: string;
   subject: string;
   message: string;
@@ -291,7 +291,7 @@ export function QuoteManagement() {
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
-  const [emailMode, setEmailMode] = useState<"send" | "follow_up">("send");
+  const [emailMode, setEmailMode] = useState<"send" | "follow_up" | "invoice">("send");
   const [activeEmailQuote, setActiveEmailQuote] = useState<Quote | null>(null);
   const [decisionDialogOpen, setDecisionDialogOpen] = useState(false);
   const [decisionQuote, setDecisionQuote] = useState<Quote | null>(null);
@@ -504,13 +504,13 @@ export function QuoteManagement() {
     setCurrentPage(1);
   }, [searchQuery, sentStatusFilter, followUpStatusFilter, acceptedStatusFilter, rejectedStatusFilter, convertStatusFilter]);
 
-  // Auto-delete drafts older than 7 days
+  // Auto-delete drafts older than 10 days
   useEffect(() => {
     const checkAndAutoDeleteOldDrafts = async () => {
       if (loading || !quotes.length) return;
 
       const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
       const oldDrafts = draftQuotes.filter((quote) => {
         if (!quote.createdAt && !quote.updatedAt) return false;
         
@@ -530,7 +530,7 @@ export function QuoteManagement() {
         
         if (!quoteDate || isNaN(quoteDate.getTime())) return false;
         
-        return quoteDate < sevenDaysAgo;
+        return quoteDate < tenDaysAgo;
       });
 
       if (oldDrafts.length === 0) return;
@@ -561,7 +561,7 @@ export function QuoteManagement() {
             terms: quote.terms || "",
             preparedBy: quote.preparedBy || "",
             approvedBy: quote.approvedBy || "",
-            reason: "Auto-deleted: Draft older than 7 days without action",
+            reason: "Auto-deleted: Draft older than 10 days without action",
             deletedBy: "system",
             deletedByName: "System (Auto-delete)",
             deletedAt: serverTimestamp(),
@@ -595,13 +595,61 @@ export function QuoteManagement() {
       if (oldDrafts.length > 0) {
         toast({ 
           title: `${oldDrafts.length} draft(s) auto-deleted`, 
-          description: "Drafts older than 7 days have been moved to the Deleted tab."
+          description: "Drafts older than 10 days have been moved to the Deleted tab."
         });
       }
     };
 
     checkAndAutoDeleteOldDrafts();
   }, [quotes, loading, draftQuotes]);
+
+  // Auto-delete delete logs older than 30 days
+  useEffect(() => {
+    const checkAndAutoDeleteOldLogs = async () => {
+      if (deleteLogsLoading || !deleteLogs.length) return;
+
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      try {
+        const { getDocs } = await import("firebase/firestore");
+        const snapshot = await getDocs(collection(db, "quote_delete_logs"));
+        
+        let deletedCount = 0;
+        for (const docSnapshot of snapshot.docs) {
+          const docData = docSnapshot.data();
+          const docDeletedAt = docData.deletedAt;
+          let docDate: Date | null = null;
+          
+          if (docDeletedAt) {
+            if (typeof docDeletedAt === 'string') {
+              docDate = new Date(docDeletedAt);
+            } else if (docDeletedAt && typeof docDeletedAt === 'object' && 'toDate' in docDeletedAt) {
+              docDate = docDeletedAt.toDate();
+            } else if (docDeletedAt && typeof docDeletedAt === 'object' && 'seconds' in docDeletedAt) {
+              docDate = new Date((docDeletedAt as any).seconds * 1000);
+            }
+          }
+          
+          if (docDate && !isNaN(docDate.getTime()) && docDate < thirtyDaysAgo) {
+            await deleteDoc(docSnapshot.ref);
+            deletedCount++;
+          }
+        }
+        
+        if (deletedCount > 0) {
+          toast({ 
+            title: `${deletedCount} deleted log entry(ies) permanently removed`, 
+            description: "Delete logs older than 30 days have been permanently deleted."
+          });
+        }
+      } catch (error) {
+        console.error("Failed to auto-delete old log entries:", error);
+      }
+    };
+
+    checkAndAutoDeleteOldLogs();
+  }, [deleteLogs, deleteLogsLoading]);
 
   const resetForm = () => {
     setFormData(createEmptyQuoteForm());
@@ -722,7 +770,7 @@ export function QuoteManagement() {
     }
   };
 
-  const openEmailDialog = (quote: Quote, mode: "send" | "follow_up") => {
+  const openEmailDialog = (quote: Quote, mode: "send" | "follow_up" | "invoice") => {
     setEmailMode(mode);
     setActiveEmailQuote(quote);
     if (mode === "send") {
@@ -732,9 +780,16 @@ export function QuoteManagement() {
         setActiveTab("new");
       }
     }
+    if (mode !== "send") {
+      setEditingQuoteId(null);
+    }
+    const invoiceNumber = quote.convertedInvoiceNumber || `INV-${quote.reference}`;
     setEmailForm({
       to: quote.recipientEmail,
-      subject: quote.subject || `Prep Services FBA - Quotation ${quote.reference}`,
+      subject:
+        mode === "invoice"
+          ? `Prep Services FBA - Invoice ${invoiceNumber}`
+          : quote.subject || `Prep Services FBA - Quotation ${quote.reference}`,
       message: quote.message || "",
       attachments: [],
     });
@@ -985,6 +1040,47 @@ export function QuoteManagement() {
         attachmentsToSend = [autoAttachment, ...emailForm.attachments];
       }
 
+      if (emailMode === "invoice") {
+        const invoiceData = buildInvoiceDataFromQuote(activeEmailQuote);
+        const recipientCityStateZip = [
+          activeEmailQuote.recipientCity,
+          activeEmailQuote.recipientState,
+          activeEmailQuote.recipientZip
+        ].filter(Boolean).join(", ");
+        
+        const invoiceBlob = await generateQuoteInvoicePdfBlob({
+          invoiceNumber: invoiceData.invoiceNumber,
+          invoiceDate: typeof invoiceData.date === 'string' ? invoiceData.date : formatDateForDisplay(activeEmailQuote.quoteDate) || new Date().toISOString().slice(0, 10),
+          company: {
+            name: COMPANY_INFO.name,
+            email: COMPANY_INFO.email,
+            phone: COMPANY_INFO.phone,
+            addressLine: COMPANY_INFO.addressLines[0] || "",
+            cityStateZip: COMPANY_INFO.addressLines[1] || "",
+            country: "United States",
+          },
+          soldTo: {
+            name: activeEmailQuote.recipientName || "",
+            email: activeEmailQuote.recipientEmail || "",
+            phone: activeEmailQuote.recipientPhone || "",
+            addressLine: activeEmailQuote.recipientAddress || "",
+            cityStateZip: recipientCityStateZip,
+            country: activeEmailQuote.recipientCountry || "",
+          },
+          items: invoiceData.items,
+          subtotal: invoiceData.subtotal,
+          salesTax: invoiceData.salesTax,
+          shippingCost: invoiceData.shippingCost,
+          total: invoiceData.total,
+        });
+        const invoiceFile = new File(
+          [invoiceBlob],
+          `Invoice-${invoiceData.invoiceNumber}.pdf`,
+          { type: "application/pdf" }
+        );
+        attachmentsToSend = [invoiceFile, ...emailForm.attachments];
+      }
+
       // Get Firebase ID token for authentication
       const idToken = user ? await user.getIdToken() : "";
       if (!idToken) {
@@ -1092,25 +1188,37 @@ export function QuoteManagement() {
         sentBy: userProfile?.uid || "",
       };
 
-      const followUpCount = (activeEmailQuote.followUpCount ?? 0) + (emailMode === "follow_up" ? 1 : 0);
       const updatePayload: Partial<Quote> = {
-        status: "sent",
-        sentAt: activeEmailQuote.sentAt || new Date(),
-        followUpCount,
-        lastFollowUpAt:
-          emailMode === "follow_up"
-            ? new Date()
-            : activeEmailQuote.lastFollowUpAt ?? null,
         emailLog: [...(activeEmailQuote.emailLog || []), logEntry],
         updatedAt: serverTimestamp(),
       };
 
+      if (emailMode !== "invoice") {
+        const followUpCount = (activeEmailQuote.followUpCount ?? 0) + (emailMode === "follow_up" ? 1 : 0);
+        updatePayload.status = "sent";
+        updatePayload.sentAt = activeEmailQuote.sentAt || new Date();
+        updatePayload.followUpCount = followUpCount;
+        updatePayload.lastFollowUpAt =
+          emailMode === "follow_up"
+            ? new Date()
+            : activeEmailQuote.lastFollowUpAt ?? null;
+      }
+
       await updateDoc(doc(db, "quotes", activeEmailQuote.id), updatePayload);
-      toast({ title: emailMode === "send" ? "Quote sent." : "Follow-up sent." });
+      toast({
+        title:
+          emailMode === "invoice"
+            ? "Invoice sent."
+            : emailMode === "send"
+            ? "Quote sent."
+            : "Follow-up sent.",
+      });
       setEmailDialogOpen(false);
       setActiveEmailQuote(null);
-      resetForm();
-      setActiveTab("sent");
+      if (emailMode !== "invoice") {
+        resetForm();
+        setActiveTab("sent");
+      }
     } catch (error) {
       console.error("Failed to send email:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to send email. Please check your SMTP configuration.";
@@ -1738,6 +1846,18 @@ export function QuoteManagement() {
                   {quote.convertedInvoiceId ? "Converted" : "Convert to Invoice"}
                 </Button>
               )}
+
+              {options?.showConvert && quote.convertedInvoiceId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEmailDialog(quote, "invoice")}
+                  className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                >
+                  <Mail className="h-4 w-4 mr-1" />
+                  Send Invoice
+                </Button>
+              )}
               
               {options?.showActions && (
                 <>
@@ -1837,7 +1957,10 @@ export function QuoteManagement() {
       <div className="space-y-4">
         {/* First Row: Accepted and Rejected */}
         <div className="grid gap-4 md:grid-cols-2">
-          <Card className="relative overflow-hidden border-2 border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 hover:shadow-xl transition-all duration-300 group">
+          <Card 
+            className="relative overflow-hidden border-2 border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+            onClick={() => handleTabChange("accepted")}
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-200/40 to-emerald-200/40 rounded-full blur-2xl"></div>
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
@@ -1858,7 +1981,10 @@ export function QuoteManagement() {
             </CardContent>
           </Card>
           
-          <Card className="relative overflow-hidden border-2 border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 hover:shadow-xl transition-all duration-300 group">
+          <Card 
+            className="relative overflow-hidden border-2 border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+            onClick={() => handleTabChange("lost")}
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-red-200/40 to-rose-200/40 rounded-full blur-2xl"></div>
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
@@ -1882,7 +2008,10 @@ export function QuoteManagement() {
         
         {/* Second Row: Draft, Sent, and Follow Up */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card className="relative overflow-hidden border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 hover:shadow-xl transition-all duration-300 group">
+          <Card 
+            className="relative overflow-hidden border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+            onClick={() => handleTabChange("draft")}
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-200/40 to-cyan-200/40 rounded-full blur-2xl"></div>
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
@@ -1903,7 +2032,10 @@ export function QuoteManagement() {
             </CardContent>
           </Card>
           
-          <Card className="relative overflow-hidden border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 hover:shadow-xl transition-all duration-300 group">
+          <Card 
+            className="relative overflow-hidden border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+            onClick={() => handleTabChange("sent")}
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-200/40 to-pink-200/40 rounded-full blur-2xl"></div>
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
@@ -1924,7 +2056,10 @@ export function QuoteManagement() {
             </CardContent>
           </Card>
           
-          <Card className="relative overflow-hidden border-2 border-orange-200 dark:border-orange-800 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 hover:shadow-xl transition-all duration-300 group">
+          <Card 
+            className="relative overflow-hidden border-2 border-orange-200 dark:border-orange-800 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+            onClick={() => handleTabChange("follow_up")}
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-200/40 to-amber-200/40 rounded-full blur-2xl"></div>
             <CardHeader className="relative z-10">
               <div className="flex items-center justify-between">
@@ -3019,6 +3154,15 @@ export function QuoteManagement() {
                                       <Download className="h-4 w-4 mr-1" />
                                       Download
                                     </Button>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => openEmailDialog(quote, "invoice")}
+                                      className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                                    >
+                                      <Mail className="h-4 w-4 mr-1" />
+                                      Send Invoice
+                                    </Button>
                                   </>
                                 ) : (
                                   <>
@@ -3366,7 +3510,9 @@ export function QuoteManagement() {
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>{emailMode === "send" ? "Send Quote" : "Send Follow Up"}</DialogTitle>
+            <DialogTitle>
+              {emailMode === "invoice" ? "Send Invoice" : emailMode === "send" ? "Send Quote" : "Send Follow Up"}
+            </DialogTitle>
             <DialogDescription>
               Compose the email to send to the recipient.
             </DialogDescription>

@@ -83,7 +83,7 @@ export default function AdminDashboardPage() {
     if (!users || !adminUser?.uid) return 0;
     return users.filter((user) => 
       user.uid !== adminUser.uid && (user.status === "approved" || !user.status) && user.status !== "deleted"
-    ).length;
+  ).length;
   }, [users, adminUser]);
   
   const pendingUsersCount = useMemo(() => {
