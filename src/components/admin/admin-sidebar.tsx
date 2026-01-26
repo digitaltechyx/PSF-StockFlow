@@ -28,6 +28,7 @@ import {
   ArrowLeftRight,
   Bell,
   FolderOpen,
+  Receipt,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -223,6 +224,13 @@ export function AdminSidebar() {
       url: "/admin/dashboard/invoices",
       icon: FileText,
       color: "text-indigo-600",
+      requiredFeature: "manage_invoices" as const,
+    },
+    {
+      title: "Invoice Management",
+      url: "/admin/dashboard/invoice-management",
+      icon: Receipt,
+      color: "text-fuchsia-600",
       requiredFeature: "manage_invoices" as const,
     },
     {

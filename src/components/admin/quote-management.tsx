@@ -1209,10 +1209,10 @@ export function QuoteManagement() {
       toast({
         title:
           emailMode === "invoice"
-            ? "Invoice sent."
+            ? "Invoice send."
             : emailMode === "send"
-            ? "Quote sent."
-            : "Follow-up sent.",
+            ? "Quote send."
+            : "Follow-up send.",
       });
       setEmailDialogOpen(false);
       setActiveEmailQuote(null);
@@ -1689,7 +1689,7 @@ export function QuoteManagement() {
       "Status",
       "Quote Date",
       "Valid Until",
-      "Sent At",
+      "Send At",
       "Follow Ups",
       "Subtotal",
       "Sales Tax",
@@ -1864,7 +1864,7 @@ export function QuoteManagement() {
                     </span>
                     {!isDraft && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        • Sent {formatDate(quote.sentAt)}
+                        • Send {formatDate(quote.sentAt)}
                       </span>
                     )}
                   </div>
@@ -2093,7 +2093,7 @@ export function QuoteManagement() {
           </Card>
         </div>
         
-        {/* Second Row: Draft, Sent, and Follow Up */}
+        {/* Second Row: Draft, Send, and Follow Up */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card 
             className="relative overflow-hidden border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 hover:shadow-xl transition-all duration-300 group cursor-pointer"
@@ -2129,7 +2129,7 @@ export function QuoteManagement() {
                 <div>
                   <CardTitle className="text-purple-700 dark:text-purple-300 flex items-center gap-2">
                     <Send className="h-5 w-5" />
-                    Sent
+                    Send
                   </CardTitle>
                   <CardDescription className="text-purple-600/80 dark:text-purple-400/80">Awaiting response</CardDescription>
                 </div>
@@ -2193,7 +2193,7 @@ export function QuoteManagement() {
               className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
             >
               <Send className="h-4 w-4 mr-2" />
-              Sent
+              Send
             </TabsTrigger>
             <TabsTrigger 
               value="follow_up"
@@ -2805,9 +2805,9 @@ export function QuoteManagement() {
                 <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md">
                   <Send className="h-5 w-5 text-white" />
                 </div>
-                Sent Quotes
+                Send Quotes
               </CardTitle>
-              <CardDescription className="text-purple-600/80 dark:text-purple-400/80">All sent quotations with recipient details.</CardDescription>
+              <CardDescription className="text-purple-600/80 dark:text-purple-400/80">All send quotations with recipient details.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
@@ -2867,7 +2867,7 @@ export function QuoteManagement() {
                   )}
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">No sent quotes yet.</p>
+                <p className="text-sm text-muted-foreground">No send quotes yet.</p>
               )}
             </CardContent>
           </Card>
@@ -3528,7 +3528,7 @@ export function QuoteManagement() {
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="sent">Sent</SelectItem>
+                    <SelectItem value="sent">Send</SelectItem>
                     <SelectItem value="accepted">Accepted</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
                   </SelectContent>
@@ -3546,7 +3546,7 @@ export function QuoteManagement() {
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
                       <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="sent">Sent</SelectItem>
+                      <SelectItem value="sent">Send</SelectItem>
                       <SelectItem value="accepted">Accepted</SelectItem>
                       <SelectItem value="rejected">Rejected</SelectItem>
                     </SelectContent>
