@@ -69,6 +69,7 @@ import {
   X,
   Archive,
   BookOpen,
+  RotateCcw,
 } from "lucide-react";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "lost";
@@ -1518,6 +1519,92 @@ export function QuoteManagement() {
       setActiveTab(restoreState.activeTab);
       setFormData(restoreState.formData);
       setEditingQuoteId(restoreState.editingQuoteId);
+    }
+  };
+
+  const handleRestoreQuote = async (log: any) => {
+    if (!userProfile) {
+      toast({ variant: "destructive", title: "You must be logged in to restore quotes." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Convert log data to quote format
+      const quoteData: Omit<Quote, "id"> = {
+        reference: log.reference || "",
+        quoteDate: log.quoteDate || new Date().toISOString().slice(0, 10),
+        validUntil: log.validUntil || "",
+        recipientName: log.recipientName || "",
+        recipientEmail: log.recipientEmail || "",
+        recipientAddress: log.recipientAddress || "",
+        recipientCity: log.recipientCity || "",
+        recipientState: log.recipientState || "",
+        recipientZip: log.recipientZip || "",
+        recipientCountry: log.recipientCountry || "",
+        recipientPhone: log.recipientPhone || "",
+        subject: "",
+        message: "",
+        notes: "",
+        terms: log.terms || "",
+        items: log.items?.length ? log.items : [createEmptyItem()],
+        subtotal: log.subtotal || 0,
+        salesTax: log.salesTax || 0,
+        shippingCost: log.shippingCost || 0,
+        total: log.total || 0,
+        preparedBy: log.preparedBy || "",
+        approvedBy: log.approvedBy || "",
+        preparedDate: "",
+        approvedDate: "",
+        status: (log.status as QuoteStatus) || "draft",
+        sentAt: log.sentAt,
+        followUpCount: log.followUpCount ?? 0,
+        lastFollowUpAt: log.lastFollowUpAt,
+        emailLog: log.emailLog || [],
+        acceptedDetails: log.acceptedDetails,
+        lostDetails: log.lostDetails,
+        convertedInvoiceId: log.convertedInvoiceId,
+        convertedAt: log.convertedAt,
+        convertedInvoiceNumber: log.convertedInvoiceNumber,
+        createdAt: log.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Remove undefined values
+      const cleanQuoteData = Object.fromEntries(
+        Object.entries(quoteData).filter(([_, value]) => value !== undefined)
+      ) as any;
+
+      // Create the restored quote in Firestore
+      await addDoc(collection(db, "quotes"), cleanQuoteData);
+
+      toast({ 
+        title: "Quote restored successfully", 
+        description: `Quote ${log.reference || ""} has been restored to ${log.status || "draft"} status.`
+      });
+
+      // Navigate to the appropriate tab based on status
+      const restoredStatus = (log.status as QuoteStatus) || "draft";
+      if (restoredStatus === "draft") {
+        setActiveTab("draft");
+      } else if (restoredStatus === "sent") {
+        setActiveTab("sent");
+      } else if (restoredStatus === "accepted") {
+        setActiveTab("accepted");
+      } else if (restoredStatus === "lost") {
+        setActiveTab("lost");
+      } else {
+        setActiveTab("draft");
+      }
+    } catch (error) {
+      console.error("Failed to restore quote:", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Failed to restore quote.",
+        description: error instanceof Error ? error.message : "An error occurred while restoring the quote."
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -3314,7 +3401,7 @@ export function QuoteManagement() {
                             </p>
                           </div>
                           
-                          <div className="flex justify-end pt-2">
+                          <div className="flex justify-end gap-2 pt-2">
                             <Button 
                               variant="outline" 
                               size="sm" 
@@ -3323,6 +3410,25 @@ export function QuoteManagement() {
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               View Quote
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => handleRestoreQuote(log)}
+                              disabled={saving}
+                              className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm hover:shadow-md"
+                            >
+                              {saving ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                  Restoring...
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw className="h-4 w-4 mr-1" />
+                                  Restore
+                                </>
+                              )}
                             </Button>
                           </div>
                         </CardContent>
@@ -3366,46 +3472,33 @@ export function QuoteManagement() {
         </TabsContent>
 
         <TabsContent value="address_book" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Draft</CardTitle>
-                <CardDescription>Saved but not sent</CardDescription>
-              </CardHeader>
-              <CardContent className="text-3xl font-semibold">{statusCounts.draft}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Sent</CardTitle>
-                <CardDescription>Awaiting response</CardDescription>
-              </CardHeader>
-              <CardContent className="text-3xl font-semibold">{statusCounts.sent}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Accepted</CardTitle>
-                <CardDescription>Won quotations</CardDescription>
-              </CardHeader>
-              <CardContent className="text-3xl font-semibold">{statusCounts.accepted}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Rejected</CardTitle>
-                <CardDescription>Closed quotations</CardDescription>
-              </CardHeader>
-              <CardContent className="text-3xl font-semibold">{statusCounts.lost}</CardContent>
-            </Card>
-          </div>
-
           <Card className="border-2 border-amber-200 dark:border-amber-800 shadow-lg">
             <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b border-amber-200 dark:border-amber-800">
-              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-md">
-                  <BookOpen className="h-5 w-5 text-white" />
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-md">
+                      <BookOpen className="h-5 w-5 text-white" />
+                    </div>
+                    Address Book
+                  </CardTitle>
+                  <CardDescription className="text-amber-600/80 dark:text-amber-400/80">View all quotes with filters and search.</CardDescription>
                 </div>
-                Address Book
-              </CardTitle>
-              <CardDescription className="text-amber-600/80 dark:text-amber-400/80">View all quotes with filters and search.</CardDescription>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Badge variant="secondary" className="text-blue-600 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
+                    Draft: {statusCounts.draft}
+                  </Badge>
+                  <Badge variant="secondary" className="text-purple-600 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
+                    Sent: {statusCounts.sent}
+                  </Badge>
+                  <Badge variant="secondary" className="text-green-600 bg-green-100 dark:text-green-300 dark:bg-green-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
+                    Accepted: {statusCounts.accepted}
+                  </Badge>
+                  <Badge variant="secondary" className="text-red-600 bg-red-100 dark:text-red-300 dark:bg-red-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
+                    Rejected: {statusCounts.lost}
+                  </Badge>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
