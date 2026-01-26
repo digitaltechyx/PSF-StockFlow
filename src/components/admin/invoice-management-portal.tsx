@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import {
   addDoc,
@@ -217,6 +217,9 @@ const isOverdueInvoice = (invoice: ExternalInvoice) => {
 export function InvoiceManagementPortal() {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
+
+  const invoiceTemplateRef = useRef<HTMLDivElement | null>(null);
+  const [isPrintMode, setIsPrintMode] = useState(false);
 
   const toBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);
@@ -1238,134 +1241,292 @@ export function InvoiceManagementPortal() {
                 <div className="p-2 rounded-lg bg-gradient-to-br from-fuchsia-500 to-purple-600 shadow-md">
                   <FileText className="h-5 w-5 text-white" />
                 </div>
-                New Invoice
+                {editingInvoiceId ? "Edit Invoice" : "New Invoice"}
               </CardTitle>
               <CardDescription className="text-fuchsia-600/80 dark:text-fuchsia-400/80">
-                Create an invoice using the external invoice template. Due date defaults to 48 hours.
+                Fill out the invoice template and save or send it. Due date defaults to 48 hours.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-3 gap-4">
-                <div>
-                  <Label>Invoice Number</Label>
-                  <Input value={formData.invoiceNumber} disabled />
-                </div>
-                <div>
-                  <Label>Invoice Date</Label>
-                  <Input
-                    type="date"
-                    value={formData.invoiceDate}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, invoiceDate: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>Due Date (48 hours)</Label>
-                  <Input
-                    type="date"
-                    value={formData.dueDate}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, dueDate: event.target.value }))}
-                  />
-                </div>
-              </div>
+              <style jsx global>{`
+                .invoice-print-mode input,
+                .invoice-print-mode textarea {
+                  border-color: transparent !important;
+                  background: transparent !important;
+                  box-shadow: none !important;
+                  padding-left: 0 !important;
+                  padding-right: 0 !important;
+                }
 
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Client Name</Label>
-                  <Input
-                    value={formData.clientName}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientName: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>Client Email</Label>
-                  <Input
-                    value={formData.clientEmail}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientEmail: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>Client Phone</Label>
-                  <Input
-                    value={formData.clientPhone}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientPhone: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>Client Address</Label>
-                  <Input
-                    value={formData.clientAddress}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientAddress: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>City</Label>
-                  <Input
-                    value={formData.clientCity}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientCity: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>State</Label>
-                  <Input
-                    value={formData.clientState}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientState: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>ZIP</Label>
-                  <Input
-                    value={formData.clientZip}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientZip: event.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>Country</Label>
-                  <Input
-                    value={formData.clientCountry}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, clientCountry: event.target.value }))}
-                  />
-                </div>
-              </div>
+                .invoice-print-mode textarea {
+                  resize: none !important;
+                }
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Invoice Items</h3>
-                  <Button variant="outline" size="sm" onClick={addItem}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Item
-                  </Button>
+                .invoice-print-mode .invoice-remove-column,
+                .invoice-print-mode .invoice-actions {
+                  display: none !important;
+                }
+              `}</style>
+              <div
+                ref={invoiceTemplateRef}
+                className={cn(
+                  "bg-white border-2 border-amber-700/70 rounded-md p-6 shadow-sm max-w-[794px] mx-auto space-y-6",
+                  isPrintMode && "invoice-print-mode"
+                )}
+              >
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex justify-center sm:justify-start">
+                      <img
+                        src="/quote-logo.png"
+                        alt="Prep Services FBA"
+                        className="h-20 w-auto object-contain"
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground space-y-2 sm:text-right">
+                      <h2 className="text-center sm:text-right text-2xl font-bold tracking-wide text-amber-800">INVOICE</h2>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <span>Invoice #:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formData.invoiceNumber || "—"}</span>
+                          ) : (
+                            <Input
+                              value={formData.invoiceNumber}
+                              disabled
+                              className="h-8 w-44 text-center"
+                            />
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <span>Date:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formatDate(formData.invoiceDate) || "—"}</span>
+                          ) : (
+                            <Input
+                              type="date"
+                              value={formData.invoiceDate}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, invoiceDate: event.target.value }))
+                              }
+                              className="h-8 w-40 text-center"
+                            />
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <span>Due Date:</span>
+                          {isPrintMode ? (
+                            <span className="font-semibold text-amber-900">{formatDate(formData.dueDate) || "—"}</span>
+                          ) : (
+                            <Input
+                              type="date"
+                              value={formData.dueDate}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, dueDate: event.target.value }))
+                              }
+                              className="h-8 w-40 text-center"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
+                <div className="border-t border-amber-200/70 pt-4"></div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="border border-amber-200/70 rounded-md p-4 text-sm space-y-1">
+                    <p className="text-xs uppercase text-amber-700 font-semibold">Company Details</p>
+                    <p className="font-semibold">{COMPANY_INFO.name}</p>
+                    {COMPANY_INFO.addressLines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                    <p>Phone: {COMPANY_INFO.phone}</p>
+                    <p>Email: {COMPANY_INFO.email}</p>
+                  </div>
+                  <div className="border border-amber-200/70 rounded-md p-4 text-sm space-y-3">
+                    <p className="text-xs uppercase text-amber-700 font-semibold">Sold To</p>
+                    {isPrintMode ? (
+                      <div className="space-y-1">
+                        <p className="font-semibold">{formData.clientName || "—"}</p>
+                        {formData.clientAddress && <p>{formData.clientAddress}</p>}
+                        {(formData.clientCity || formData.clientState || formData.clientZip || formData.clientCountry) && (
+                          <p>
+                            {[formData.clientCity, formData.clientState, formData.clientZip, formData.clientCountry]
+                              .filter(Boolean)
+                              .join(", ")}
+                          </p>
+                        )}
+                        {formData.clientPhone && <p>Phone: {formData.clientPhone}</p>}
+                        {formData.clientEmail && <p>Email: {formData.clientEmail}</p>}
+                      </div>
+                    ) : (
+                      <div className="grid gap-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Client Name</Label>
+                          <Input
+                            value={formData.clientName}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, clientName: event.target.value }))
+                            }
+                            placeholder="Client name"
+                            className="h-9"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Address</Label>
+                          <Input
+                            value={formData.clientAddress}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, clientAddress: event.target.value }))
+                            }
+                            placeholder="Client address"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">City</Label>
+                            <Input
+                              value={formData.clientCity}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, clientCity: event.target.value }))
+                              }
+                              placeholder="City"
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">State</Label>
+                            <Input
+                              value={formData.clientState}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, clientState: event.target.value }))
+                              }
+                              placeholder="State"
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">ZIP</Label>
+                            <Input
+                              value={formData.clientZip}
+                              onChange={(event) =>
+                                setFormData((prev) => ({ ...prev, clientZip: event.target.value }))
+                              }
+                              placeholder="ZIP"
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Country</Label>
+                          <Input
+                            value={formData.clientCountry}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, clientCountry: event.target.value }))
+                            }
+                            placeholder="Country"
+                            className="h-9"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Phone</Label>
+                          <Input
+                            value={formData.clientPhone}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, clientPhone: event.target.value }))
+                            }
+                            placeholder="Phone"
+                            className="h-9"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Email</Label>
+                          <Input
+                            value={formData.clientEmail}
+                            onChange={(event) =>
+                              setFormData((prev) => ({ ...prev, clientEmail: event.target.value }))
+                            }
+                            placeholder="Email"
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <p className="font-semibold text-amber-800">
+                    NOTE: Please make all payments to Prep Services FBA LLC. All prices are F.O.B.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <span className="font-semibold">FOB POINT:</span> <span>NEW JERSEY</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold">TERMS:</span> <span>NET</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold">SHIPPED VIA:</span> <span>Standard</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-3">
-                  {formData.items.map((item) => (
-                    <div key={item.id} className="grid md:grid-cols-6 gap-3 items-end">
-                      <div className="md:col-span-2">
-                        <Label>Description</Label>
-                        <Input
-                          value={item.description}
-                          onChange={(event) => updateItem(item.id, "description", event.target.value)}
-                        />
+                  <div className="flex items-center justify-between border-b border-amber-200/70 pb-2">
+                    <h3 className="font-semibold text-amber-800">Item Description</h3>
+                    <div className="flex gap-8 text-sm font-semibold text-amber-800">
+                      <span>Qty</span>
+                      <span>Unit Price</span>
+                      <span>Amount</span>
+                    </div>
+                  </div>
+                  {formData.items.map((item, index) => (
+                    <div key={item.id} className="grid grid-cols-12 gap-2 items-center border-b border-amber-100/50 pb-2 invoice-actions">
+                      <div className="col-span-6">
+                        {isPrintMode ? (
+                          <p className="text-sm">{item.description || "—"}</p>
+                        ) : (
+                          <Input
+                            value={item.description}
+                            onChange={(event) => updateItem(item.id, "description", event.target.value)}
+                            placeholder="Item description"
+                            className="h-9 border-amber-200/70"
+                          />
+                        )}
                       </div>
-                      <div>
-                        <Label>Qty</Label>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
-                        />
+                      <div className="col-span-2">
+                        {isPrintMode ? (
+                          <p className="text-sm text-center">{item.quantity}</p>
+                        ) : (
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
+                            className="h-9 text-center border-amber-200/70"
+                          />
+                        )}
                       </div>
-                      <div>
-                        <Label>Unit Price</Label>
-                        <Input
-                          type="number"
-                          value={item.unitPrice}
-                          onChange={(event) => updateItem(item.id, "unitPrice", event.target.value)}
-                        />
+                      <div className="col-span-2">
+                        {isPrintMode ? (
+                          <p className="text-sm text-right">${item.unitPrice.toFixed(2)}</p>
+                        ) : (
+                          <Input
+                            type="number"
+                            value={item.unitPrice}
+                            onChange={(event) => updateItem(item.id, "unitPrice", event.target.value)}
+                            className="h-9 text-right border-amber-200/70"
+                            placeholder="0.00"
+                          />
+                        )}
                       </div>
-                      <div>
-                        <Label>Amount</Label>
-                        <Input type="number" value={item.amount} disabled />
+                      <div className="col-span-1">
+                        <p className="text-sm text-right font-semibold">${item.amount.toFixed(2)}</p>
                       </div>
-                      <div className="flex justify-end">
+                      <div className="col-span-1 flex justify-end invoice-remove-column">
                         <Button
                           variant="destructive"
                           size="sm"
@@ -1377,47 +1538,68 @@ export function InvoiceManagementPortal() {
                       </div>
                     </div>
                   ))}
+                  <div className="invoice-actions pt-2">
+                    <Button variant="outline" size="sm" onClick={addItem}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Item
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-right">
+                  <div className="flex justify-end gap-4">
+                    <span className="font-semibold text-amber-800">Subtotal:</span>
+                    <span className="w-32 text-right">${formData.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <span className="font-semibold text-amber-800">Sales Tax:</span>
+                    <span className="w-32 text-right">${formData.salesTax.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <span className="font-semibold text-amber-800">Shipping:</span>
+                    {isPrintMode ? (
+                      <span className="w-32 text-right">${formData.shippingCost.toFixed(2)}</span>
+                    ) : (
+                      <Input
+                        type="number"
+                        value={formData.shippingCost}
+                        onChange={(event) => {
+                          setFormData((prev) => {
+                            const nextShipping = toNumber(event.target.value);
+                            return {
+                              ...prev,
+                              shippingCost: nextShipping,
+                              ...recalculateTotals(prev.items, nextShipping, toNumber(prev.amountPaid)),
+                            };
+                          });
+                        }}
+                        className="h-9 w-32 text-right border-amber-200/70"
+                        placeholder="0.00"
+                      />
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-4 border-t border-amber-200/70 pt-2">
+                    <span className="font-bold text-lg text-amber-900">Total:</span>
+                    <span className="w-32 text-right font-bold text-lg text-amber-900">${formData.total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-amber-200/70 pt-4">
+                  <p className="text-xs uppercase text-amber-700 font-semibold mb-2">Terms & Conditions</p>
+                  {isPrintMode ? (
+                    <div className="text-xs text-amber-900 whitespace-pre-line">{formData.terms || "—"}</div>
+                  ) : (
+                    <Textarea
+                      rows={6}
+                      value={formData.terms}
+                      onChange={(event) => setFormData((prev) => ({ ...prev, terms: event.target.value }))}
+                      className="border-amber-200/70 text-xs"
+                    />
+                  )}
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-3 gap-4">
-                <div>
-                  <Label>Shipping Cost</Label>
-                  <Input
-                    type="number"
-                    value={formData.shippingCost}
-                    onChange={(event) =>
-                      setFormData((prev) => {
-                        const nextShipping = toNumber(event.target.value);
-                        return {
-                          ...prev,
-                          shippingCost: nextShipping,
-                          ...recalculateTotals(prev.items, nextShipping, toNumber(prev.amountPaid)),
-                        };
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label>Subtotal</Label>
-                  <Input type="number" value={formData.subtotal} disabled />
-                </div>
-                <div>
-                  <Label>Total</Label>
-                  <Input type="number" value={formData.total} disabled />
-                </div>
-              </div>
-
-              <div>
-                <Label>Terms & Conditions</Label>
-                <Textarea
-                  rows={6}
-                  value={formData.terms}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, terms: event.target.value }))}
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 justify-center">
                 <Button onClick={() => saveInvoice("draft")} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
                   Save as Draft
