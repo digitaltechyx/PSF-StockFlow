@@ -1627,126 +1627,173 @@ export function QuoteManagement() {
     const isDraft = quote.status === "draft";
     const isExpired = isQuoteExpired(quote.validUntil);
     
-    // For drafts, use 4 columns (hide follow-up count)
-    // For others, use 5 columns
-    const gridCols = isDraft 
-      ? "grid-cols-[1.2fr_1.4fr_0.8fr_1fr]"
-      : "grid-cols-[1.2fr_1.4fr_0.8fr_0.8fr_0.8fr]";
+    // Get status color scheme
+    const getStatusColor = () => {
+      if (isExpired) return "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10";
+      if (quote.status === "accepted") return "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10";
+      if (quote.status === "lost") return "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10";
+      if (quote.status === "sent") return "border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/10";
+      return "border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/10";
+    };
     
     return (
-      <div
+      <Card
         key={quote.id}
         className={cn(
-          "grid gap-3 items-center border-b px-4 py-4 text-sm rounded-lg transition-all hover:shadow-md hover:bg-gray-50/50 dark:hover:bg-gray-900/50",
-          gridCols,
-          followUpLimitReached && options?.showFollowUp ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 shadow-sm" : "border-border hover:border-gray-300 dark:hover:border-gray-700"
+          "group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-[1.01] border-2",
+          getStatusColor(),
+          followUpLimitReached && options?.showFollowUp && "ring-2 ring-red-300 dark:ring-red-700"
         )}
       >
-        <div>
-          <p className="font-medium">{quote.recipientName || "—"}</p>
-          <p className="text-xs text-muted-foreground break-all">{quote.recipientEmail || "—"}</p>
-        </div>
-        <div>
-          <p className="font-medium">{quote.reference}</p>
-          {!isDraft && (
-            <p className="text-xs text-muted-foreground">Sent: {formatDate(quote.sentAt)}</p>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <Badge variant="secondary" className="capitalize">
-            {getQuoteStatusLabel(quote, followUpCount)}
-          </Badge>
-          {isExpired && (
-            <Badge variant="destructive" className="text-xs">
-              Expired
-            </Badge>
-          )}
-        </div>
-        {!isDraft && (
-          <div className="text-xs">
-            {followUpCount}/{FOLLOW_UP_LIMIT} follow ups
+        {/* Decorative gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent dark:from-gray-900/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+        
+        <CardContent className="p-5 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            {/* Left Section - Client Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md group-hover:scale-110 transition-transform">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100 truncate">
+                    {quote.recipientName || "—"}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                    {quote.recipientEmail || "—"}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                      {quote.reference}
+                    </span>
+                    {!isDraft && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        • Sent {formatDate(quote.sentAt)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Middle Section - Status & Info */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge 
+                    variant={quote.status === "accepted" ? "default" : quote.status === "lost" ? "destructive" : "secondary"}
+                    className={cn(
+                      "capitalize font-medium",
+                      quote.status === "accepted" && "bg-gradient-to-r from-green-500 to-emerald-600 text-white",
+                      quote.status === "lost" && "bg-gradient-to-r from-red-500 to-rose-600 text-white"
+                    )}
+                  >
+                    {getQuoteStatusLabel(quote, followUpCount)}
+                  </Badge>
+                  {isExpired && (
+                    <Badge variant="destructive" className="text-xs animate-pulse">
+                      Expired
+                    </Badge>
+                  )}
+                </div>
+                {!isDraft && (
+                  <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                    <Mail className="h-3 w-3" />
+                    <span className={cn(
+                      "font-medium",
+                      followUpLimitReached && "text-red-600 dark:text-red-400 font-bold"
+                    )}>
+                      {followUpCount}/{FOLLOW_UP_LIMIT} follow ups
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Section - Actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleViewPdf(quote)}
+                className="hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md"
+              >
+                <Eye className="h-4 w-4 mr-1" />
+                View
+              </Button>
+              
+              {options?.showActions && (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleEditQuote(quote)}
+                    className="hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md"
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => openEmailDialog(quote, "send")}
+                    className="hover:bg-purple-500 hover:text-white hover:border-purple-500 dark:hover:bg-purple-600 transition-all shadow-sm hover:shadow-md"
+                  >
+                    <Send className="h-4 w-4 mr-1" />
+                    Send
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => handleDeleteQuote(quote)}
+                    className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                </>
+              )}
+              
+              {options?.showFollowUp && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={followUpLimitReached}
+                    onClick={() => openEmailDialog(quote, "follow_up")}
+                    className={cn(
+                      "hover:bg-orange-500 hover:text-white hover:border-orange-500 dark:hover:bg-orange-600 transition-all shadow-sm hover:shadow-md",
+                      followUpLimitReached && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <Mail className="h-4 w-4 mr-1" />
+                    Follow Up
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleDecision(quote, "accepted")}
+                    className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm hover:shadow-md"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Accepted
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleDecision(quote, "lost")}
+                    className="hover:bg-red-500 hover:text-white hover:border-red-500 dark:hover:bg-red-600 transition-all shadow-sm hover:shadow-md"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Reject
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => handleViewPdf(quote)}
-            className="hover:bg-blue-50 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 transition-all"
-          >
-            <Eye className="h-4 w-4 mr-1" />
-            View
-          </Button>
-          {options?.showActions && (
-            <>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => handleEditQuote(quote)}
-                className="hover:bg-blue-50 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 transition-all"
-              >
-                <Pencil className="h-4 w-4 mr-1" />
-                Edit
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => openEmailDialog(quote, "send")}
-                className="hover:bg-purple-50 dark:hover:bg-purple-950/30 border-purple-200 dark:border-purple-800 transition-all"
-              >
-                <Send className="h-4 w-4 mr-1" />
-                Send
-              </Button>
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                onClick={() => handleDeleteQuote(quote)}
-                className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-md hover:shadow-lg transition-all"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </>
-          )}
-          {options?.showFollowUp && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={followUpLimitReached}
-                onClick={() => openEmailDialog(quote, "follow_up")}
-                className="hover:bg-orange-50 dark:hover:bg-orange-950/30 border-orange-200 dark:border-orange-800 transition-all disabled:opacity-50"
-              >
-                <Mail className="h-4 w-4 mr-1" />
-                Follow Up
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => handleDecision(quote, "accepted")}
-                className="hover:bg-green-50 dark:hover:bg-green-950/30 border-green-200 dark:border-green-800 transition-all"
-              >
-                <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
-                Accepted
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => handleDecision(quote, "lost")}
-                className="hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-800 transition-all"
-              >
-                <XCircle className="h-4 w-4 mr-1 text-red-600" />
-                Reject
-              </Button>
-            </>
-          )}
-          {!options?.showActions && !options?.showFollowUp && (
-            <Badge variant="outline" className="capitalize">
-              {quote.status}
-            </Badge>
-          )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   };
 
@@ -2474,7 +2521,9 @@ export function QuoteManagement() {
                 </div>
               ) : filteredDraftQuotes.length ? (
                 <>
-                  {getPaginatedData(filteredDraftQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showActions: true }))}
+                  <div className="space-y-4">
+                    {getPaginatedData(filteredDraftQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showActions: true }))}
+                  </div>
                   {filteredDraftQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2547,7 +2596,9 @@ export function QuoteManagement() {
                 </div>
               ) : filteredSentQuotes.length ? (
                 <>
-                  {getPaginatedData(filteredSentQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  <div className="space-y-4">
+                    {getPaginatedData(filteredSentQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  </div>
                   {filteredSentQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2629,7 +2680,9 @@ export function QuoteManagement() {
                 });
                 return followUpFiltered.length ? (
                   <>
-                    {getPaginatedData(followUpFiltered, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))}
+                    <div className="space-y-4">
+                      {getPaginatedData(followUpFiltered, currentPage).paginatedData.map((quote) => renderQuoteRow(quote, { showFollowUp: true }))}
+                    </div>
                     {followUpFiltered.length > itemsPerPage && (
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                         <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2709,7 +2762,9 @@ export function QuoteManagement() {
                 </div>
               ) : filteredAcceptedQuotes.length ? (
                 <>
-                  {getPaginatedData(filteredAcceptedQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  <div className="space-y-4">
+                    {getPaginatedData(filteredAcceptedQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  </div>
                   {filteredAcceptedQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2788,7 +2843,9 @@ export function QuoteManagement() {
                 </div>
               ) : filteredLostQuotes.length ? (
                 <>
-                  {getPaginatedData(filteredLostQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  <div className="space-y-4">
+                    {getPaginatedData(filteredLostQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  </div>
                   {filteredLostQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2870,42 +2927,110 @@ export function QuoteManagement() {
                 </div>
               ) : filteredConvertibleQuotes.length ? (
                 <>
-                  {getPaginatedData(filteredConvertibleQuotes, currentPage).paginatedData.map((quote) => (
-                  <div key={quote.id} className="flex items-center justify-between border-b py-3 text-sm">
-                    <div>
-                      <p className="font-medium">{quote.reference}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {quote.recipientName} ({quote.recipientEmail})
-                      </p>
-                    </div>
-                    {quote.convertedInvoiceId ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleViewInvoicePdf(quote)}>
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDownloadInvoicePdf(quote)}>
-                          <Download className="h-4 w-4 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleViewPdf(quote)}>
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleConvertToInvoice(quote)}
+                  <div className="space-y-4">
+                    {getPaginatedData(filteredConvertibleQuotes, currentPage).paginatedData.map((quote) => {
+                      const isExpired = isQuoteExpired(quote.validUntil);
+                      return (
+                        <Card
+                          key={quote.id}
+                          className={cn(
+                            "group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-[1.01] border-2",
+                            quote.convertedInvoiceId 
+                              ? "border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/10"
+                              : isExpired
+                              ? "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10"
+                              : "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10"
+                          )}
                         >
-                          Convert to Invoice
-                        </Button>
-                      </div>
-                    )}
+                          <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent dark:from-gray-900/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                          <CardContent className="p-5 relative z-10">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start gap-3">
+                                  <div className={cn(
+                                    "p-2 rounded-lg shadow-md group-hover:scale-110 transition-transform",
+                                    quote.convertedInvoiceId
+                                      ? "bg-gradient-to-br from-indigo-500 to-purple-600"
+                                      : "bg-gradient-to-br from-green-500 to-emerald-600"
+                                  )}>
+                                    <FileText className="h-5 w-5 text-white" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100 truncate">
+                                      {quote.recipientName || "—"}
+                                    </h3>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                      {quote.recipientEmail || "—"}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                      <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                        {quote.reference}
+                                      </span>
+                                      {quote.convertedInvoiceId && (
+                                        <Badge className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+                                          Converted
+                                        </Badge>
+                                      )}
+                                      {isExpired && (
+                                        <Badge variant="destructive" className="text-xs animate-pulse">
+                                          Expired
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {quote.convertedInvoiceId ? (
+                                  <>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleViewInvoicePdf(quote)}
+                                      className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                                    >
+                                      <Eye className="h-4 w-4 mr-1" />
+                                      View Invoice
+                                    </Button>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleDownloadInvoicePdf(quote)}
+                                      className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                                    >
+                                      <Download className="h-4 w-4 mr-1" />
+                                      Download
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleViewPdf(quote)}
+                                      className="hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md"
+                                    >
+                                      <Eye className="h-4 w-4 mr-1" />
+                                      View Quote
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleConvertToInvoice(quote)}
+                                      className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm hover:shadow-md"
+                                    >
+                                      <FileText className="h-4 w-4 mr-1" />
+                                      Convert
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
-                  ))}
                   {filteredConvertibleQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
@@ -2965,61 +3090,81 @@ export function QuoteManagement() {
                 </div>
               ) : filteredDeleteLogs.length ? (
                 <>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {getPaginatedData(filteredDeleteLogs, currentPage).paginatedData.map((log) => (
-                      <div
+                      <Card
                         key={log.id}
-                        className="border rounded-lg p-4 space-y-3 bg-muted/30"
+                        className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-[1.01] border-2 border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/10"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <p className="font-semibold text-lg">{log.reference || "—"}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {log.recipientName || "—"} ({log.recipientEmail || "—"})
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent dark:from-gray-900/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                        <CardContent className="p-5 relative z-10 space-y-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-3 flex-1">
+                              <div className="p-2 rounded-lg bg-gradient-to-br from-gray-500 to-slate-600 shadow-md group-hover:scale-110 transition-transform">
+                                <Archive className="h-5 w-5 text-white" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                                  {log.reference || "—"}
+                                </h3>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                                  {log.recipientName || "—"} ({log.recipientEmail || "—"})
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <Badge variant="destructive" className="bg-gradient-to-r from-red-500 to-rose-600 text-white">
+                                Deleted
+                              </Badge>
+                              {log.autoDeleted && (
+                                <Badge variant="outline" className="text-xs">
+                                  Auto-deleted
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-100/50 dark:bg-gray-800/50">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">Deleted By:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{log.deletedByName || "Unknown"}</span>
+                            </div>
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-100/50 dark:bg-gray-800/50">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">Deleted At:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{formatDate(log.deletedAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-100/50 dark:bg-gray-800/50">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">Original Status:</span>
+                              <Badge variant="secondary" className="capitalize">
+                                {log.status || "—"}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-100/50 dark:bg-gray-800/50">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">Total Amount:</span>
+                              <span className="text-gray-600 dark:text-gray-400 font-semibold">${(log.total || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <p className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Deletion Reason:</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm">
+                              {log.reason || "No reason provided"}
                             </p>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <Badge variant="destructive">Deleted</Badge>
-                            {log.autoDeleted && (
-                              <Badge variant="outline" className="text-xs">
-                                Auto-deleted
-                              </Badge>
-                            )}
+                          
+                          <div className="flex justify-end pt-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => handleViewDeletedQuote(log)}
+                              className="hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md"
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Quote
+                            </Button>
                           </div>
-                        </div>
-                        <div className="grid gap-2 text-sm">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Deleted By:</span>
-                            <span>{log.deletedByName || "Unknown"}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Deleted At:</span>
-                            <span>{formatDate(log.deletedAt)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Original Status:</span>
-                            <Badge variant="secondary" className="capitalize">
-                              {log.status || "—"}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Total Amount:</span>
-                            <span>${(log.total || 0).toFixed(2)}</span>
-                          </div>
-                        </div>
-                        <div className="border-t pt-3">
-                          <p className="text-sm font-medium mb-1">Deletion Reason:</p>
-                          <p className="text-sm text-muted-foreground bg-background p-3 rounded-md border">
-                            {log.reason || "No reason provided"}
-                          </p>
-                        </div>
-                        <div className="flex justify-end pt-2">
-                          <Button variant="outline" size="sm" onClick={() => handleViewDeletedQuote(log)}>
-                            <Eye className="h-4 w-4 mr-1" />
-                            View Quote
-                          </Button>
-                        </div>
-                      </div>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                   {filteredDeleteLogs.length > itemsPerPage && (
@@ -3160,7 +3305,9 @@ export function QuoteManagement() {
                 </div>
               ) : addressBookQuotes.length ? (
                 <>
-                  {getPaginatedData(addressBookQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  <div className="space-y-4">
+                    {getPaginatedData(addressBookQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                  </div>
                   {addressBookQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
                       <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
