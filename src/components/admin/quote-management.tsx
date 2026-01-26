@@ -1621,7 +1621,7 @@ export function QuoteManagement() {
     return quote.status;
   };
 
-  const renderQuoteRow = (quote: Quote, options?: { showActions?: boolean; showFollowUp?: boolean }) => {
+  const renderQuoteRow = (quote: Quote, options?: { showActions?: boolean; showFollowUp?: boolean; showConvert?: boolean }) => {
     const followUpCount = quote.followUpCount ?? 0;
     const followUpLimitReached = followUpCount >= FOLLOW_UP_LIMIT;
     const isDraft = quote.status === "draft";
@@ -1722,6 +1722,22 @@ export function QuoteManagement() {
                 <Eye className="h-4 w-4 mr-1" />
                 View
               </Button>
+
+              {options?.showConvert && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleConvertToInvoice(quote)}
+                  disabled={Boolean(quote.convertedInvoiceId)}
+                  className={cn(
+                    "hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm hover:shadow-md",
+                    quote.convertedInvoiceId && "opacity-60 cursor-not-allowed"
+                  )}
+                >
+                  <FileText className="h-4 w-4 mr-1" />
+                  {quote.convertedInvoiceId ? "Converted" : "Convert to Invoice"}
+                </Button>
+              )}
               
               {options?.showActions && (
                 <>
@@ -2763,7 +2779,9 @@ export function QuoteManagement() {
               ) : filteredAcceptedQuotes.length ? (
                 <>
                   <div className="space-y-4">
-                    {getPaginatedData(filteredAcceptedQuotes, currentPage).paginatedData.map((quote) => renderQuoteRow(quote))}
+                    {getPaginatedData(filteredAcceptedQuotes, currentPage).paginatedData.map((quote) =>
+                      renderQuoteRow(quote, { showConvert: true })
+                    )}
                   </div>
                   {filteredAcceptedQuotes.length > itemsPerPage && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
