@@ -3485,11 +3485,14 @@ export function QuoteManagement() {
                   <CardDescription className="text-amber-600/80 dark:text-amber-400/80">View all quotes with filters and search.</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 items-center">
+                  <Badge variant="secondary" className="text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
+                    Total: {statusCounts.draft + statusCounts.sent + statusCounts.accepted + statusCounts.lost}
+                  </Badge>
                   <Badge variant="secondary" className="text-blue-600 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
                     Draft: {statusCounts.draft}
                   </Badge>
                   <Badge variant="secondary" className="text-purple-600 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
-                    Sent: {statusCounts.sent}
+                    Send: {statusCounts.sent}
                   </Badge>
                   <Badge variant="secondary" className="text-green-600 bg-green-100 dark:text-green-300 dark:bg-green-900/30 text-xs sm:text-base font-semibold px-3 py-1 sm:px-4 sm:py-2 rounded-full">
                     Accepted: {statusCounts.accepted}
