@@ -176,9 +176,9 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   y += 5;
   doc.text(`Shipping: $${data.shippingCost.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
   y += 6;
-  doc.text(`Total: $${data.total.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+  doc.text(`Grand Total: $${data.total.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
 
-  // Add Terms & Conditions if provided
+  // Add Terms & Conditions if provided (as bullet points)
   if (data.terms) {
     y += 10;
     if (y > 265) {
@@ -191,14 +191,21 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     y += 5;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
-    const termsLines = doc.splitTextToSize(data.terms, pageWidth - margin * 2);
-    termsLines.forEach((line: string) => {
-      if (y > 275) {
-        doc.addPage();
-        y = margin;
-      }
-      doc.text(line, margin, y);
-      y += 4;
+    const bullet = "• ";
+    const termWidth = pageWidth - margin * 2;
+    const rawLines = data.terms.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    rawLines.forEach((line: string) => {
+      const bulletLine = bullet + line.replace(/^\d+\.\s*/, ""); // strip leading "1. " etc. if present
+      const wrapped = doc.splitTextToSize(bulletLine, termWidth);
+      wrapped.forEach((textLine: string) => {
+        if (y > 275) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(textLine, margin, y);
+        y += 4;
+      });
+      y += 2; // extra space between bullets
     });
   }
 
