@@ -485,7 +485,8 @@ export function InvoiceManagementPortal() {
     shippingCost: invoice.shippingCost || 0,
     total: invoice.total,
     terms: invoice.terms,
-  });
+  };
+  };
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
     try {
