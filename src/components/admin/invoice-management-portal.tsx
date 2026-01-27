@@ -123,7 +123,7 @@ interface ExternalInvoice {
   updatedAt?: any;
 }
 
-const TAX_RATE = 0.0;
+const TAX_RATE = 0.06625;
 
 const COMPANY_INFO = {
   name: "Prep Services FBA",
@@ -287,22 +287,26 @@ export function InvoiceManagementPortal() {
   const recalculateTotals = (
     items: ExternalInvoiceItem[],
     shippingCostValue: number,
-    amountPaidValue: number
+    currentSalesTax?: number
   ) => {
     const updatedItems = items.map((item) => ({
       ...item,
       amount: Number(item.quantity || 0) * Number(item.unitPrice || 0),
     }));
     const subtotal = updatedItems.reduce((sum, item) => sum + item.amount, 0);
-    const salesTax = Number((subtotal * TAX_RATE).toFixed(2));
+    // Use current sales tax if provided, otherwise calculate from TAX_RATE
+    const salesTax = currentSalesTax !== undefined 
+      ? Number(currentSalesTax) 
+      : Number((subtotal * TAX_RATE).toFixed(2));
     const total = Number((subtotal + salesTax + shippingCostValue).toFixed(2));
-    const outstandingBalance = Math.max(0, Number((total - amountPaidValue).toFixed(2)));
+    const amountPaid = formData.amountPaid || 0;
+    const outstandingBalance = Math.max(0, Number((total - amountPaid).toFixed(2)));
     return {
       items: updatedItems,
       subtotal,
       salesTax,
       total,
-      amountPaid: amountPaidValue,
+      amountPaid,
       outstandingBalance,
     };
   };
@@ -414,7 +418,7 @@ export function InvoiceManagementPortal() {
       );
       return {
         ...prev,
-        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), toNumber(prev.amountPaid)),
+        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), prev.salesTax),
       };
     });
   };
@@ -424,7 +428,7 @@ export function InvoiceManagementPortal() {
       const nextItems = [...prev.items, createEmptyItem()];
       return {
         ...prev,
-        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), toNumber(prev.amountPaid)),
+        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), prev.salesTax),
       };
     });
   };
@@ -434,7 +438,7 @@ export function InvoiceManagementPortal() {
       const nextItems = prev.items.length > 1 ? prev.items.filter((item) => item.id !== id) : prev.items;
       return {
         ...prev,
-        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), toNumber(prev.amountPaid)),
+        ...recalculateTotals(nextItems, toNumber(prev.shippingCost), prev.salesTax),
       };
     });
   };
@@ -1546,41 +1550,54 @@ export function InvoiceManagementPortal() {
                   </div>
                 </div>
 
-                <div className="space-y-2 text-right">
-                  <div className="flex justify-end gap-4">
-                    <span className="font-semibold text-amber-800">Subtotal:</span>
-                    <span className="w-32 text-right">${formData.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <span className="font-semibold text-amber-800">Sales Tax:</span>
-                    <span className="w-32 text-right">${formData.salesTax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <span className="font-semibold text-amber-800">Shipping:</span>
-                    {isPrintMode ? (
-                      <span className="w-32 text-right">${formData.shippingCost.toFixed(2)}</span>
-                    ) : (
-                      <Input
-                        type="number"
-                        value={formData.shippingCost}
-                        onChange={(event) => {
-                          setFormData((prev) => {
-                            const nextShipping = toNumber(event.target.value);
-                            return {
-                              ...prev,
-                              shippingCost: nextShipping,
-                              ...recalculateTotals(prev.items, nextShipping, toNumber(prev.amountPaid)),
-                            };
-                          });
-                        }}
-                        className="h-9 w-32 text-right border-amber-200/70"
-                        placeholder="0.00"
-                      />
-                    )}
-                  </div>
-                  <div className="flex justify-end gap-4 border-t border-amber-200/70 pt-2">
-                    <span className="font-bold text-lg text-amber-900">Total:</span>
-                    <span className="w-32 text-right font-bold text-lg text-amber-900">${formData.total.toFixed(2)}</span>
+                <div className="flex justify-end">
+                  <div className="w-full max-w-xs space-y-2 text-sm">
+                    <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                      <span>Subtotal</span>
+                      <span className="font-semibold">${formData.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Sales Tax (6.625%)</span>
+                      {isPrintMode ? (
+                        <span className="font-semibold">${formData.salesTax.toFixed(2)}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.salesTax}
+                          onChange={(event) => {
+                            const salesTax = Number(event.target.value || 0);
+                            const totals = recalculateTotals(formData.items, formData.shippingCost, salesTax);
+                            setFormData((prev) => ({ ...prev, salesTax, ...totals }));
+                          }}
+                          className="h-8 w-28 text-right"
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Shipping Cost</span>
+                      {isPrintMode ? (
+                        <span className="font-semibold">${formData.shippingCost.toFixed(2)}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.shippingCost}
+                          onChange={(event) => {
+                            const shippingCost = Number(event.target.value || 0);
+                            const totals = recalculateTotals(formData.items, shippingCost, formData.salesTax);
+                            setFormData((prev) => ({ ...prev, shippingCost, ...totals }));
+                          }}
+                          className="h-8 w-28 text-right"
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between border-t border-amber-200 pt-2 text-amber-900 font-semibold">
+                      <span>Grand Total</span>
+                      <span className="font-semibold">${formData.total.toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
 
