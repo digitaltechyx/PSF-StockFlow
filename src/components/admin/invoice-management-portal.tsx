@@ -46,6 +46,7 @@ import {
   Mail,
   Plus,
   Receipt,
+  RotateCcw,
   Send,
   Trash2,
   X,
@@ -233,6 +234,19 @@ export function InvoiceManagementPortal() {
     []
   );
   const { data: invoices, loading } = useCollection<ExternalInvoice>("external_invoices", invoicesQuery);
+
+  const deleteLogsQuery = useMemo(
+    () => query(collection(db, "external_invoice_delete_logs"), orderBy("deletedAt", "desc")),
+    []
+  );
+  const { data: deleteLogs } = useCollection<{ id: string; restored?: boolean; [k: string]: any }>(
+    "external_invoice_delete_logs",
+    deleteLogsQuery
+  );
+  const nonRestoredDeleteLogs = useMemo(
+    () => (deleteLogs || []).filter((log) => !log.restored),
+    [deleteLogs]
+  );
 
   const [activeTab, setActiveTab] = useState("new");
   const [formData, setFormData] = useState(createEmptyInvoiceForm());
@@ -648,7 +662,17 @@ export function InvoiceManagementPortal() {
   };
 
   const handleEditInvoice = (invoice: ExternalInvoice) => {
-    setFormData({ ...invoice });
+    const normalizedItems = (invoice.items || []).map((it: ExternalInvoiceItem, i: number) => ({
+      id: it.id || crypto.randomUUID(),
+      description: String(it.description ?? ""),
+      quantity: Number(it.quantity ?? 0),
+      unitPrice: Number(it.unitPrice ?? 0),
+      amount: Number(it.amount ?? 0),
+    }));
+    setFormData({
+      ...invoice,
+      items: normalizedItems.length ? normalizedItems : [createEmptyItem()],
+    });
     setEditingInvoiceId(invoice.id);
     setActiveTab("new");
   };
@@ -663,13 +687,10 @@ export function InvoiceManagementPortal() {
     if (!deleteInvoice) return;
     setSaving(true);
     try {
+      const { id: _id, ...rest } = deleteInvoice;
       await addDoc(collection(db, "external_invoice_delete_logs"), {
+        ...rest,
         invoiceId: deleteInvoice.id,
-        invoiceNumber: deleteInvoice.invoiceNumber,
-        clientName: deleteInvoice.clientName,
-        clientEmail: deleteInvoice.clientEmail,
-        status: deleteInvoice.status,
-        total: deleteInvoice.total,
         deletedBy: userProfile?.uid || "",
         deletedByName: userProfile?.name || userProfile?.email || "Unknown",
         deletedAt: serverTimestamp(),
@@ -683,6 +704,59 @@ export function InvoiceManagementPortal() {
     } catch (error) {
       console.error("Failed to delete invoice:", error);
       toast({ variant: "destructive", title: "Failed to delete invoice." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestoreInvoice = async (log: { id: string; [k: string]: any }) => {
+    if (!userProfile) {
+      toast({ variant: "destructive", title: "You must be logged in to restore invoices." });
+      return;
+    }
+    setSaving(true);
+    try {
+      const {
+        id: _logId,
+        invoiceId: _invoiceId,
+        deletedBy,
+        deletedByName,
+        deletedAt,
+        reason,
+        restored: _r,
+        restoredAt: _ra,
+        restoredInvoiceId: _ri,
+        ...invoiceData
+      } = log;
+      const cleanInvoice = {
+        ...invoiceData,
+        status: (log.status as ExternalInvoiceStatus) || "draft",
+        items:
+          Array.isArray(log.items) && log.items.length
+            ? log.items.map((it: any) => ({ ...it, id: it.id || crypto.randomUUID() }))
+            : [createEmptyItem()],
+        payments: Array.isArray(log.payments) ? log.payments : [],
+        amountPaid: Number(log.amountPaid ?? 0),
+        outstandingBalance: Number(log.outstandingBalance ?? 0),
+      };
+      const docRef = await addDoc(collection(db, "external_invoices"), {
+        ...cleanInvoice,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, "external_invoice_delete_logs", log.id), {
+        restored: true,
+        restoredAt: serverTimestamp(),
+        restoredInvoiceId: docRef.id,
+      });
+      toast({
+        title: "Invoice restored",
+        description: `${log.invoiceNumber ?? "Invoice"} has been restored to ${log.status ?? "draft"} status.`,
+      });
+      setActiveTab(log.status === "draft" ? "draft" : "new");
+    } catch (error) {
+      console.error("Failed to restore invoice:", error);
+      toast({ variant: "destructive", title: "Failed to restore invoice." });
     } finally {
       setSaving(false);
     }
@@ -948,11 +1022,12 @@ export function InvoiceManagementPortal() {
 
   const renderInvoiceRow = (
     invoice: ExternalInvoice,
-    options?: { showActions?: boolean; allowDisputeActions?: boolean }
+    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean }
   ) => {
     const overdue = isOverdueInvoice(invoice);
     const lastPayment = invoice.payments?.length ? invoice.payments[invoice.payments.length - 1] : undefined;
     const paymentsDisabled = invoice.status === "cancelled";
+    const btnClass = "h-8 w-8 p-0 shrink-0";
     return (
       <Card
         key={invoice.id}
@@ -961,38 +1036,30 @@ export function InvoiceManagementPortal() {
           overdue ? "border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-950/10" : "border-gray-200 dark:border-gray-800"
         )}
       >
-        <CardContent className="p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md">
-                  <FileText className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
-                    {invoice.clientName || "—"}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                    {invoice.clientEmail || "—"}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                      {invoice.invoiceNumber}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      • Due {formatDate(invoice.dueDate)}
-                    </span>
-                    {invoice.sentAt && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        • Sent {formatDate(invoice.sentAt)}
-                      </span>
-                    )}
-                  </div>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md shrink-0">
+                <FileText className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100 truncate">
+                  {invoice.clientName || "—"}
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                  {invoice.clientEmail || "—"}
+                </p>
+                <div className="flex flex-wrap gap-x-2 gap-y-1 items-center text-xs text-gray-500 dark:text-gray-400">
+                  <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                    {invoice.invoiceNumber}
+                  </span>
+                  <span>Due {formatDate(invoice.dueDate)}</span>
+                  {invoice.sentAt && <span>Sent {formatDate(invoice.sentAt)}</span>}
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <Badge variant="secondary" className="capitalize">
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <Badge variant="secondary" className="capitalize text-xs">
                 {overdue ? "Overdue" : invoice.status.replace("_", " ")}
               </Badge>
               <Badge variant="outline" className="text-xs">
@@ -1013,110 +1080,114 @@ export function InvoiceManagementPortal() {
               )}
             </div>
             {options?.showActions && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {options?.allowDisputeActions && (
                   <>
                     <Button
                       variant="outline"
                       size="sm"
+                      className={`${btnClass} hover:bg-slate-500 hover:text-white`}
+                      title="Back to Sent"
                       onClick={() => resolveDisputeStatus(invoice, "sent")}
-                      className="hover:bg-slate-500 hover:text-white"
                     >
-                      <CircleArrowLeft className="h-4 w-4 mr-1" />
-                      Back to Sent
+                      <CircleArrowLeft className="h-4 w-4" />
                     </Button>
                     {overdue && (
                       <Button
                         variant="outline"
                         size="sm"
+                        className={`${btnClass} hover:bg-red-500 hover:text-white`}
+                        title="Back to Overdue"
                         onClick={() => resolveDisputeStatus(invoice, "sent")}
-                        className="hover:bg-red-500 hover:text-white"
                       >
-                        <Clock className="h-4 w-4 mr-1" />
-                        Back to Overdue
+                        <Clock className="h-4 w-4" />
                       </Button>
                     )}
+                  </>
+                )}
+                {!options?.hideSendAndDownload && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-purple-500 hover:text-white`}
+                      title="Send"
+                      onClick={() => openEmailDialog(invoice)}
+                    >
+                      <Mail className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-blue-500 hover:text-white`}
+                      title="Download"
+                      onClick={() => downloadInvoicePdf(invoice)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
                   </>
                 )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => openEmailDialog(invoice)}
-                  className="hover:bg-purple-500 hover:text-white"
-                >
-                  <Mail className="h-4 w-4 mr-1" />
-                  Send
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                  className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
+                  title="View"
                   onClick={() => viewInvoicePdf(invoice)}
-                  className="hover:bg-indigo-500 hover:text-white"
                 >
-                  <FileText className="h-4 w-4 mr-1" />
-                  View
+                  <FileText className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => downloadInvoicePdf(invoice)}
-                  className="hover:bg-blue-500 hover:text-white"
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  Download
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                  className={`${btnClass} hover:bg-amber-500 hover:text-white`}
+                  title="Partially Paid"
+                  disabled={paymentsDisabled}
                   onClick={() => {
                     setPartialInvoice(invoice);
                     setPartialAmount("");
                     setPartialDialogOpen(true);
                   }}
-                  disabled={paymentsDisabled}
-                  className="hover:bg-amber-500 hover:text-white"
                 >
-                  <BadgeDollarSign className="h-4 w-4 mr-1" />
-                  Partially Paid
+                  <BadgeDollarSign className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className={`${btnClass} hover:bg-green-500 hover:text-white`}
+                  title="Paid"
+                  disabled={paymentsDisabled}
                   onClick={() => {
                     setPaidInvoice(invoice);
                     setPaidDialogOpen(true);
                   }}
-                  disabled={paymentsDisabled}
-                  className="hover:bg-green-500 hover:text-white"
                 >
-                  <CheckCircle className="h-4 w-4 mr-1" />
-                  Paid
+                  <CheckCircle className="h-4 w-4" />
                 </Button>
                 {!options?.allowDisputeActions && (
                   <Button
                     variant="outline"
                     size="sm"
+                    className={`${btnClass} hover:bg-orange-500 hover:text-white`}
+                    title="Disputed"
                     onClick={() => {
                       setDisputeInvoice(invoice);
                       setDisputeDialogOpen(true);
                     }}
-                    className="hover:bg-orange-500 hover:text-white"
                   >
-                    <AlertTriangle className="h-4 w-4 mr-1" />
-                    Disputed
+                    <AlertTriangle className="h-4 w-4" />
                   </Button>
                 )}
                 <Button
                   variant="outline"
                   size="sm"
+                  className={`${btnClass} hover:bg-red-500 hover:text-white`}
+                  title="Cancel"
                   onClick={() => {
                     setCancelInvoice(invoice);
                     setCancelDialogOpen(true);
                   }}
-                  className="hover:bg-red-500 hover:text-white"
                 >
-                  <XCircle className="h-4 w-4 mr-1" />
-                  Cancel
+                  <XCircle className="h-4 w-4" />
                 </Button>
               </div>
             )}
@@ -1208,7 +1279,9 @@ export function InvoiceManagementPortal() {
               Cancelled / Void
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-gray-700 dark:text-gray-300">{statusCounts.cancelled}</CardContent>
+          <CardContent className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            {statusCounts.cancelled + nonRestoredDeleteLogs.length}
+          </CardContent>
         </Card>
       </div>
 
@@ -1518,11 +1591,13 @@ export function InvoiceManagementPortal() {
                       </div>
                       <div className="col-span-2">
                         {isPrintMode ? (
-                          <p className="text-sm text-center">{item.quantity}</p>
+                          <p className="text-sm text-center">{Number(item.quantity ?? 0)}</p>
                         ) : (
                           <Input
                             type="number"
-                            value={item.quantity}
+                            min={0}
+                            step={1}
+                            value={item.quantity != null ? String(item.quantity) : ""}
                             onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
                             className="h-9 text-center border-amber-200/70"
                           />
@@ -1530,11 +1605,13 @@ export function InvoiceManagementPortal() {
                       </div>
                       <div className="col-span-2">
                         {isPrintMode ? (
-                          <p className="text-sm text-right">${item.unitPrice.toFixed(2)}</p>
+                          <p className="text-sm text-right">${Number(item.unitPrice ?? 0).toFixed(2)}</p>
                         ) : (
                           <Input
                             type="number"
-                            value={item.unitPrice}
+                            min={0}
+                            step="0.01"
+                            value={item.unitPrice != null ? String(item.unitPrice) : ""}
                             onChange={(event) => updateItem(item.id, "unitPrice", event.target.value)}
                             className="h-9 text-right border-amber-200/70"
                             placeholder="0.00"
@@ -1542,7 +1619,7 @@ export function InvoiceManagementPortal() {
                         )}
                       </div>
                       <div className="col-span-1">
-                        <p className="text-sm text-right font-semibold">${item.amount.toFixed(2)}</p>
+                        <p className="text-sm text-right font-semibold">${Number(item.amount ?? 0).toFixed(2)}</p>
                       </div>
                       <div className="col-span-1 flex justify-end invoice-remove-column">
                         <Button
@@ -1701,7 +1778,7 @@ export function InvoiceManagementPortal() {
               <CardDescription>All sent invoices with outstanding balances.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {sentInvoices.length ? sentInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true })) : (
+              {sentInvoices.length ? sentInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true })) : (
                 <p className="text-sm text-muted-foreground">No sent invoices yet.</p>
               )}
             </CardContent>
@@ -1786,13 +1863,83 @@ export function InvoiceManagementPortal() {
           <Card>
             <CardHeader>
               <CardTitle>Cancelled / Void</CardTitle>
-              <CardDescription>Voided or cancelled invoices.</CardDescription>
+              <CardDescription>Voided or cancelled invoices, and deleted drafts (restore from here).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {cancelledInvoices.length ? (
-                cancelledInvoices.map((invoice) => renderInvoiceRow(invoice))
-              ) : (
-                <p className="text-sm text-muted-foreground">No cancelled invoices.</p>
+              {cancelledInvoices.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Voided / Cancelled</h4>
+                  {cancelledInvoices.map((invoice) => renderInvoiceRow(invoice))}
+                </div>
+              )}
+              {nonRestoredDeleteLogs.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Deleted (Drafts &amp; others)</h4>
+                  {nonRestoredDeleteLogs.map((log) => (
+                    <Card
+                      key={log.id}
+                      className="border-2 border-amber-200/70 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20"
+                    >
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 rounded-lg bg-amber-500/80 shadow-md">
+                                <FileText className="h-5 w-5 text-white" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                                  {log.clientName || "—"}
+                                </h3>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                                  {log.clientEmail || "—"}
+                                </p>
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                  <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                    {log.invoiceNumber || log.invoiceId || "—"}
+                                  </span>
+                                  <Badge variant="secondary" className="capitalize">
+                                    Deleted {log.status || "draft"}
+                                  </Badge>
+                                  {log.reason && (
+                                    <span className="text-xs text-muted-foreground">• {log.reason}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <Badge variant="outline" className="text-xs">
+                              Total ${Number(log.total ?? 0).toFixed(2)}
+                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestoreInvoice(log)}
+                              disabled={saving}
+                              className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm"
+                            >
+                              {saving ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                  Restoring...
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw className="h-4 w-4 mr-1" />
+                                  Restore
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+              {!cancelledInvoices.length && !nonRestoredDeleteLogs.length && (
+                <p className="text-sm text-muted-foreground">No cancelled or deleted invoices.</p>
               )}
             </CardContent>
           </Card>
