@@ -443,9 +443,21 @@ export function InvoiceManagementPortal() {
     });
   };
 
-  const buildInvoicePdfData = (invoice: ExternalInvoice) => ({
-    invoiceNumber: invoice.invoiceNumber,
-    invoiceDate: invoice.invoiceDate,
+  const buildInvoicePdfData = (invoice: ExternalInvoice) => {
+    const formatDateForPdf = (dateStr?: string) => {
+      if (!dateStr) return undefined;
+      try {
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return dateStr;
+        return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+      } catch {
+        return dateStr;
+      }
+    };
+    return {
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceDate: formatDateForPdf(invoice.invoiceDate) || invoice.invoiceDate,
+      dueDate: formatDateForPdf(invoice.dueDate),
     company: {
       name: COMPANY_INFO.name,
       email: COMPANY_INFO.email,
@@ -472,6 +484,7 @@ export function InvoiceManagementPortal() {
     salesTax: invoice.salesTax || 0,
     shippingCost: invoice.shippingCost || 0,
     total: invoice.total,
+    terms: invoice.terms,
   });
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
@@ -1569,7 +1582,7 @@ export function InvoiceManagementPortal() {
                           onChange={(event) => {
                             const salesTax = Number(event.target.value || 0);
                             const totals = recalculateTotals(formData.items, formData.shippingCost, salesTax);
-                            setFormData((prev) => ({ ...prev, salesTax, ...totals }));
+                            setFormData((prev) => ({ ...prev, ...totals }));
                           }}
                           className="h-8 w-28 text-right"
                         />
