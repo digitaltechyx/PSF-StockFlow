@@ -47,6 +47,7 @@ import {
   Plus,
   Receipt,
   RotateCcw,
+  Search,
   Send,
   Trash2,
   X,
@@ -253,6 +254,8 @@ export function InvoiceManagementPortal() {
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailForm, setEmailForm] = useState({
@@ -367,14 +370,23 @@ export function InvoiceManagementPortal() {
   }, [invoices]);
 
   const filteredInvoices = useMemo(() => {
+    let list = invoices;
     const queryText = searchQuery.trim().toLowerCase();
-    if (!queryText) return invoices;
-    return invoices.filter((invoice) =>
-      [invoice.invoiceNumber, invoice.clientName, invoice.clientEmail]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(queryText))
-    );
-  }, [invoices, searchQuery]);
+    if (queryText) {
+      list = list.filter((invoice) =>
+        [invoice.invoiceNumber, invoice.clientName, invoice.clientEmail]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(queryText))
+      );
+    }
+    if (dateFrom) {
+      list = list.filter((inv) => (inv.invoiceDate || "") >= dateFrom);
+    }
+    if (dateTo) {
+      list = list.filter((inv) => (inv.invoiceDate || "") <= dateTo);
+    }
+    return list;
+  }, [invoices, searchQuery, dateFrom, dateTo]);
 
   const draftInvoices = filteredInvoices.filter((invoice) => invoice.status === "draft");
   const sentInvoices = filteredInvoices.filter(
@@ -388,12 +400,36 @@ export function InvoiceManagementPortal() {
   const disputedInvoices = filteredInvoices.filter((invoice) => invoice.status === "disputed");
   const cancelledInvoices = filteredInvoices.filter((invoice) => invoice.status === "cancelled");
 
+  const filteredDeleteLogs = useMemo(() => {
+    let list = nonRestoredDeleteLogs;
+    const queryText = searchQuery.trim().toLowerCase();
+    if (queryText) {
+      list = list.filter(
+        (log) =>
+          [log.invoiceNumber, log.clientName, log.clientEmail]
+            .filter(Boolean)
+            .some((v) => String(v).toLowerCase().includes(queryText))
+      );
+    }
+    if (dateFrom || dateTo) {
+      list = list.filter((log) => {
+        const d = log.deletedAt;
+        const dateStr =
+          d?.toDate?.()?.toISOString?.().slice(0, 10) ?? (typeof d === "string" ? d.slice(0, 10) : "");
+        if (dateFrom && dateStr < dateFrom) return false;
+        if (dateTo && dateStr > dateTo) return false;
+        return true;
+      });
+    }
+    return list;
+  }, [nonRestoredDeleteLogs, searchQuery, dateFrom, dateTo]);
+
   const cancelledCombined = useMemo(
     () => [
       ...cancelledInvoices.map((inv) => ({ type: "cancelled" as const, item: inv })),
-      ...nonRestoredDeleteLogs.map((log) => ({ type: "deleted" as const, item: log })),
+      ...filteredDeleteLogs.map((log) => ({ type: "deleted" as const, item: log })),
     ],
-    [cancelledInvoices, nonRestoredDeleteLogs]
+    [cancelledInvoices, filteredDeleteLogs]
   );
 
   const paymentHistory = useMemo(() => {
@@ -410,6 +446,24 @@ export function InvoiceManagementPortal() {
     });
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [invoices]);
+
+  const filteredPaymentHistory = useMemo(() => {
+    let list = paymentHistory;
+    const queryText = searchQuery.trim().toLowerCase();
+    if (queryText) {
+      list = list.filter(
+        (p) =>
+          [p.invoiceNumber, p.clientName].filter(Boolean).some((v) => String(v).toLowerCase().includes(queryText))
+      );
+    }
+    if (dateFrom) {
+      list = list.filter((p) => (p.date || "").slice(0, 10) >= dateFrom);
+    }
+    if (dateTo) {
+      list = list.filter((p) => (p.date || "").slice(0, 10) <= dateTo);
+    }
+    return list;
+  }, [paymentHistory, searchQuery, dateFrom, dateTo]);
 
   const getPaginatedData = <T,>(data: T[], page: number) => {
     const totalPages = Math.max(1, Math.ceil(data.length / itemsPerPage));
@@ -1264,6 +1318,47 @@ export function InvoiceManagementPortal() {
     );
   };
 
+  const searchAndDateFilterBar = (
+    <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border bg-muted/30">
+      <div className="relative flex-1 min-w-[200px]">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          placeholder="Search by name, email, invoice #"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setCurrentPage(1);
+            setPaymentHistoryPage(1);
+          }}
+          className="pl-9"
+        />
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => {
+            setDateFrom(e.target.value);
+            setCurrentPage(1);
+            setPaymentHistoryPage(1);
+          }}
+          className="w-[140px]"
+        />
+        <span className="text-muted-foreground text-sm">to</span>
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(e) => {
+            setDateTo(e.target.value);
+            setCurrentPage(1);
+            setPaymentHistoryPage(1);
+          }}
+          className="w-[140px]"
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-fuchsia-50 via-purple-50 to-fuchsia-100 dark:from-fuchsia-950/20 dark:via-purple-950/20 dark:to-fuchsia-900/20 border border-fuchsia-200/50 dark:border-fuchsia-800/50 p-6 shadow-lg">
@@ -2004,7 +2099,40 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {paidInvoices.length ? (
-                paidInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true, showDisputeOnly: true }))
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(paidInvoices, currentPage).paginatedData.map((invoice) =>
+                      renderInvoiceRow(invoice, { showActions: true, showDisputeOnly: true })
+                    )}
+                  </div>
+                  {paidInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(paidInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(paidInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(paidInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No paid invoices.</p>
               )}
@@ -2062,6 +2190,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="disputed" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Disputed Invoices</CardTitle>
@@ -2111,6 +2240,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="cancelled" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Cancelled / Void</CardTitle>
@@ -2228,10 +2358,10 @@ export function InvoiceManagementPortal() {
               <CardDescription>All payments logged against invoices.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {paymentHistory.length ? (
+              {filteredPaymentHistory.length ? (
                 <>
                   <div className="space-y-3">
-                    {getPaginatedData(paymentHistory, paymentHistoryPage).paginatedData.map((payment) => (
+                    {getPaginatedData(filteredPaymentHistory, paymentHistoryPage).paginatedData.map((payment) => (
                       <Card key={payment.id} className="border-2 border-gray-200 dark:border-gray-800">
                         <CardContent className="p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
                           <div>
@@ -2254,7 +2384,7 @@ export function InvoiceManagementPortal() {
                       </Card>
                     ))}
                   </div>
-                  {paymentHistory.length > itemsPerPage && (
+                  {filteredPaymentHistory.length > itemsPerPage && (
                     <div className="flex items-center justify-between pt-3 border-t">
                       <Button
                         variant="outline"
@@ -2265,17 +2395,17 @@ export function InvoiceManagementPortal() {
                         Previous
                       </Button>
                       <span className="text-xs text-muted-foreground">
-                        {paymentHistoryPage} / {getPaginatedData(paymentHistory, paymentHistoryPage).totalPages}
+                        {paymentHistoryPage} / {getPaginatedData(filteredPaymentHistory, paymentHistoryPage).totalPages}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() =>
                           setPaymentHistoryPage((p) =>
-                            Math.min(getPaginatedData(paymentHistory, paymentHistoryPage).totalPages, p + 1)
+                            Math.min(getPaginatedData(filteredPaymentHistory, paymentHistoryPage).totalPages, p + 1)
                           )
                         }
-                        disabled={paymentHistoryPage >= getPaginatedData(paymentHistory, paymentHistoryPage).totalPages}
+                        disabled={paymentHistoryPage >= getPaginatedData(filteredPaymentHistory, paymentHistoryPage).totalPages}
                       >
                         Next
                       </Button>
