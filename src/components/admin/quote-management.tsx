@@ -309,6 +309,7 @@ export function QuoteManagement() {
     subject: "",
     message: "",
     attachments: [] as File[],
+    invoiceDueDate: "" as string,
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteQuote, setDeleteQuote] = useState<Quote | null>(null);
@@ -787,6 +788,16 @@ export function QuoteManagement() {
       setEditingQuoteId(null);
     }
     const invoiceNumber = quote.convertedInvoiceNumber || `INV-${quote.reference}`;
+    const defaultDueDate =
+      mode === "invoice"
+        ? /^\d{4}-\d{2}-\d{2}$/.test(quote.validUntil || "")
+          ? quote.validUntil!
+          : (() => {
+              const d = new Date();
+              d.setDate(d.getDate() + 2);
+              return d.toISOString().slice(0, 10);
+            })()
+        : "";
     setEmailForm({
       to: quote.recipientEmail,
       subject:
@@ -795,6 +806,7 @@ export function QuoteManagement() {
           : quote.subject || `Prep Services FBA - Quotation ${quote.reference}`,
       message: quote.message || "",
       attachments: [],
+      invoiceDueDate: defaultDueDate,
     });
     setEmailDialogOpen(true);
   };
@@ -1214,13 +1226,15 @@ export function QuoteManagement() {
             ? (activeEmailQuote.quoteDate as string)
             : new Date().toISOString().slice(0, 10);
         const dueDate =
-          /^\d{4}-\d{2}-\d{2}$/.test(activeEmailQuote.validUntil || "")
-            ? (activeEmailQuote.validUntil as string)
-            : (() => {
-                const d = new Date();
-                d.setDate(d.getDate() + 2);
-                return d.toISOString().slice(0, 10);
-              })();
+          emailForm.invoiceDueDate?.trim() && /^\d{4}-\d{2}-\d{2}$/.test(emailForm.invoiceDueDate.trim())
+            ? emailForm.invoiceDueDate.trim()
+            : /^\d{4}-\d{2}-\d{2}$/.test(activeEmailQuote.validUntil || "")
+              ? (activeEmailQuote.validUntil as string)
+              : (() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 2);
+                  return d.toISOString().slice(0, 10);
+                })();
         const externalInvoicePayload = {
           status: "sent",
           invoiceNumber: inv.invoiceNumber,
@@ -1262,6 +1276,7 @@ export function QuoteManagement() {
         if (existing.docs.length > 0) {
           await updateDoc(doc(db, "external_invoices", existing.docs[0].id), {
             status: "sent",
+            dueDate,
             sentAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -3698,6 +3713,22 @@ export function QuoteManagement() {
                 onChange={(event) => setEmailForm((prev) => ({ ...prev, subject: event.target.value }))}
               />
             </div>
+            {emailMode === "invoice" && (
+              <div className="space-y-2">
+                <Label htmlFor="invoiceDueDate">Invoice due date</Label>
+                <Input
+                  id="invoiceDueDate"
+                  type="date"
+                  value={emailForm.invoiceDueDate ?? ""}
+                  onChange={(event) =>
+                    setEmailForm((prev) => ({ ...prev, invoiceDueDate: event.target.value }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  This due date will be used for the invoice in Invoice Management.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="emailMessage">Message</Label>
               <Textarea
