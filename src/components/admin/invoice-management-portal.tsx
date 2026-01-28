@@ -1080,7 +1080,7 @@ export function InvoiceManagementPortal() {
               )}
             </div>
             {options?.showActions && (
-              <div className="flex flex-wrap gap-1.5 justify-end">
+              <div className="flex flex-wrap gap-1.5 justify-end items-center">
                 {options?.allowDisputeActions && (
                   <>
                     <Button
