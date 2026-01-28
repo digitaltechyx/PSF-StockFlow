@@ -159,7 +159,7 @@ Thank you for your cooperation.
 Kind regards,
 Prep Services FBA Team`;
 
-const REMINDER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const REMINDER_AGE_MS = 1 * 60 * 1000; // 24 hours
 
 function getSentAtDate(sentAt) {
   if (!sentAt) return null;
