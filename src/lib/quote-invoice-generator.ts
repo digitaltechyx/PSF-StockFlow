@@ -27,6 +27,7 @@ interface QuoteInvoiceData {
   salesTax: number;
   shippingCost: number;
   discount?: number;
+  lateFee?: number;
   total: number;
   terms?: string;
 }
@@ -181,7 +182,15 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     doc.text(`Discount: -$${data.discount.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
     y += 5;
   }
-  y += data.discount != null && data.discount > 0 ? 1 : 6;
+  if (data.lateFee != null && data.lateFee > 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(220, 38, 38); // Red color for late fee
+    doc.text(`Late Fee: $${data.lateFee.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+    doc.setTextColor(0, 0, 0); // Reset to black
+    y += 5;
+  }
+  y += data.discount != null && data.discount > 0 ? 1 : data.lateFee != null && data.lateFee > 0 ? 1 : 6;
+  doc.setFont("helvetica", "bold");
   doc.text(`Grand Total: $${data.total.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
 
   // Add Terms & Conditions if provided (as bullet points)

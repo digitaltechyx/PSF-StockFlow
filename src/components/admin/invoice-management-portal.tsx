@@ -125,6 +125,7 @@ interface ExternalInvoice {
   cancelled?: ExternalInvoiceCancel;
   discountType?: "percentage" | "amount";
   discountValue?: number;
+  lateFee?: number;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -233,6 +234,12 @@ const getEffectiveTotal = (invoice: ExternalInvoice): number => {
   const total = Number(invoice.total ?? 0);
   const discount = getDiscountAmount(invoice);
   return Number((total - discount).toFixed(2));
+};
+
+const getGrandTotalWithLateFee = (invoice: ExternalInvoice): number => {
+  const effectiveTotal = getEffectiveTotal(invoice);
+  const lateFee = Number(invoice.lateFee ?? 0);
+  return Number((effectiveTotal + lateFee).toFixed(2));
 };
 
 export function InvoiceManagementPortal() {
@@ -429,6 +436,32 @@ export function InvoiceManagementPortal() {
   const disputedInvoices = filteredInvoices.filter((invoice) => invoice.status === "disputed");
   const cancelledInvoices = filteredInvoices.filter((invoice) => invoice.status === "cancelled");
 
+  // Automatically apply late fee when invoice becomes overdue
+  useEffect(() => {
+    if (!invoices.length || loading) return;
+    
+    const applyLateFeeToOverdue = async () => {
+      const overdueWithoutLateFee = invoices.filter(
+        (invoice) => isOverdueInvoice(invoice) && (!invoice.lateFee || invoice.lateFee === 0)
+      );
+
+      if (overdueWithoutLateFee.length === 0) return;
+
+      for (const invoice of overdueWithoutLateFee) {
+        try {
+          await updateDoc(doc(db, "external_invoices", invoice.id), {
+            lateFee: 19,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (error) {
+          console.error(`Failed to apply late fee to invoice ${invoice.invoiceNumber}:`, error);
+        }
+      }
+    };
+
+    applyLateFeeToOverdue();
+  }, [invoices, loading]);
+
   const filteredDeleteLogs = useMemo(() => {
     let list = nonRestoredDeleteLogs;
     const queryText = searchQuery.trim().toLowerCase();
@@ -600,7 +633,8 @@ export function InvoiceManagementPortal() {
     salesTax: invoice.salesTax || 0,
     shippingCost: invoice.shippingCost || 0,
     discount: getDiscountAmount(invoice),
-    total: getEffectiveTotal(invoice),
+    lateFee: invoice.lateFee || 0,
+    total: getGrandTotalWithLateFee(invoice),
     terms: invoice.terms,
   };
   };
@@ -968,7 +1002,7 @@ export function InvoiceManagementPortal() {
     setSaving(true);
     try {
       const currentPaid = Number(partialInvoice.amountPaid ?? 0);
-      const invoiceTotal = getEffectiveTotal(partialInvoice);
+      const invoiceTotal = getGrandTotalWithLateFee(partialInvoice);
       const updatedPaid = Number((currentPaid + amount).toFixed(2));
       const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
       const existingPayments = Array.isArray(partialInvoice.payments) ? partialInvoice.payments : [];
@@ -1022,7 +1056,7 @@ export function InvoiceManagementPortal() {
     setSaving(true);
     try {
       const currentPaid = Number(paidInvoice.amountPaid ?? 0);
-      const invoiceTotal = getEffectiveTotal(paidInvoice);
+      const invoiceTotal = getGrandTotalWithLateFee(paidInvoice);
       const updatedPaid = Number((currentPaid + amount).toFixed(2));
       const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
       const existingPayments = Array.isArray(paidInvoice.payments) ? paidInvoice.payments : [];
@@ -1189,8 +1223,10 @@ export function InvoiceManagementPortal() {
           ? Number((total * (num / 100)).toFixed(2))
           : Math.min(num, total);
       const effectiveTotal = Number((total - discountAmount).toFixed(2));
+      const lateFee = Number(discountInvoice.lateFee ?? 0);
+      const grandTotalWithLateFee = Number((effectiveTotal + lateFee).toFixed(2));
       const amountPaid = Number(discountInvoice.amountPaid ?? 0);
-      const outstanding = Math.max(0, Number((effectiveTotal - amountPaid).toFixed(2)));
+      const outstanding = Math.max(0, Number((grandTotalWithLateFee - amountPaid).toFixed(2)));
 
       await updateDoc(doc(db, "external_invoices", discountInvoice.id), {
         discountType,
@@ -1263,13 +1299,18 @@ export function InvoiceManagementPortal() {
                     Discount -${getDiscountAmount(invoice).toFixed(2)}
                   </Badge>
                 )}
+                {invoice.lateFee && invoice.lateFee > 0 && (
+                  <Badge variant="outline" className="text-xs text-red-600 dark:text-red-400">
+                    Late Fee ${invoice.lateFee.toFixed(2)}
+                  </Badge>
+                )}
                 {invoice.status === "partially_paid" && (
                   <Badge variant="outline" className="text-xs">
                     Paid ${invoice.amountPaid.toFixed(2)}
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">
-                  Outstanding ${invoice.outstandingBalance.toFixed(2)}
+                  Outstanding ${(Number(invoice.outstandingBalance ?? 0) + Number(invoice.lateFee ?? 0)).toFixed(2)}
                 </Badge>
                 {invoice.status === "partially_paid" && lastPayment?.date && (
                   <Badge variant="outline" className="text-xs">
@@ -2034,9 +2075,21 @@ export function InvoiceManagementPortal() {
                         />
                       )}
                     </div>
+                    {editingInvoiceId && invoices.find((inv) => inv.id === editingInvoiceId)?.lateFee ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-red-600 dark:text-red-400">Late Fee</span>
+                        <span className="font-semibold text-red-600 dark:text-red-400">
+                          ${Number(invoices.find((inv) => inv.id === editingInvoiceId)?.lateFee ?? 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="flex items-center justify-between border-t border-amber-200 pt-2 text-amber-900 font-semibold">
                       <span>Grand Total</span>
-                      <span className="font-semibold">${formData.total.toFixed(2)}</span>
+                      <span className="font-semibold">
+                        {editingInvoiceId && invoices.find((inv) => inv.id === editingInvoiceId)?.lateFee
+                          ? `$${getGrandTotalWithLateFee(invoices.find((inv) => inv.id === editingInvoiceId)!).toFixed(2)}`
+                          : `$${formData.total.toFixed(2)}`}
+                      </span>
                     </div>
                   </div>
                 </div>
