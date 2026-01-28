@@ -646,7 +646,7 @@ If you have any questions or believe this was applied in error, feel free to rea
 
 Thank you for your understanding.
 
-Kind regards,
+Best regards,
 Prep Services FBA Team`;
 
       let response: Response;
