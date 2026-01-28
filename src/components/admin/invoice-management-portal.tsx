@@ -1319,16 +1319,13 @@ Prep Services FBA Team`;
     }
     setSaving(true);
     try {
-      // Calculate discount on invoice total (before late fee)
-      const invoiceTotal = Number(discountInvoice.total ?? 0);
+      // Calculate discount on grand total (invoice + late fee)
+      const grandTotal = getGrandTotalWithLateFee(discountInvoice);
       const discountAmount =
         discountType === "percentage"
-          ? Number((invoiceTotal * (num / 100)).toFixed(2))
-          : Math.min(num, invoiceTotal);
-      const effectiveTotal = Number((invoiceTotal - discountAmount).toFixed(2));
-      // Add late fee to get final grand total
-      const lateFee = Number(discountInvoice.lateFee ?? 0);
-      const newGrandTotal = Number((effectiveTotal + lateFee).toFixed(2));
+          ? Number((grandTotal * (num / 100)).toFixed(2))
+          : Math.min(num, grandTotal);
+      const newGrandTotal = Number((grandTotal - discountAmount).toFixed(2));
       const amountPaid = Number(discountInvoice.amountPaid ?? 0);
       const outstanding = Math.max(0, Number((newGrandTotal - amountPaid).toFixed(2)));
 
@@ -3067,14 +3064,12 @@ Prep Services FBA Team`;
                 <p className="text-sm text-muted-foreground">
                   New grand total: $
                   {(() => {
-                    const invoiceTotal = Number(discountInvoice.total ?? 0);
+                    const grandTotal = getGrandTotalWithLateFee(discountInvoice);
                     const discountAmount =
                       discountType === "percentage"
-                        ? Number((invoiceTotal * (Number(discountValue) / 100)).toFixed(2))
-                        : Math.min(Number(discountValue), invoiceTotal);
-                    const effectiveTotal = invoiceTotal - discountAmount;
-                    const lateFee = Number(discountInvoice.lateFee ?? 0);
-                    return (effectiveTotal + lateFee).toFixed(2);
+                        ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
+                        : Math.min(Number(discountValue), grandTotal);
+                    return (grandTotal - discountAmount).toFixed(2);
                   })()}
                 </p>
               )}
