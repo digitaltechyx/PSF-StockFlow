@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import {
   addDoc,
@@ -436,23 +436,124 @@ export function InvoiceManagementPortal() {
   const disputedInvoices = filteredInvoices.filter((invoice) => invoice.status === "disputed");
   const cancelledInvoices = filteredInvoices.filter((invoice) => invoice.status === "cancelled");
 
-  // Automatically apply late fee when invoice becomes overdue
+  const sendOverdueEmail = useCallback(async (invoice: ExternalInvoice) => {
+    if (!user || !invoice.clientEmail) {
+      console.warn(`Cannot send overdue email for invoice ${invoice.invoiceNumber}: missing user or client email`);
+      return;
+    }
+
+    try {
+      const invoiceBlob = await generateQuoteInvoicePdfBlob(buildInvoicePdfData(invoice));
+      const invoiceFile = new File([invoiceBlob], `Invoice-${invoice.invoiceNumber}.pdf`, {
+        type: "application/pdf",
+      });
+
+      const idToken = await user.getIdToken();
+      const headers: HeadersInit = {
+        Authorization: `Bearer ${idToken}`,
+      };
+      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+      if (vercelBypass) {
+        headers["x-vercel-protection-bypass"] = vercelBypass;
+      }
+
+      const lateFeeMessage = `Hi,
+
+We'd like to inform you that a late fee of $19 has been added to your invoice, as payment was not received by the due date, in accordance with our billing terms.
+
+If payment has already been made, please disregard this message. Otherwise, we kindly request you to complete the payment at your earliest convenience so services can continue without interruption.
+
+If you have any questions or believe this was applied in error, feel free to reach out—we're happy to assist.
+
+Thank you for your understanding.
+
+Kind regards,
+Prep Services FBA Team`;
+
+      let response: Response;
+      if (externalEmailApi) {
+        const attachmentsPayload = await Promise.all(
+          [invoiceFile].map(async (file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataBase64: toBase64(await file.arrayBuffer()),
+          }))
+        );
+        response = await fetch(externalEmailApi, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: invoice.clientEmail.trim(),
+            subject: `Late Fee Added - Invoice ${invoice.invoiceNumber}`,
+            message: lateFeeMessage,
+            attachments: attachmentsPayload,
+          }),
+        });
+      } else {
+        const payload = new FormData();
+        payload.append("to", invoice.clientEmail.trim());
+        payload.append("subject", `Late Fee Added - Invoice ${invoice.invoiceNumber}`);
+        payload.append("message", lateFeeMessage);
+        payload.append("attachments", invoiceFile);
+        const apiUrl = vercelBypass
+          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+          : "/api/email/send";
+        response = await fetch(apiUrl, {
+          method: "POST",
+          headers,
+          body: payload,
+        });
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to send overdue email.");
+      }
+
+      // Mark email as sent
+      await updateDoc(doc(db, "external_invoices", invoice.id), {
+        lateFeeEmailSentAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log(`Overdue email sent for invoice ${invoice.invoiceNumber}`);
+    } catch (error) {
+      console.error(`Failed to send overdue email for invoice ${invoice.invoiceNumber}:`, error);
+    }
+  };
+
+  // Automatically apply late fee when invoice becomes overdue and send email
   useEffect(() => {
-    if (!invoices.length || loading) return;
+    if (!invoices.length || loading || !user) return;
     
     const applyLateFeeToOverdue = async () => {
       const overdueWithoutLateFee = invoices.filter(
-        (invoice) => isOverdueInvoice(invoice) && (!invoice.lateFee || invoice.lateFee === 0)
+        (invoice) => 
+          isOverdueInvoice(invoice) && 
+          (!invoice.lateFee || invoice.lateFee === 0) &&
+          !invoice.lateFeeEmailSentAt // Only send email if not already sent
       );
 
       if (overdueWithoutLateFee.length === 0) return;
 
       for (const invoice of overdueWithoutLateFee) {
         try {
+          // Create updated invoice object with late fee for PDF generation
+          const updatedInvoice: ExternalInvoice = { ...invoice, lateFee: 19 };
+          
+          // Apply late fee to database
           await updateDoc(doc(db, "external_invoices", invoice.id), {
             lateFee: 19,
             updatedAt: serverTimestamp(),
           });
+          
+          // Send email with updated invoice (includes late fee in PDF)
+          await sendOverdueEmail(updatedInvoice);
         } catch (error) {
           console.error(`Failed to apply late fee to invoice ${invoice.invoiceNumber}:`, error);
         }
@@ -460,7 +561,7 @@ export function InvoiceManagementPortal() {
     };
 
     applyLateFeeToOverdue();
-  }, [invoices, loading]);
+  }, [invoices, loading, user, sendOverdueEmail]);
 
   const filteredDeleteLogs = useMemo(() => {
     let list = nonRestoredDeleteLogs;
@@ -2992,7 +3093,7 @@ export function InvoiceManagementPortal() {
                 <SelectContent>
                   {sentInvoices.map((invoice) => (
                     <SelectItem key={invoice.id} value={invoice.id}>
-                      {invoice.invoiceNumber} - {invoice.recipientName} (Due: {formatDate(invoice.dueDate)})
+                      {invoice.invoiceNumber} - {invoice.clientName} (Due: {formatDate(invoice.dueDate)})
                     </SelectItem>
                   ))}
                 </SelectContent>
