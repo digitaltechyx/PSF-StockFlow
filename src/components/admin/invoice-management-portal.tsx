@@ -44,6 +44,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  Percent,
   Plus,
   Receipt,
   RotateCcw,
@@ -121,6 +122,8 @@ interface ExternalInvoice {
   sentAt?: any;
   dispute?: ExternalInvoiceDispute;
   cancelled?: ExternalInvoiceCancel;
+  discountType?: "percentage" | "amount";
+  discountValue?: number;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -216,6 +219,21 @@ const isOverdueInvoice = (invoice: ExternalInvoice) => {
   return (invoice.status === "sent" || invoice.status === "partially_paid") && due < today;
 };
 
+const getDiscountAmount = (invoice: ExternalInvoice): number => {
+  if (!invoice.discountType || invoice.discountValue == null) return 0;
+  const total = Number(invoice.total ?? 0);
+  if (invoice.discountType === "percentage") {
+    return Number((total * (invoice.discountValue / 100)).toFixed(2));
+  }
+  return Math.min(Number(invoice.discountValue), total);
+};
+
+const getEffectiveTotal = (invoice: ExternalInvoice): number => {
+  const total = Number(invoice.total ?? 0);
+  const discount = getDiscountAmount(invoice);
+  return Number((total - discount).toFixed(2));
+};
+
 export function InvoiceManagementPortal() {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
@@ -296,6 +314,11 @@ export function InvoiceManagementPortal() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelInvoice, setCancelInvoice] = useState<ExternalInvoice | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
+  const [discountInvoice, setDiscountInvoice] = useState<ExternalInvoice | null>(null);
+  const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage");
+  const [discountValue, setDiscountValue] = useState("");
 
   const [paymentHistoryPage, setPaymentHistoryPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -571,7 +594,7 @@ export function InvoiceManagementPortal() {
     subtotal: invoice.subtotal,
     salesTax: invoice.salesTax || 0,
     shippingCost: invoice.shippingCost || 0,
-    total: invoice.total,
+    total: getEffectiveTotal(invoice),
     terms: invoice.terms,
   };
   };
@@ -939,7 +962,7 @@ export function InvoiceManagementPortal() {
     setSaving(true);
     try {
       const currentPaid = Number(partialInvoice.amountPaid ?? 0);
-      const invoiceTotal = Number(partialInvoice.total ?? 0);
+      const invoiceTotal = getEffectiveTotal(partialInvoice);
       const updatedPaid = Number((currentPaid + amount).toFixed(2));
       const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
       const existingPayments = Array.isArray(partialInvoice.payments) ? partialInvoice.payments : [];
@@ -993,7 +1016,7 @@ export function InvoiceManagementPortal() {
     setSaving(true);
     try {
       const currentPaid = Number(paidInvoice.amountPaid ?? 0);
-      const invoiceTotal = Number(paidInvoice.total ?? 0);
+      const invoiceTotal = getEffectiveTotal(paidInvoice);
       const updatedPaid = Number((currentPaid + amount).toFixed(2));
       const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
       const existingPayments = Array.isArray(paidInvoice.payments) ? paidInvoice.payments : [];
@@ -1110,9 +1133,56 @@ export function InvoiceManagementPortal() {
     }
   };
 
+  const applyDiscount = async () => {
+    if (!discountInvoice) return;
+    const raw = discountValue.trim();
+    if (!raw) {
+      toast({ variant: "destructive", title: "Enter a discount value." });
+      return;
+    }
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num < 0) {
+      toast({ variant: "destructive", title: "Enter a valid discount value." });
+      return;
+    }
+    if (discountType === "percentage" && (num > 100 || num <= 0)) {
+      toast({ variant: "destructive", title: "Percentage must be between 0 and 100." });
+      return;
+    }
+    setSaving(true);
+    try {
+      const total = Number(discountInvoice.total ?? 0);
+      const discountAmount =
+        discountType === "percentage"
+          ? Number((total * (num / 100)).toFixed(2))
+          : Math.min(num, total);
+      const effectiveTotal = Number((total - discountAmount).toFixed(2));
+      const amountPaid = Number(discountInvoice.amountPaid ?? 0);
+      const outstanding = Math.max(0, Number((effectiveTotal - amountPaid).toFixed(2)));
+
+      await updateDoc(doc(db, "external_invoices", discountInvoice.id), {
+        discountType,
+        discountValue: discountType === "percentage" ? num : Number(num.toFixed(2)),
+        outstandingBalance: outstanding,
+        updatedAt: serverTimestamp(),
+      });
+
+      toast({ title: "Discount applied." });
+      setDiscountDialogOpen(false);
+      setDiscountInvoice(null);
+      setDiscountType("percentage");
+      setDiscountValue("");
+    } catch (error) {
+      console.error("Failed to apply discount:", error);
+      toast({ variant: "destructive", title: "Failed to apply discount." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const renderInvoiceRow = (
     invoice: ExternalInvoice,
-    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean }
+    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean; showDiscount?: boolean }
   ) => {
     const overdue = isOverdueInvoice(invoice);
     const lastPayment = invoice.payments?.length ? invoice.payments[invoice.payments.length - 1] : undefined;
@@ -1154,8 +1224,13 @@ export function InvoiceManagementPortal() {
                   {overdue ? "Overdue" : invoice.status.replace("_", " ")}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  Total ${invoice.total.toFixed(2)}
+                  Total ${getEffectiveTotal(invoice).toFixed(2)}
                 </Badge>
+                {getDiscountAmount(invoice) > 0 && (
+                  <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400">
+                    Discount -${getDiscountAmount(invoice).toFixed(2)}
+                  </Badge>
+                )}
                 {invoice.status === "partially_paid" && (
                   <Badge variant="outline" className="text-xs">
                     Paid ${invoice.amountPaid.toFixed(2)}
@@ -1231,13 +1306,29 @@ export function InvoiceManagementPortal() {
                   </>
                 ) : (
                   <>
-                    {!options?.hideSendAndDownload && (
+                    {options?.showDiscount && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`${btnClass} hover:bg-emerald-500 hover:text-white`}
+                        title="Discount"
+                        onClick={() => {
+                          setDiscountInvoice(invoice);
+                          setDiscountType(invoice.discountType ?? "percentage");
+                          setDiscountValue(invoice.discountValue != null ? String(invoice.discountValue) : "");
+                          setDiscountDialogOpen(true);
+                        }}
+                      >
+                        <Percent className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {(!options?.hideSendAndDownload || (options?.showDiscount && getDiscountAmount(invoice) > 0)) && (
                       <>
                         <Button
                           variant="outline"
                           size="sm"
                           className={`${btnClass} hover:bg-purple-500 hover:text-white`}
-                          title="Send"
+                          title={getDiscountAmount(invoice) > 0 ? "Resend (discounted invoice)" : "Send"}
                           onClick={() => openEmailDialog(invoice)}
                         >
                           <Mail className="h-4 w-4" />
@@ -2004,7 +2095,7 @@ export function InvoiceManagementPortal() {
                 <>
                   <div className="space-y-3">
                     {getPaginatedData(sentInvoices, currentPage).paginatedData.map((invoice) =>
-                      renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true })
+                      renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true, showDiscount: true })
                     )}
                   </div>
                   {sentInvoices.length > itemsPerPage && (
@@ -2664,6 +2755,84 @@ export function InvoiceManagementPortal() {
             </Button>
             <Button variant="destructive" onClick={applyCancel} disabled={saving}>
               Void Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={discountDialogOpen} onOpenChange={setDiscountDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Discount</DialogTitle>
+            <DialogDescription>
+              Choose discount by percentage or fixed amount. Invoice total and outstanding balance will be updated.
+            </DialogDescription>
+          </DialogHeader>
+          {discountInvoice && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Invoice total: ${Number(discountInvoice.total ?? 0).toFixed(2)}
+              </p>
+              <div className="space-y-2">
+                <Label>Discount type</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="discountType"
+                      checked={discountType === "percentage"}
+                      onChange={() => setDiscountType("percentage")}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Percentage (%)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="discountType"
+                      checked={discountType === "amount"}
+                      onChange={() => setDiscountType("amount")}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Amount ($)</span>
+                  </label>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="discountValue">
+                  {discountType === "percentage" ? "Percentage (0–100)" : "Amount ($)"}
+                </Label>
+                <Input
+                  id="discountValue"
+                  type="number"
+                  min={discountType === "percentage" ? 0 : 0}
+                  max={discountType === "percentage" ? 100 : undefined}
+                  step={discountType === "percentage" ? 1 : 0.01}
+                  placeholder={discountType === "percentage" ? "e.g. 10" : "e.g. 50.00"}
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                />
+              </div>
+              {discountValue.trim() && Number(discountValue) > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  New total: $
+                  {(
+                    Number(discountInvoice.total ?? 0) -
+                    (discountType === "percentage"
+                      ? Number((Number(discountInvoice.total ?? 0) * (Number(discountValue) / 100)).toFixed(2))
+                      : Math.min(Number(discountValue), Number(discountInvoice.total ?? 0)))
+                  ).toFixed(2)}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscountDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={applyDiscount} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Apply Discount
             </Button>
           </DialogFooter>
         </DialogContent>
