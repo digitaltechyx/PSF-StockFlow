@@ -64,7 +64,7 @@ type ExternalInvoiceStatus =
   | "disputed"
   | "cancelled";
 
-type PaymentMethod = "Zelle" | "ACH" | "Wire" | "Cash" | "Other";
+type PaymentMethod = "Zelle" | "ACH" | "Wire" | "Other";
 
 interface ExternalInvoiceItem {
   id: string;
@@ -1879,13 +1879,20 @@ export function InvoiceManagementPortal() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b border-amber-200/70 pb-2">
-                    <h3 className="font-semibold text-amber-800">Item Description</h3>
-                    <div className="flex gap-8 text-sm font-semibold text-amber-800">
-                      <span>Qty</span>
-                      <span>Unit Price</span>
-                      <span>Amount</span>
+                  <div className="grid grid-cols-12 gap-2 items-center border-b border-amber-200/70 pb-2">
+                    <div className="col-span-6">
+                      <h3 className="font-semibold text-amber-800">Item Description</h3>
                     </div>
+                    <div className="col-span-2 text-center">
+                      <span className="text-sm font-semibold text-amber-800">Qty</span>
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <span className="text-sm font-semibold text-amber-800">Unit Price</span>
+                    </div>
+                    <div className="col-span-1 text-right">
+                      <span className="text-sm font-semibold text-amber-800">Amount</span>
+                    </div>
+                    <div className="col-span-1" />
                   </div>
                   {formData.items.map((item, index) => (
                     <div key={item.id} className="grid grid-cols-12 gap-2 items-center border-b border-amber-100/50 pb-2 invoice-actions">
@@ -2703,7 +2710,6 @@ export function InvoiceManagementPortal() {
                   <SelectItem value="Zelle">Zelle</SelectItem>
                   <SelectItem value="ACH">ACH</SelectItem>
                   <SelectItem value="Wire">Wire</SelectItem>
-                  <SelectItem value="Cash">Cash</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>
               </Select>

@@ -1841,6 +1841,55 @@ export function QuoteManagement() {
     document.body.removeChild(link);
   };
 
+  const downloadAddressBookCsv = (rows: Quote[], filename: string) => {
+    if (!rows.length) {
+      toast({ variant: "destructive", title: "No data to export." });
+      return;
+    }
+    const header = [
+      "Reference",
+      "Recipient Name",
+      "Recipient Email",
+      "Recipient Address",
+      "Recipient City",
+      "Recipient State",
+      "Recipient Zip",
+      "Recipient Country",
+      "Recipient Phone",
+      "Status",
+      "Notes",
+    ];
+    const data = rows.map((quote) => {
+      const details = quote.status === "accepted" ? quote.acceptedDetails : quote.lostDetails;
+      const statusLabel = quote.status === "lost" ? "rejected" : quote.status;
+      const notes = quote.notes ?? details?.notes ?? "";
+      return [
+        quote.reference,
+        quote.recipientName,
+        quote.recipientEmail,
+        quote.recipientAddress || "",
+        quote.recipientCity || "",
+        quote.recipientState || "",
+        quote.recipientZip || "",
+        quote.recipientCountry || "",
+        quote.recipientPhone || "",
+        statusLabel,
+        notes,
+      ];
+    });
+    const csv = [header, ...data]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleAddressBookDownload = () => {
     let dataToDownload: Quote[] = [];
     let filename = "";
@@ -1868,7 +1917,7 @@ export function QuoteManagement() {
         break;
     }
 
-    downloadCsv(dataToDownload, filename);
+    downloadAddressBookCsv(dataToDownload, filename);
   };
 
   const updateItem = (index: number, field: keyof QuoteLineItem, value: string) => {
