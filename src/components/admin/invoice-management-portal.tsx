@@ -388,6 +388,14 @@ export function InvoiceManagementPortal() {
   const disputedInvoices = filteredInvoices.filter((invoice) => invoice.status === "disputed");
   const cancelledInvoices = filteredInvoices.filter((invoice) => invoice.status === "cancelled");
 
+  const cancelledCombined = useMemo(
+    () => [
+      ...cancelledInvoices.map((inv) => ({ type: "cancelled" as const, item: inv })),
+      ...nonRestoredDeleteLogs.map((log) => ({ type: "deleted" as const, item: log })),
+    ],
+    [cancelledInvoices, nonRestoredDeleteLogs]
+  );
+
   const paymentHistory = useMemo(() => {
     const list: Array<ExternalInvoicePayment & { invoiceNumber: string; clientName: string; total: number }> = [];
     invoices.forEach((invoice) => {
@@ -413,6 +421,12 @@ export function InvoiceManagementPortal() {
       startIndex,
       endIndex,
     };
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    setCurrentPage(1);
+    if (value === "receipts") setPaymentHistoryPage(1);
   };
 
   const resetForm = () => {
@@ -1269,7 +1283,10 @@ export function InvoiceManagementPortal() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/10">
+        <Card
+          className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("draft")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
               <FileText className="h-4 w-4" />
@@ -1278,7 +1295,10 @@ export function InvoiceManagementPortal() {
           </CardHeader>
           <CardContent className="text-2xl font-bold text-blue-700 dark:text-blue-300">{statusCounts.draft}</CardContent>
         </Card>
-        <Card className="border-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/10">
+        <Card
+          className="border-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("sent")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-purple-700 dark:text-purple-300 flex items-center gap-2">
               <Send className="h-4 w-4" />
@@ -1287,7 +1307,10 @@ export function InvoiceManagementPortal() {
           </CardHeader>
           <CardContent className="text-2xl font-bold text-purple-700 dark:text-purple-300">{statusCounts.sent}</CardContent>
         </Card>
-        <Card className="border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10">
+        <Card
+          className="border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("partially_paid")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
               <BadgeDollarSign className="h-4 w-4" />
@@ -1296,7 +1319,10 @@ export function InvoiceManagementPortal() {
           </CardHeader>
           <CardContent className="text-2xl font-bold text-amber-700 dark:text-amber-300">{statusCounts.partiallyPaid}</CardContent>
         </Card>
-        <Card className="border-2 border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10">
+        <Card
+          className="border-2 border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("paid")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
               <CheckCircle className="h-4 w-4" />
@@ -1307,7 +1333,10 @@ export function InvoiceManagementPortal() {
         </Card>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-2 border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10">
+        <Card
+          className="border-2 border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("overdue")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
               <Clock className="h-4 w-4" />
@@ -1316,7 +1345,10 @@ export function InvoiceManagementPortal() {
           </CardHeader>
           <CardContent className="text-2xl font-bold text-red-700 dark:text-red-300">{statusCounts.overdue}</CardContent>
         </Card>
-        <Card className="border-2 border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/10">
+        <Card
+          className="border-2 border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("disputed")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-orange-700 dark:text-orange-300 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
@@ -1325,7 +1357,10 @@ export function InvoiceManagementPortal() {
           </CardHeader>
           <CardContent className="text-2xl font-bold text-orange-700 dark:text-orange-300">{statusCounts.disputed}</CardContent>
         </Card>
-        <Card className="border-2 border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/10">
+        <Card
+          className="border-2 border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/10 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"
+          onClick={() => handleTabChange("cancelled")}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
               <X className="h-4 w-4" />
@@ -1338,7 +1373,7 @@ export function InvoiceManagementPortal() {
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid grid-cols-5 md:grid-cols-9 gap-2 bg-white dark:bg-gray-900 border shadow-sm p-2 h-auto">
           <TabsTrigger value="new" className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
@@ -1796,27 +1831,58 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {draftInvoices.length ? (
-                draftInvoices.map((invoice) => (
-                  <Card key={invoice.id} className="border-2 border-blue-200 dark:border-blue-800">
-                    <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-                      <div>
-                        <div className="font-semibold">{invoice.clientName || "—"}</div>
-                        <div className="text-sm text-muted-foreground">{invoice.invoiceNumber}</div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEditInvoice(invoice)}>
-                          Edit
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEmailDialog(invoice)}>
-                          Send
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteInvoice(invoice)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(draftInvoices, currentPage).paginatedData.map((invoice) => (
+                      <Card key={invoice.id} className="border-2 border-blue-200 dark:border-blue-800">
+                        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                          <div>
+                            <div className="font-semibold">{invoice.clientName || "—"}</div>
+                            <div className="text-sm text-muted-foreground">{invoice.invoiceNumber}</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" size="sm" onClick={() => handleEditInvoice(invoice)}>
+                              Edit
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => openEmailDialog(invoice)}>
+                              Send
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => handleDeleteInvoice(invoice)}>
+                              Delete
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  {draftInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(draftInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(draftInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(draftInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No draft invoices yet.</p>
               )}
@@ -1831,7 +1897,42 @@ export function InvoiceManagementPortal() {
               <CardDescription>All sent invoices with outstanding balances.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {sentInvoices.length ? sentInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true })) : (
+              {sentInvoices.length ? (
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(sentInvoices, currentPage).paginatedData.map((invoice) =>
+                      renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true })
+                    )}
+                  </div>
+                  {sentInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(sentInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(sentInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(sentInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
                 <p className="text-sm text-muted-foreground">No sent invoices yet.</p>
               )}
             </CardContent>
@@ -1846,7 +1947,40 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {partiallyPaidInvoices.length ? (
-                partiallyPaidInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true }))
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(partiallyPaidInvoices, currentPage).paginatedData.map((invoice) =>
+                      renderInvoiceRow(invoice, { showActions: true })
+                    )}
+                  </div>
+                  {partiallyPaidInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(partiallyPaidInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(partiallyPaidInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(partiallyPaidInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No partially paid invoices.</p>
               )}
@@ -1886,7 +2020,40 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {overdueInvoices.length ? (
-                overdueInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true }))
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(overdueInvoices, currentPage).paginatedData.map((invoice) =>
+                      renderInvoiceRow(invoice, { showActions: true })
+                    )}
+                  </div>
+                  {overdueInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(overdueInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(overdueInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(overdueInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No overdue invoices.</p>
               )}
@@ -1902,9 +2069,40 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {disputedInvoices.length ? (
-                disputedInvoices.map((invoice) =>
-                  renderInvoiceRow(invoice, { showActions: true, allowDisputeActions: true })
-                )
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(disputedInvoices, currentPage).paginatedData.map((invoice) =>
+                      renderInvoiceRow(invoice, { showActions: true, allowDisputeActions: true })
+                    )}
+                  </div>
+                  {disputedInvoices.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(disputedInvoices, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(disputedInvoices, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(disputedInvoices, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">No disputed invoices.</p>
               )}
@@ -1919,79 +2117,104 @@ export function InvoiceManagementPortal() {
               <CardDescription>Voided or cancelled invoices, and deleted drafts (restore from here).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {cancelledInvoices.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-muted-foreground">Voided / Cancelled</h4>
-                  {cancelledInvoices.map((invoice) => renderInvoiceRow(invoice))}
-                </div>
-              )}
-              {nonRestoredDeleteLogs.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-muted-foreground">Deleted (Drafts &amp; others)</h4>
-                  {nonRestoredDeleteLogs.map((log) => (
-                    <Card
-                      key={log.id}
-                      className="border-2 border-amber-200/70 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20"
-                    >
-                      <CardContent className="p-5">
-                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start gap-3">
-                              <div className="p-2 rounded-lg bg-amber-500/80 shadow-md">
-                                <FileText className="h-5 w-5 text-white" />
-                              </div>
+              {cancelledCombined.length ? (
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(cancelledCombined, currentPage).paginatedData.map((entry) =>
+                      entry.type === "cancelled" ? (
+                        <div key={entry.item.id}>{renderInvoiceRow(entry.item)}</div>
+                      ) : (
+                        <Card
+                          key={entry.item.id}
+                          className="border-2 border-amber-200/70 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20"
+                        >
+                          <CardContent className="p-5">
+                            <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                               <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
-                                  {log.clientName || "—"}
-                                </h3>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                                  {log.clientEmail || "—"}
-                                </p>
-                                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                  <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                                    {log.invoiceNumber || log.invoiceId || "—"}
-                                  </span>
-                                  <Badge variant="secondary" className="capitalize">
-                                    Deleted {log.status || "draft"}
-                                  </Badge>
-                                  {log.reason && (
-                                    <span className="text-xs text-muted-foreground">• {log.reason}</span>
-                                  )}
+                                <div className="flex items-start gap-3">
+                                  <div className="p-2 rounded-lg bg-amber-500/80 shadow-md">
+                                    <FileText className="h-5 w-5 text-white" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                                      {entry.item.clientName || "—"}
+                                    </h3>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                                      {entry.item.clientEmail || "—"}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                      <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                        {entry.item.invoiceNumber || entry.item.invoiceId || "—"}
+                                      </span>
+                                      <Badge variant="secondary" className="capitalize">
+                                        Deleted {entry.item.status || "draft"}
+                                      </Badge>
+                                      {entry.item.reason && (
+                                        <span className="text-xs text-muted-foreground">• {entry.item.reason}</span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <Badge variant="outline" className="text-xs">
+                                  Total ${Number(entry.item.total ?? 0).toFixed(2)}
+                                </Badge>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRestoreInvoice(entry.item)}
+                                  disabled={saving}
+                                  className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm"
+                                >
+                                  {saving ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                      Restoring...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RotateCcw className="h-4 w-4 mr-1" />
+                                      Restore
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <Badge variant="outline" className="text-xs">
-                              Total ${Number(log.total ?? 0).toFixed(2)}
-                            </Badge>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRestoreInvoice(log)}
-                              disabled={saving}
-                              className="hover:bg-green-500 hover:text-white hover:border-green-500 dark:hover:bg-green-600 transition-all shadow-sm"
-                            >
-                              {saving ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                  Restoring...
-                                </>
-                              ) : (
-                                <>
-                                  <RotateCcw className="h-4 w-4 mr-1" />
-                                  Restore
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-              {!cancelledInvoices.length && !nonRestoredDeleteLogs.length && (
+                          </CardContent>
+                        </Card>
+                      )
+                    )}
+                  </div>
+                  {cancelledCombined.length > itemsPerPage && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {currentPage} / {getPaginatedData(cancelledCombined, currentPage).totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCurrentPage((p) =>
+                            Math.min(getPaginatedData(cancelledCombined, currentPage).totalPages, p + 1)
+                          )
+                        }
+                        disabled={currentPage >= getPaginatedData(cancelledCombined, currentPage).totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
                 <p className="text-sm text-muted-foreground">No cancelled or deleted invoices.</p>
               )}
             </CardContent>
