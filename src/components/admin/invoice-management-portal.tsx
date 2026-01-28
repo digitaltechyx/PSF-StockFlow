@@ -1319,16 +1319,18 @@ Prep Services FBA Team`;
     }
     setSaving(true);
     try {
-      const total = Number(discountInvoice.total ?? 0);
+      // Calculate discount on invoice total (before late fee)
+      const invoiceTotal = Number(discountInvoice.total ?? 0);
       const discountAmount =
         discountType === "percentage"
-          ? Number((total * (num / 100)).toFixed(2))
-          : Math.min(num, total);
-      const effectiveTotal = Number((total - discountAmount).toFixed(2));
+          ? Number((invoiceTotal * (num / 100)).toFixed(2))
+          : Math.min(num, invoiceTotal);
+      const effectiveTotal = Number((invoiceTotal - discountAmount).toFixed(2));
+      // Add late fee to get final grand total
       const lateFee = Number(discountInvoice.lateFee ?? 0);
-      const grandTotalWithLateFee = Number((effectiveTotal + lateFee).toFixed(2));
+      const newGrandTotal = Number((effectiveTotal + lateFee).toFixed(2));
       const amountPaid = Number(discountInvoice.amountPaid ?? 0);
-      const outstanding = Math.max(0, Number((grandTotalWithLateFee - amountPaid).toFixed(2)));
+      const outstanding = Math.max(0, Number((newGrandTotal - amountPaid).toFixed(2)));
 
       await updateDoc(doc(db, "external_invoices", discountInvoice.id), {
         discountType,
@@ -3008,9 +3010,19 @@ Prep Services FBA Team`;
           </DialogHeader>
           {discountInvoice && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Invoice total: ${Number(discountInvoice.total ?? 0).toFixed(2)}
-              </p>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Invoice total: ${Number(discountInvoice.total ?? 0).toFixed(2)}
+                </p>
+                {discountInvoice.lateFee && discountInvoice.lateFee > 0 && (
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    Late fee: ${Number(discountInvoice.lateFee ?? 0).toFixed(2)}
+                  </p>
+                )}
+                <p className="text-sm font-semibold">
+                  Grand total: ${getGrandTotalWithLateFee(discountInvoice).toFixed(2)}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label>Discount type</Label>
                 <div className="flex gap-4">
@@ -3053,13 +3065,17 @@ Prep Services FBA Team`;
               </div>
               {discountValue.trim() && Number(discountValue) > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  New total: $
-                  {(
-                    Number(discountInvoice.total ?? 0) -
-                    (discountType === "percentage"
-                      ? Number((Number(discountInvoice.total ?? 0) * (Number(discountValue) / 100)).toFixed(2))
-                      : Math.min(Number(discountValue), Number(discountInvoice.total ?? 0)))
-                  ).toFixed(2)}
+                  New grand total: $
+                  {(() => {
+                    const invoiceTotal = Number(discountInvoice.total ?? 0);
+                    const discountAmount =
+                      discountType === "percentage"
+                        ? Number((invoiceTotal * (Number(discountValue) / 100)).toFixed(2))
+                        : Math.min(Number(discountValue), invoiceTotal);
+                    const effectiveTotal = invoiceTotal - discountAmount;
+                    const lateFee = Number(discountInvoice.lateFee ?? 0);
+                    return (effectiveTotal + lateFee).toFixed(2);
+                  })()}
                 </p>
               )}
             </div>
