@@ -1919,6 +1919,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="draft" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Draft Invoices</CardTitle>
@@ -1986,6 +1987,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="sent" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Sent Invoices</CardTitle>
@@ -2035,6 +2037,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="partially_paid" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Partially Paid</CardTitle>
@@ -2084,6 +2087,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="paid" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -2141,6 +2145,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="overdue" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Overdue Invoices</CardTitle>
@@ -2352,6 +2357,7 @@ export function InvoiceManagementPortal() {
         </TabsContent>
 
         <TabsContent value="receipts" className="space-y-4">
+          {searchAndDateFilterBar}
           <Card>
             <CardHeader>
               <CardTitle>Receipts / Payment History</CardTitle>
