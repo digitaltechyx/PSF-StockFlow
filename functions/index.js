@@ -147,7 +147,7 @@ exports.sendQuoteEmail = functions.https.onRequest(async (req, res) => {
   });
 });
 
-// ---- Invoice reminder: send reminder email 24 hours after invoice was sent ----
+// ---- Invoice reminder: send reminder email 10 minutes after invoice was sent ----
 const INVOICE_REMINDER_MESSAGE = `Hello,
 
 Just a friendly reminder regarding your pending invoice. As per our standard terms, payment is required before work begins, and services may be temporarily paused if an invoice remains unpaid.
@@ -159,7 +159,7 @@ Thank you for your cooperation.
 Kind regards,
 Prep Services FBA Team`;
 
-const REMINDER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const REMINDER_AGE_MS = 10 * 60 * 1000; // 10 minutes after invoice sent
 
 function getSentAtDate(sentAt) {
   if (!sentAt) return null;
@@ -168,7 +168,8 @@ function getSentAtDate(sentAt) {
   return null;
 }
 
-exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async (context) => {
+// Run every 5 minutes so reminders go out shortly after the 10-minute mark
+exports.sendInvoiceReminders = functions.pubsub.schedule("every 5 minutes").onRun(async (context) => {
   const db = admin.firestore();
   const now = Date.now();
 
