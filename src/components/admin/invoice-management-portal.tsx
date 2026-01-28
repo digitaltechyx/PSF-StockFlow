@@ -300,6 +300,7 @@ export function InvoiceManagementPortal() {
   const [paymentHistoryPage, setPaymentHistoryPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [cancelledViewFilter, setCancelledViewFilter] = useState<"all" | "cancelled" | "deleted">("all");
 
   const recalculateTotals = (
     items: ExternalInvoiceItem[],
@@ -431,6 +432,11 @@ export function InvoiceManagementPortal() {
     ],
     [cancelledInvoices, filteredDeleteLogs]
   );
+
+  const cancelledFilteredByType = useMemo(() => {
+    if (cancelledViewFilter === "all") return cancelledCombined;
+    return cancelledCombined.filter((entry) => entry.type === cancelledViewFilter);
+  }, [cancelledCombined, cancelledViewFilter]);
 
   const paymentHistory = useMemo(() => {
     const list: Array<ExternalInvoicePayment & { invoiceNumber: string; clientName: string; total: number }> = [];
@@ -2246,16 +2252,35 @@ export function InvoiceManagementPortal() {
 
         <TabsContent value="cancelled" className="space-y-4">
           {searchAndDateFilterBar}
+          <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border bg-muted/30">
+            <Label className="text-sm font-medium shrink-0">Show:</Label>
+            <Select
+              value={cancelledViewFilter}
+              onValueChange={(v: "all" | "cancelled" | "deleted") => {
+                setCancelledViewFilter(v);
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All (Cancelled & Deleted)</SelectItem>
+                <SelectItem value="cancelled">Cancelled / Void only</SelectItem>
+                <SelectItem value="deleted">Deleted drafts only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Card>
             <CardHeader>
               <CardTitle>Cancelled / Void</CardTitle>
               <CardDescription>Voided or cancelled invoices, and deleted drafts (restore from here).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {cancelledCombined.length ? (
+              {cancelledFilteredByType.length ? (
                 <>
                   <div className="space-y-3">
-                    {getPaginatedData(cancelledCombined, currentPage).paginatedData.map((entry) =>
+                    {getPaginatedData(cancelledFilteredByType, currentPage).paginatedData.map((entry) =>
                       entry.type === "cancelled" ? (
                         <div key={entry.item.id}>{renderInvoiceRow(entry.item)}</div>
                       ) : (
@@ -2321,7 +2346,7 @@ export function InvoiceManagementPortal() {
                       )
                     )}
                   </div>
-                  {cancelledCombined.length > itemsPerPage && (
+                  {cancelledFilteredByType.length > itemsPerPage && (
                     <div className="flex items-center justify-between pt-3 border-t">
                       <Button
                         variant="outline"
@@ -2332,17 +2357,17 @@ export function InvoiceManagementPortal() {
                         Previous
                       </Button>
                       <span className="text-xs text-muted-foreground">
-                        {currentPage} / {getPaginatedData(cancelledCombined, currentPage).totalPages}
+                        {currentPage} / {getPaginatedData(cancelledFilteredByType, currentPage).totalPages}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() =>
                           setCurrentPage((p) =>
-                            Math.min(getPaginatedData(cancelledCombined, currentPage).totalPages, p + 1)
+                            Math.min(getPaginatedData(cancelledFilteredByType, currentPage).totalPages, p + 1)
                           )
                         }
-                        disabled={currentPage >= getPaginatedData(cancelledCombined, currentPage).totalPages}
+                        disabled={currentPage >= getPaginatedData(cancelledFilteredByType, currentPage).totalPages}
                       >
                         Next
                       </Button>
@@ -2350,7 +2375,13 @@ export function InvoiceManagementPortal() {
                   )}
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">No cancelled or deleted invoices.</p>
+                <p className="text-sm text-muted-foreground">
+                  {cancelledViewFilter === "all"
+                    ? "No cancelled or deleted invoices."
+                    : cancelledViewFilter === "cancelled"
+                      ? "No cancelled / void invoices."
+                      : "No deleted drafts."}
+                </p>
               )}
             </CardContent>
           </Card>

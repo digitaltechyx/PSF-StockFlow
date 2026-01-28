@@ -9,10 +9,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/use-auth";
@@ -1203,6 +1205,72 @@ export function QuoteManagement() {
           emailMode === "follow_up"
             ? new Date()
             : activeEmailQuote.lastFollowUpAt ?? null;
+      }
+
+      if (emailMode === "invoice") {
+        const inv = buildInvoiceDataFromQuote(activeEmailQuote);
+        const invoiceDate =
+          /^\d{4}-\d{2}-\d{2}$/.test(activeEmailQuote.quoteDate || "")
+            ? (activeEmailQuote.quoteDate as string)
+            : new Date().toISOString().slice(0, 10);
+        const dueDate =
+          /^\d{4}-\d{2}-\d{2}$/.test(activeEmailQuote.validUntil || "")
+            ? (activeEmailQuote.validUntil as string)
+            : (() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 2);
+                return d.toISOString().slice(0, 10);
+              })();
+        const externalInvoicePayload = {
+          status: "sent",
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate,
+          dueDate,
+          clientName: activeEmailQuote.recipientName || "",
+          clientEmail: activeEmailQuote.recipientEmail || "",
+          clientPhone: activeEmailQuote.recipientPhone || "",
+          clientAddress: activeEmailQuote.recipientAddress || "",
+          clientCity: activeEmailQuote.recipientCity || "",
+          clientState: activeEmailQuote.recipientState || "",
+          clientZip: activeEmailQuote.recipientZip || "",
+          clientCountry: activeEmailQuote.recipientCountry || "",
+          terms: activeEmailQuote.terms || "",
+          items: activeEmailQuote.items.map((item) => ({
+            id: item.id || crypto.randomUUID(),
+            description: item.description || "",
+            quantity: Number(item.quantity || 0),
+            unitPrice: Number(item.unitPrice || 0),
+            amount: Number(item.amount || 0),
+          })),
+          subtotal: activeEmailQuote.subtotal,
+          salesTax: activeEmailQuote.salesTax || 0,
+          shippingCost: activeEmailQuote.shippingCost || 0,
+          total: activeEmailQuote.total,
+          amountPaid: 0,
+          outstandingBalance: activeEmailQuote.total,
+          payments: [],
+          sentAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          sourceQuoteId: activeEmailQuote.id,
+        };
+        const existing = await getDocs(
+          query(
+            collection(db, "external_invoices"),
+            where("sourceQuoteId", "==", activeEmailQuote.id)
+          )
+        );
+        if (existing.docs.length > 0) {
+          await updateDoc(doc(db, "external_invoices", existing.docs[0].id), {
+            status: "sent",
+            sentAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, "external_invoices"), {
+            ...externalInvoicePayload,
+            createdAt: serverTimestamp(),
+          });
+        }
       }
 
       await updateDoc(doc(db, "quotes", activeEmailQuote.id), updatePayload);
