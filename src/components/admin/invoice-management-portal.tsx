@@ -326,6 +326,10 @@ export function InvoiceManagementPortal() {
   const itemsPerPage = 10;
   const [cancelledViewFilter, setCancelledViewFilter] = useState<"all" | "cancelled" | "deleted">("all");
 
+  const [testOverdueDialogOpen, setTestOverdueDialogOpen] = useState(false);
+  const [testOverdueInvoiceId, setTestOverdueInvoiceId] = useState<string>("");
+  const [isTestingOverdue, setIsTestingOverdue] = useState(false);
+
   const recalculateTotals = (
     items: ExternalInvoiceItem[],
     shippingCostValue: number,
@@ -1132,6 +1136,32 @@ export function InvoiceManagementPortal() {
       toast({ variant: "destructive", title: "Failed to cancel invoice." });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestOverdue = async () => {
+    if (!testOverdueInvoiceId) {
+      toast({ variant: "destructive", title: "Please select an invoice." });
+      return;
+    }
+    setIsTestingOverdue(true);
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      
+      await updateDoc(doc(db, "external_invoices", testOverdueInvoiceId), {
+        dueDate: yesterdayStr,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Invoice due date set to yesterday. It should now appear in Overdue tab." });
+      setTestOverdueDialogOpen(false);
+      setTestOverdueInvoiceId("");
+    } catch (error) {
+      console.error("Failed to test overdue:", error);
+      toast({ variant: "destructive", title: "Failed to set due date." });
+    } finally {
+      setIsTestingOverdue(false);
     }
   };
 
@@ -2287,8 +2317,20 @@ export function InvoiceManagementPortal() {
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <CardTitle>Overdue Invoices</CardTitle>
-              <CardDescription>Invoices past their due date.</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Overdue Invoices</CardTitle>
+                  <CardDescription>Invoices past their due date.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTestOverdueDialogOpen(true)}
+                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                >
+                  Test Overdue
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {overdueInvoices.length ? (
@@ -2874,6 +2916,50 @@ export function InvoiceManagementPortal() {
             <Button onClick={applyDiscount} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Apply Discount
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={testOverdueDialogOpen} onOpenChange={setTestOverdueDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Test Overdue Invoice</DialogTitle>
+            <DialogDescription>
+              Select a sent invoice to set its due date to yesterday. This will make it appear in the Overdue tab for testing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Select Invoice</Label>
+              <Select value={testOverdueInvoiceId} onValueChange={setTestOverdueInvoiceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose an invoice" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sentInvoices.map((invoice) => (
+                    <SelectItem key={invoice.id} value={invoice.id}>
+                      {invoice.invoiceNumber} - {invoice.recipientName} (Due: {formatDate(invoice.dueDate)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {sentInvoices.length === 0 && (
+              <p className="text-sm text-muted-foreground">No sent invoices available for testing.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTestOverdueDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTestOverdue}
+              disabled={isTestingOverdue || !testOverdueInvoiceId || sentInvoices.length === 0}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {isTestingOverdue ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Set Due Date to Yesterday
             </Button>
           </DialogFooter>
         </DialogContent>
