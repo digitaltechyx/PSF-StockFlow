@@ -156,7 +156,7 @@ If you've already taken care of this, please feel free to ignore this message. O
 
 Thank you for your cooperation.
 
-Kind regards,
+Best regards,
 Prep Services FBA Team`;
 
 const REMINDER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours after invoice was sent
