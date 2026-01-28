@@ -120,6 +120,7 @@ interface ExternalInvoice {
   outstandingBalance: number;
   payments: ExternalInvoicePayment[];
   sentAt?: any;
+  reminderSentAt?: any;
   dispute?: ExternalInvoiceDispute;
   cancelled?: ExternalInvoiceCancel;
   discountType?: "percentage" | "amount";

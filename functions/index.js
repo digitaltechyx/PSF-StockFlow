@@ -146,3 +146,98 @@ exports.sendQuoteEmail = functions.https.onRequest(async (req, res) => {
     }
   });
 });
+
+// ---- Invoice reminder: send reminder email 24 hours after invoice was sent ----
+const INVOICE_REMINDER_MESSAGE = `Hello,
+
+Just a friendly reminder regarding your pending invoice. As per our standard terms, payment is required before work begins, and services may be temporarily paused if an invoice remains unpaid.
+
+If you've already taken care of this, please feel free to ignore this message. Otherwise, we'd appreciate your support in completing the payment at your convenience. If you have any questions or concerns, we're always happy to help.
+
+Thank you for your cooperation.
+
+Kind regards,
+Prep Services FBA Team`;
+
+const REMINDER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function getSentAtDate(sentAt) {
+  if (!sentAt) return null;
+  if (sentAt.toDate && typeof sentAt.toDate === "function") return sentAt.toDate();
+  if (typeof sentAt === "string" || typeof sentAt === "number") return new Date(sentAt);
+  return null;
+}
+
+exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async (context) => {
+  const db = admin.firestore();
+  const now = Date.now();
+
+  const smtpConfig = (functions.config() && functions.config().smtp) || {};
+  const smtpHost = smtpConfig.host || process.env.SMTP_HOST;
+  const smtpPort = Number(smtpConfig.port || process.env.SMTP_PORT || 587);
+  const smtpUser = smtpConfig.user || process.env.SMTP_USER;
+  const smtpPassword = smtpConfig.password || process.env.SMTP_PASSWORD;
+  const smtpSecure = String(smtpConfig.secure || process.env.SMTP_SECURE || "false") === "true";
+  const smtpFrom = smtpConfig.from || process.env.SMTP_FROM || smtpUser;
+  const smtpFromName = smtpConfig.from_name || process.env.SMTP_FROM_NAME || "Prep Services FBA";
+
+  if (!smtpHost || !smtpUser || !smtpPassword) {
+    console.warn("Invoice reminders: SMTP not configured, skipping.");
+    return null;
+  }
+
+  let transporter;
+  try {
+    transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      requireTLS: !smtpSecure,
+      auth: { user: smtpUser, pass: smtpPassword },
+      tls: { rejectUnauthorized: false },
+    });
+    await transporter.verify();
+  } catch (err) {
+    console.error("Invoice reminders: SMTP verify failed", err);
+    return null;
+  }
+
+  const candidates = [];
+  const sentSnap = await db.collection("external_invoices").where("status", "==", "sent").get();
+  sentSnap.docs.forEach((doc) => candidates.push({ id: doc.id, ...doc.data() }));
+  const partiallyPaidSnap = await db.collection("external_invoices").where("status", "==", "partially_paid").get();
+  partiallyPaidSnap.docs.forEach((doc) => candidates.push({ id: doc.id, ...doc.data() }));
+
+  const toRemind = candidates.filter((inv) => {
+    if (inv.reminderSentAt) return false;
+    const sentAt = getSentAtDate(inv.sentAt);
+    if (!sentAt || isNaN(sentAt.getTime())) return false;
+    return now - sentAt.getTime() >= REMINDER_AGE_MS;
+  });
+
+  for (const inv of toRemind) {
+    const to = (inv.clientEmail || "").trim();
+    if (!to) {
+      console.warn("Invoice reminder skipped (no email):", inv.id, inv.invoiceNumber);
+      continue;
+    }
+    const subject = `Reminder: Pending Invoice ${inv.invoiceNumber || inv.id}`;
+    try {
+      await transporter.sendMail({
+        from: smtpFromName ? `${smtpFromName} <${smtpFrom}>` : smtpFrom,
+        to,
+        subject,
+        text: INVOICE_REMINDER_MESSAGE,
+      });
+      await db.collection("external_invoices").doc(inv.id).update({
+        reminderSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log("Invoice reminder sent:", inv.id, inv.invoiceNumber, to);
+    } catch (err) {
+      console.error("Invoice reminder send failed:", inv.id, err);
+    }
+  }
+
+  return null;
+});
