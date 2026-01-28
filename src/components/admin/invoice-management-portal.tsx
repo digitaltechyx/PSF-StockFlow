@@ -864,18 +864,25 @@ export function InvoiceManagementPortal() {
     }
     setSaving(true);
     try {
-      const updatedPaid = Number((partialInvoice.amountPaid + amount).toFixed(2));
-      const outstanding = Math.max(0, Number((partialInvoice.total - updatedPaid).toFixed(2)));
-      const payments = [
-        ...(partialInvoice.payments || []),
-        {
-          id: crypto.randomUUID(),
-          amount,
-          date: new Date().toISOString().slice(0, 10),
-          method: "Other",
-          createdAt: serverTimestamp(),
-        },
-      ];
+      const currentPaid = Number(partialInvoice.amountPaid ?? 0);
+      const invoiceTotal = Number(partialInvoice.total ?? 0);
+      const updatedPaid = Number((currentPaid + amount).toFixed(2));
+      const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
+      const existingPayments = Array.isArray(partialInvoice.payments) ? partialInvoice.payments : [];
+      const newPayment = {
+        id: crypto.randomUUID(),
+        amount: Number(amount.toFixed(2)),
+        date: new Date().toISOString().slice(0, 10),
+        method: "Other",
+        reference: "",
+        notes: "",
+        createdAt: serverTimestamp(),
+      };
+      const payments = [...existingPayments, newPayment];
+      if (!Number.isFinite(updatedPaid) || !Number.isFinite(outstanding)) {
+        toast({ variant: "destructive", title: "Invalid amounts. Please check invoice total and payment." });
+        return;
+      }
 
       await updateDoc(doc(db, "external_invoices", partialInvoice.id), {
         amountPaid: updatedPaid,
@@ -891,7 +898,8 @@ export function InvoiceManagementPortal() {
       setPartialInvoice(null);
     } catch (error) {
       console.error("Failed to apply partial payment:", error);
-      toast({ variant: "destructive", title: "Failed to apply payment." });
+      const msg = error instanceof Error ? error.message : "Failed to apply payment.";
+      toast({ variant: "destructive", title: "Failed to apply payment.", description: msg });
     } finally {
       setSaving(false);
     }
@@ -910,20 +918,25 @@ export function InvoiceManagementPortal() {
     }
     setSaving(true);
     try {
-      const updatedPaid = Number((paidInvoice.amountPaid + amount).toFixed(2));
-      const outstanding = Math.max(0, Number((paidInvoice.total - updatedPaid).toFixed(2)));
-      const payments = [
-        ...(paidInvoice.payments || []),
-        {
-          id: crypto.randomUUID(),
-          amount,
-          date: paidForm.paymentDate,
-          method: paidForm.method,
-          reference: paidForm.reference || "",
-          notes: paidForm.notes || "",
-          createdAt: serverTimestamp(),
-        },
-      ];
+      const currentPaid = Number(paidInvoice.amountPaid ?? 0);
+      const invoiceTotal = Number(paidInvoice.total ?? 0);
+      const updatedPaid = Number((currentPaid + amount).toFixed(2));
+      const outstanding = Math.max(0, Number((invoiceTotal - updatedPaid).toFixed(2)));
+      const existingPayments = Array.isArray(paidInvoice.payments) ? paidInvoice.payments : [];
+      const newPayment = {
+        id: crypto.randomUUID(),
+        amount: Number(amount.toFixed(2)),
+        date: String(paidForm.paymentDate),
+        method: paidForm.method,
+        reference: String(paidForm.reference ?? ""),
+        notes: String(paidForm.notes ?? ""),
+        createdAt: serverTimestamp(),
+      };
+      const payments = [...existingPayments, newPayment];
+      if (!Number.isFinite(updatedPaid) || !Number.isFinite(outstanding)) {
+        toast({ variant: "destructive", title: "Invalid amounts. Please check invoice total and payment." });
+        return;
+      }
 
       await updateDoc(doc(db, "external_invoices", paidInvoice.id), {
         amountPaid: updatedPaid,
@@ -945,7 +958,8 @@ export function InvoiceManagementPortal() {
       });
     } catch (error) {
       console.error("Failed to record payment:", error);
-      toast({ variant: "destructive", title: "Failed to record payment." });
+      const msg = error instanceof Error ? error.message : "Failed to record payment.";
+      toast({ variant: "destructive", title: "Failed to record payment.", description: msg });
     } finally {
       setSaving(false);
     }

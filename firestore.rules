@@ -166,6 +166,14 @@ service cloud.firestore {
       allow read, write: if isAdminOrSubAdmin();
     }
 
+    // ---- EXTERNAL INVOICES (Admin Invoice Management) ----
+    match /external_invoices/{invoiceId} {
+      allow read, write: if isAdminOrSubAdmin();
+    }
+    match /external_invoice_delete_logs/{logId} {
+      allow read, write: if isAdminOrSubAdmin();
+    }
+
     // ---- ADMIN OVERRIDE ----
     // Ensures admin/sub_admin never sees "Missing or insufficient permissions"
     // for top-level admin-managed collections not explicitly listed above.
