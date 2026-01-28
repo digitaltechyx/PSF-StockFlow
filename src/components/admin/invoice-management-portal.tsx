@@ -876,7 +876,7 @@ export function InvoiceManagementPortal() {
         method: "Other",
         reference: "",
         notes: "",
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
       };
       const payments = [...existingPayments, newPayment];
       if (!Number.isFinite(updatedPaid) || !Number.isFinite(outstanding)) {
@@ -930,7 +930,7 @@ export function InvoiceManagementPortal() {
         method: paidForm.method,
         reference: String(paidForm.reference ?? ""),
         notes: String(paidForm.notes ?? ""),
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
       };
       const payments = [...existingPayments, newPayment];
       if (!Number.isFinite(updatedPaid) || !Number.isFinite(outstanding)) {
