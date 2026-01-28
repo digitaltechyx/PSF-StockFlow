@@ -972,7 +972,9 @@ export function InvoiceManagementPortal() {
       await updateDoc(doc(db, "external_invoices", disputeInvoice.id), {
         status: "disputed",
         dispute: {
-          ...disputeForm,
+          reason: disputeForm.reason,
+          notes: disputeForm.notes,
+          status: "Open",
           updatedAt: serverTimestamp(),
         },
         updatedAt: serverTimestamp(),
@@ -1097,114 +1099,135 @@ export function InvoiceManagementPortal() {
             </div>
             {options?.showActions && (
               <div className="flex flex-wrap gap-1.5 justify-end items-center shrink-0 self-center md:self-auto">
-                {options?.allowDisputeActions && (
+                {options?.allowDisputeActions ? (
                   <>
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`${btnClass} hover:bg-slate-500 hover:text-white`}
-                      title="Back to Sent"
-                      onClick={() => resolveDisputeStatus(invoice, "sent")}
+                      className={`${btnClass} hover:bg-amber-500 hover:text-white`}
+                      title="Partially Paid"
+                      disabled={paymentsDisabled}
+                      onClick={() => {
+                        setPartialInvoice(invoice);
+                        setPartialAmount("");
+                        setPartialDialogOpen(true);
+                      }}
                     >
-                      <CircleArrowLeft className="h-4 w-4" />
+                      <BadgeDollarSign className="h-4 w-4" />
                     </Button>
-                    {overdue && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={`${btnClass} hover:bg-red-500 hover:text-white`}
-                        title="Back to Overdue"
-                        onClick={() => resolveDisputeStatus(invoice, "sent")}
-                      >
-                        <Clock className="h-4 w-4" />
-                      </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-green-500 hover:text-white`}
+                      title="Paid"
+                      disabled={paymentsDisabled}
+                      onClick={() => {
+                        setPaidInvoice(invoice);
+                        setPaidDialogOpen(true);
+                      }}
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-red-500 hover:text-white`}
+                      title="Cancel / Void"
+                      onClick={() => {
+                        setCancelInvoice(invoice);
+                        setCancelDialogOpen(true);
+                      }}
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {!options?.hideSendAndDownload && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`${btnClass} hover:bg-purple-500 hover:text-white`}
+                          title="Send"
+                          onClick={() => openEmailDialog(invoice)}
+                        >
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`${btnClass} hover:bg-blue-500 hover:text-white`}
+                          title="Download"
+                          onClick={() => downloadInvoicePdf(invoice)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
-                  </>
-                )}
-                {!options?.hideSendAndDownload && (
-                  <>
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`${btnClass} hover:bg-purple-500 hover:text-white`}
-                      title="Send"
-                      onClick={() => openEmailDialog(invoice)}
+                      className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
+                      title="View"
+                      onClick={() => viewInvoicePdf(invoice)}
                     >
-                      <Mail className="h-4 w-4" />
+                      <FileText className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`${btnClass} hover:bg-blue-500 hover:text-white`}
-                      title="Download"
-                      onClick={() => downloadInvoicePdf(invoice)}
+                      className={`${btnClass} hover:bg-amber-500 hover:text-white`}
+                      title="Partially Paid"
+                      disabled={paymentsDisabled}
+                      onClick={() => {
+                        setPartialInvoice(invoice);
+                        setPartialAmount("");
+                        setPartialDialogOpen(true);
+                      }}
                     >
-                      <Download className="h-4 w-4" />
+                      <BadgeDollarSign className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-green-500 hover:text-white`}
+                      title="Paid"
+                      disabled={paymentsDisabled}
+                      onClick={() => {
+                        setPaidInvoice(invoice);
+                        setPaidDialogOpen(true);
+                      }}
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-orange-500 hover:text-white`}
+                      title="Disputed"
+                      onClick={() => {
+                        setDisputeInvoice(invoice);
+                        setDisputeForm({ reason: "", notes: "", status: "Open" });
+                        setDisputeDialogOpen(true);
+                      }}
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-red-500 hover:text-white`}
+                      title="Cancel"
+                      onClick={() => {
+                        setCancelInvoice(invoice);
+                        setCancelDialogOpen(true);
+                      }}
+                    >
+                      <XCircle className="h-4 w-4" />
                     </Button>
                   </>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
-                  title="View"
-                  onClick={() => viewInvoicePdf(invoice)}
-                >
-                  <FileText className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`${btnClass} hover:bg-amber-500 hover:text-white`}
-                  title="Partially Paid"
-                  disabled={paymentsDisabled}
-                  onClick={() => {
-                    setPartialInvoice(invoice);
-                    setPartialAmount("");
-                    setPartialDialogOpen(true);
-                  }}
-                >
-                  <BadgeDollarSign className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`${btnClass} hover:bg-green-500 hover:text-white`}
-                  title="Paid"
-                  disabled={paymentsDisabled}
-                  onClick={() => {
-                    setPaidInvoice(invoice);
-                    setPaidDialogOpen(true);
-                  }}
-                >
-                  <CheckCircle className="h-4 w-4" />
-                </Button>
-                {!options?.allowDisputeActions && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={`${btnClass} hover:bg-orange-500 hover:text-white`}
-                    title="Disputed"
-                    onClick={() => {
-                      setDisputeInvoice(invoice);
-                      setDisputeDialogOpen(true);
-                    }}
-                  >
-                    <AlertTriangle className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`${btnClass} hover:bg-red-500 hover:text-white`}
-                  title="Cancel"
-                  onClick={() => {
-                    setCancelInvoice(invoice);
-                    setCancelDialogOpen(true);
-                  }}
-                >
-                  <XCircle className="h-4 w-4" />
-                </Button>
               </div>
             )}
           </div>
@@ -1833,7 +1856,7 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {paidInvoices.length ? (
-                paidInvoices.map((invoice) => renderInvoiceRow(invoice))
+                paidInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true }))
               ) : (
                 <p className="text-sm text-muted-foreground">No paid invoices.</p>
               )}
@@ -2211,21 +2234,7 @@ export function InvoiceManagementPortal() {
                 onChange={(event) => setDisputeForm((prev) => ({ ...prev, notes: event.target.value }))}
               />
             </div>
-            <div>
-              <Label>Status</Label>
-              <Select
-                value={disputeForm.status}
-                onValueChange={(value: "Open" | "Resolved") => setDisputeForm((prev) => ({ ...prev, status: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Open">Open</SelectItem>
-                  <SelectItem value="Resolved">Resolved</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <p className="text-xs text-muted-foreground">Status will be set to Open when you save.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisputeDialogOpen(false)}>
