@@ -1038,7 +1038,7 @@ export function InvoiceManagementPortal() {
 
   const renderInvoiceRow = (
     invoice: ExternalInvoice,
-    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean }
+    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean }
   ) => {
     const overdue = isOverdueInvoice(invoice);
     const lastPayment = invoice.payments?.length ? invoice.payments[invoice.payments.length - 1] : undefined;
@@ -1099,7 +1099,21 @@ export function InvoiceManagementPortal() {
             </div>
             {options?.showActions && (
               <div className="flex flex-wrap gap-1.5 justify-end items-center shrink-0 self-center md:self-auto">
-                {options?.allowDisputeActions ? (
+                {options?.showDisputeOnly ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`${btnClass} hover:bg-orange-500 hover:text-white`}
+                    title="Disputed"
+                    onClick={() => {
+                      setDisputeInvoice(invoice);
+                      setDisputeForm({ reason: "", notes: "", status: "Open" });
+                      setDisputeDialogOpen(true);
+                    }}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </Button>
+                ) : options?.allowDisputeActions ? (
                   <>
                     <Button
                       variant="outline"
@@ -1856,7 +1870,7 @@ export function InvoiceManagementPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               {paidInvoices.length ? (
-                paidInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true }))
+                paidInvoices.map((invoice) => renderInvoiceRow(invoice, { showActions: true, showDisputeOnly: true }))
               ) : (
                 <p className="text-sm text-muted-foreground">No paid invoices.</p>
               )}
