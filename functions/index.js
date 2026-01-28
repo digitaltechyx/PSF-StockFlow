@@ -168,7 +168,7 @@ function getSentAtDate(sentAt) {
   return null;
 }
 
-exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async (context) => {
+exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 minute").onRun(async (context) => {
   const db = admin.firestore();
   const now = Date.now();
 
