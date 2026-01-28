@@ -1037,50 +1037,52 @@ export function InvoiceManagementPortal() {
         )}
       >
         <CardContent className="p-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md shrink-0">
-                <FileText className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex-1 min-w-0 space-y-1">
-                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100 truncate">
-                  {invoice.clientName || "—"}
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                  {invoice.clientEmail || "—"}
-                </p>
-                <div className="flex flex-wrap gap-x-2 gap-y-1 items-center text-xs text-gray-500 dark:text-gray-400">
-                  <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
-                    {invoice.invoiceNumber}
-                  </span>
-                  <span>Due {formatDate(invoice.dueDate)}</span>
-                  {invoice.sentAt && <span>Sent {formatDate(invoice.sentAt)}</span>}
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <div className="flex-1 min-w-0 flex flex-col gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 shadow-md shrink-0">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100 truncate">
+                    {invoice.clientName || "—"}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                    {invoice.clientEmail || "—"}
+                  </p>
+                  <div className="flex flex-wrap gap-x-2 gap-y-1 items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                      {invoice.invoiceNumber}
+                    </span>
+                    <span>Due {formatDate(invoice.dueDate)}</span>
+                    {invoice.sentAt && <span>Sent {formatDate(invoice.sentAt)}</span>}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <Badge variant="secondary" className="capitalize text-xs">
-                {overdue ? "Overdue" : invoice.status.replace("_", " ")}
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                Total ${invoice.total.toFixed(2)}
-              </Badge>
-              {invoice.status === "partially_paid" && (
-                <Badge variant="outline" className="text-xs">
-                  Paid ${invoice.amountPaid.toFixed(2)}
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <Badge variant="secondary" className="capitalize text-xs">
+                  {overdue ? "Overdue" : invoice.status.replace("_", " ")}
                 </Badge>
-              )}
-              <Badge variant="outline" className="text-xs">
-                Outstanding ${invoice.outstandingBalance.toFixed(2)}
-              </Badge>
-              {invoice.status === "partially_paid" && lastPayment?.date && (
                 <Badge variant="outline" className="text-xs">
-                  Last Payment {formatDate(lastPayment.date)}
+                  Total ${invoice.total.toFixed(2)}
                 </Badge>
-              )}
+                {invoice.status === "partially_paid" && (
+                  <Badge variant="outline" className="text-xs">
+                    Paid ${invoice.amountPaid.toFixed(2)}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="text-xs">
+                  Outstanding ${invoice.outstandingBalance.toFixed(2)}
+                </Badge>
+                {invoice.status === "partially_paid" && lastPayment?.date && (
+                  <Badge variant="outline" className="text-xs">
+                    Last Payment {formatDate(lastPayment.date)}
+                  </Badge>
+                )}
+              </div>
             </div>
             {options?.showActions && (
-              <div className="flex flex-wrap gap-1.5 justify-end items-center">
+              <div className="flex flex-wrap gap-1.5 justify-end items-center shrink-0 self-center md:self-auto">
                 {options?.allowDisputeActions && (
                   <>
                     <Button
