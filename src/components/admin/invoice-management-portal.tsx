@@ -594,6 +594,7 @@ export function InvoiceManagementPortal() {
     subtotal: invoice.subtotal,
     salesTax: invoice.salesTax || 0,
     shippingCost: invoice.shippingCost || 0,
+    discount: getDiscountAmount(invoice),
     total: getEffectiveTotal(invoice),
     terms: invoice.terms,
   };
@@ -2253,7 +2254,7 @@ export function InvoiceManagementPortal() {
                 <>
                   <div className="space-y-3">
                     {getPaginatedData(overdueInvoices, currentPage).paginatedData.map((invoice) =>
-                      renderInvoiceRow(invoice, { showActions: true })
+                      renderInvoiceRow(invoice, { showActions: true, hideSendAndDownload: true, showDiscount: true })
                     )}
                   </div>
                   {overdueInvoices.length > itemsPerPage && (

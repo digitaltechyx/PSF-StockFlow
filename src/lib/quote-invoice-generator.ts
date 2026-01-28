@@ -26,6 +26,7 @@ interface QuoteInvoiceData {
   subtotal: number;
   salesTax: number;
   shippingCost: number;
+  discount?: number;
   total: number;
   terms?: string;
 }
@@ -175,7 +176,12 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   doc.text(`Sales Tax: $${data.salesTax.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
   y += 5;
   doc.text(`Shipping: $${data.shippingCost.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
-  y += 6;
+  y += 5;
+  if (data.discount != null && data.discount > 0) {
+    doc.text(`Discount: -$${data.discount.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
+    y += 5;
+  }
+  y += data.discount != null && data.discount > 0 ? 1 : 6;
   doc.text(`Grand Total: $${data.total.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
 
   // Add Terms & Conditions if provided (as bullet points)
