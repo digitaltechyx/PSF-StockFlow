@@ -142,6 +142,7 @@ interface Quote {
   convertedInvoiceId?: string;
   convertedInvoiceNumber?: string;
   convertedAt?: any;
+  invoiceSentAt?: any;
 }
 
 const FOLLOW_UP_LIMIT = 9;
@@ -1286,6 +1287,7 @@ export function QuoteManagement() {
             createdAt: serverTimestamp(),
           });
         }
+        updatePayload.invoiceSentAt = serverTimestamp();
       }
 
       await updateDoc(doc(db, "quotes", activeEmailQuote.id), updatePayload);
@@ -2022,10 +2024,11 @@ export function QuoteManagement() {
                   variant="outline"
                   size="sm"
                   onClick={() => openEmailDialog(quote, "invoice")}
-                  className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                  disabled={!!quote.invoiceSentAt}
+                  className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <Mail className="h-4 w-4 mr-1" />
-                  Send Invoice
+                  {quote.invoiceSentAt ? "Invoice sent" : "Send Invoice"}
                 </Button>
               )}
               
@@ -3328,10 +3331,11 @@ export function QuoteManagement() {
                                       variant="outline" 
                                       size="sm" 
                                       onClick={() => openEmailDialog(quote, "invoice")}
-                                      className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
+                                      disabled={!!quote.invoiceSentAt}
+                                      className="hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none"
                                     >
                                       <Mail className="h-4 w-4 mr-1" />
-                                      Send Invoice
+                                      {quote.invoiceSentAt ? "Invoice sent" : "Send Invoice"}
                                     </Button>
                                   </>
                                 ) : (
