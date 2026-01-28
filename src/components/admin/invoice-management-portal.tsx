@@ -1183,7 +1183,7 @@ export function InvoiceManagementPortal() {
 
   const renderInvoiceRow = (
     invoice: ExternalInvoice,
-    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean; showDiscount?: boolean }
+    options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean; showDiscount?: boolean; showViewOnly?: boolean }
   ) => {
     const overdue = isOverdueInvoice(invoice);
     const lastPayment = invoice.payments?.length ? invoice.payments[invoice.payments.length - 1] : undefined;
@@ -1249,22 +1249,52 @@ export function InvoiceManagementPortal() {
             </div>
             {options?.showActions && (
               <div className="flex flex-wrap gap-1.5 justify-end items-center shrink-0 self-center md:self-auto">
-                {options?.showDisputeOnly ? (
+                {options?.showViewOnly ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    className={`${btnClass} hover:bg-orange-500 hover:text-white`}
-                    title="Disputed"
-                    onClick={() => {
-                      setDisputeInvoice(invoice);
-                      setDisputeForm({ reason: "", notes: "", status: "Open" });
-                      setDisputeDialogOpen(true);
-                    }}
+                    className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
+                    title="View"
+                    onClick={() => viewInvoicePdf(invoice)}
                   >
-                    <AlertTriangle className="h-4 w-4" />
+                    <FileText className="h-4 w-4" />
                   </Button>
+                ) : options?.showDisputeOnly ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
+                      title="View"
+                      onClick={() => viewInvoicePdf(invoice)}
+                    >
+                      <FileText className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-orange-500 hover:text-white`}
+                      title="Disputed"
+                      onClick={() => {
+                        setDisputeInvoice(invoice);
+                        setDisputeForm({ reason: "", notes: "", status: "Open" });
+                        setDisputeDialogOpen(true);
+                      }}
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                    </Button>
+                  </>
                 ) : options?.allowDisputeActions ? (
                   <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`${btnClass} hover:bg-indigo-500 hover:text-white`}
+                      title="View"
+                      onClick={() => viewInvoicePdf(invoice)}
+                    >
+                      <FileText className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2035,6 +2065,9 @@ export function InvoiceManagementPortal() {
                             <div className="text-sm text-muted-foreground">{invoice.invoiceNumber}</div>
                           </div>
                           <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" size="sm" onClick={() => viewInvoicePdf(invoice)}>
+                              View
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => handleEditInvoice(invoice)}>
                               Edit
                             </Button>
@@ -2372,10 +2405,10 @@ export function InvoiceManagementPortal() {
               {cancelledFilteredByType.length ? (
                 <>
                   <div className="space-y-3">
-                    {getPaginatedData(cancelledFilteredByType, currentPage).paginatedData.map((entry) =>
-                      entry.type === "cancelled" ? (
-                        <div key={entry.item.id}>{renderInvoiceRow(entry.item)}</div>
-                      ) : (
+                        {getPaginatedData(cancelledFilteredByType, currentPage).paginatedData.map((entry) =>
+                          entry.type === "cancelled" ? (
+                            <div key={entry.item.id}>{renderInvoiceRow(entry.item, { showActions: true, showViewOnly: true })}</div>
+                          ) : (
                         <Card
                           key={entry.item.id}
                           className="border-2 border-amber-200/70 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20"

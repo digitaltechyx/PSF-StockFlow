@@ -155,6 +155,16 @@ const COMPANY_INFO = {
   email: "info@prepservicesfba.com",
 };
 
+// Default terms for invoices (should match invoice-management-portal)
+const INVOICE_TERMS = [
+  "Invoices must be paid in full before work begins unless written credit terms are approved by management.",
+  "Unpaid invoices after the due time may incur a $19 late fee per invoice.",
+  "Prep Services FBA may pause receiving, prep, storage, and shipments until payment is completed.",
+  "All completed labor services are non-refundable.",
+  "Client is responsible for product compliance, labeling accuracy, and marketplace requirements.",
+  "Any billing concern must be reported within 48 hours of invoice receipt. Unauthorized chargebacks may result in service suspension.",
+].join("\n");
+
 const createEmptyItem = (): QuoteLineItem => ({
   id: crypto.randomUUID(),
   description: "",
@@ -1088,6 +1098,7 @@ export function QuoteManagement() {
           salesTax: invoiceData.salesTax,
           shippingCost: invoiceData.shippingCost,
           total: invoiceData.total,
+          terms: INVOICE_TERMS,
         });
         const invoiceFile = new File(
           [invoiceBlob],
@@ -1249,7 +1260,8 @@ export function QuoteManagement() {
           clientState: activeEmailQuote.recipientState || "",
           clientZip: activeEmailQuote.recipientZip || "",
           clientCountry: activeEmailQuote.recipientCountry || "",
-          terms: activeEmailQuote.terms || "",
+          // Use invoice terms (not quotation terms) for converted invoices
+          terms: INVOICE_TERMS,
           items: activeEmailQuote.items.map((item) => ({
             id: item.id || crypto.randomUUID(),
             description: item.description || "",
@@ -1712,6 +1724,7 @@ export function QuoteManagement() {
         salesTax: invoiceData.salesTax,
         shippingCost: invoiceData.shippingCost,
         total: invoiceData.total,
+        terms: INVOICE_TERMS,
       });
       const pdfUrl = URL.createObjectURL(pdfBlob);
       window.open(pdfUrl, "_blank", "noopener,noreferrer");
@@ -1741,6 +1754,7 @@ export function QuoteManagement() {
         salesTax: invoiceData.salesTax,
         shippingCost: invoiceData.shippingCost,
         total: invoiceData.total,
+        terms: INVOICE_TERMS,
       });
       const pdfUrl = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
