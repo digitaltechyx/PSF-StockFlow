@@ -224,11 +224,14 @@ const isOverdueInvoice = (invoice: ExternalInvoice) => {
 
 const getDiscountAmount = (invoice: ExternalInvoice): number => {
   if (!invoice.discountType || invoice.discountValue == null) return 0;
-  const total = Number(invoice.total ?? 0);
+  // Calculate discount based on grand total (invoice + late fee) if late fee exists
+  const invoiceTotal = Number(invoice.total ?? 0);
+  const lateFee = Number(invoice.lateFee ?? 0);
+  const baseTotal = lateFee > 0 ? invoiceTotal + lateFee : invoiceTotal;
   if (invoice.discountType === "percentage") {
-    return Number((total * (invoice.discountValue / 100)).toFixed(2));
+    return Number((baseTotal * (invoice.discountValue / 100)).toFixed(2));
   }
-  return Math.min(Number(invoice.discountValue), total);
+  return Math.min(Number(invoice.discountValue), baseTotal);
 };
 
 const getEffectiveTotal = (invoice: ExternalInvoice): number => {
@@ -1411,7 +1414,7 @@ Prep Services FBA Team`;
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">
-                  Outstanding ${(Number(invoice.outstandingBalance ?? 0) + Number(invoice.lateFee ?? 0)).toFixed(2)}
+                  Outstanding ${Number(invoice.outstandingBalance ?? 0).toFixed(2)}
                 </Badge>
                 {invoice.status === "partially_paid" && lastPayment?.date && (
                   <Badge variant="outline" className="text-xs">
@@ -3061,17 +3064,40 @@ Prep Services FBA Team`;
                 />
               </div>
               {discountValue.trim() && Number(discountValue) > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  New grand total: $
-                  {(() => {
-                    const grandTotal = getGrandTotalWithLateFee(discountInvoice);
-                    const discountAmount =
-                      discountType === "percentage"
-                        ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
-                        : Math.min(Number(discountValue), grandTotal);
-                    return (grandTotal - discountAmount).toFixed(2);
-                  })()}
-                </p>
+                <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-md border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Previous grand total:</span>
+                    <span className="text-sm font-semibold">${getGrandTotalWithLateFee(discountInvoice).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Discount:</span>
+                    <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                      -$
+                      {(() => {
+                        const grandTotal = getGrandTotalWithLateFee(discountInvoice);
+                        const discountAmount =
+                          discountType === "percentage"
+                            ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
+                            : Math.min(Number(discountValue), grandTotal);
+                        return discountAmount.toFixed(2);
+                      })()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-2">
+                    <span className="text-sm font-semibold">New grand total:</span>
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                      $
+                      {(() => {
+                        const grandTotal = getGrandTotalWithLateFee(discountInvoice);
+                        const discountAmount =
+                          discountType === "percentage"
+                            ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
+                            : Math.min(Number(discountValue), grandTotal);
+                        return (grandTotal - discountAmount).toFixed(2);
+                      })()}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
           )}
