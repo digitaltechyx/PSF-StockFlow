@@ -127,6 +127,7 @@ interface ExternalInvoice {
   discountValue?: number;
   lateFee?: number;
   lateFeeEmailSentAt?: any;
+  secondOverdueReminderSentAt?: any;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -708,6 +709,82 @@ Prep Services FBA Team`;
     }
   }, [user, toBase64, buildInvoicePdfData]);
 
+  const sendSecondOverdueReminder = useCallback(async (invoice: ExternalInvoice) => {
+    if (!user || !invoice.clientEmail) {
+      console.warn(`Cannot send second overdue reminder for invoice ${invoice.invoiceNumber}: missing user or client email`);
+      return;
+    }
+
+    try {
+      const idToken = await user.getIdToken();
+      const headers: HeadersInit = {
+        Authorization: `Bearer ${idToken}`,
+      };
+      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+      if (vercelBypass) {
+        headers["x-vercel-protection-bypass"] = vercelBypass;
+      }
+
+      const secondOverdueMessage = `Hi,
+
+Our records show that your invoice is still unpaid, even after the late fee was applied. As per our terms, services—including receiving, prep, storage, and shipments—may be temporarily paused until payment is completed.
+
+We'd really appreciate it if you could settle the outstanding balance as soon as possible to avoid any disruption. If you've already made the payment, please disregard this message.
+
+And of course, if you have any questions or concerns, we're always here to help.
+
+Thank you for your attention.
+
+Best regards,
+Prep Services FBA Team`;
+
+      let response: Response;
+      if (externalEmailApi) {
+        response = await fetch(externalEmailApi, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: invoice.clientEmail.trim(),
+            subject: `Final Reminder: Unpaid Invoice ${invoice.invoiceNumber}`,
+            message: secondOverdueMessage,
+            attachments: [],
+          }),
+        });
+      } else {
+        const payload = new FormData();
+        payload.append("to", invoice.clientEmail.trim());
+        payload.append("subject", `Final Reminder: Unpaid Invoice ${invoice.invoiceNumber}`);
+        payload.append("message", secondOverdueMessage);
+        const apiUrl = vercelBypass
+          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+          : "/api/email/send";
+        response = await fetch(apiUrl, {
+          method: "POST",
+          headers,
+          body: payload,
+        });
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to send second overdue reminder.");
+      }
+
+      await updateDoc(doc(db, "external_invoices", invoice.id), {
+        secondOverdueReminderSentAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log(`Second overdue reminder sent for invoice ${invoice.invoiceNumber}`);
+    } catch (error) {
+      console.error(`Failed to send second overdue reminder for invoice ${invoice.invoiceNumber}:`, error);
+    }
+  }, [user]);
+
   // Automatically apply late fee when invoice becomes overdue and send email
   useEffect(() => {
     if (!invoices.length || loading || !user) return;
@@ -724,16 +801,30 @@ Prep Services FBA Team`;
 
       for (const invoice of overdueWithoutLateFee) {
         try {
-          // Create updated invoice object with late fee for PDF generation
-          const updatedInvoice: ExternalInvoice = { ...invoice, lateFee: 19 };
-          
-          // Apply late fee to database
+          // When invoice becomes overdue: invoice date = today, due date = tomorrow (one day)
+          const today = new Date();
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const invoiceDateStr = today.toISOString().slice(0, 10);
+          const dueDateStr = tomorrow.toISOString().slice(0, 10);
+
+          // Create updated invoice object with late fee and new dates for PDF generation
+          const updatedInvoice: ExternalInvoice = {
+            ...invoice,
+            lateFee: 19,
+            invoiceDate: invoiceDateStr,
+            dueDate: dueDateStr,
+          };
+
+          // Apply late fee and new dates to database
           await updateDoc(doc(db, "external_invoices", invoice.id), {
             lateFee: 19,
+            invoiceDate: invoiceDateStr,
+            dueDate: dueDateStr,
             updatedAt: serverTimestamp(),
           });
-          
-          // Send email with updated invoice (includes late fee in PDF)
+
+          // Send email with updated invoice (includes late fee and new dates in PDF)
           await sendOverdueEmail(updatedInvoice);
         } catch (error) {
           console.error(`Failed to apply late fee to invoice ${invoice.invoiceNumber}:`, error);
@@ -741,8 +832,25 @@ Prep Services FBA Team`;
       }
     };
 
+    const sendSecondOverdueReminders = async () => {
+      // Second time overdue: already has late fee + first email sent, but second reminder not sent
+      const overdueSecondTime = invoices.filter(
+        (invoice) =>
+          isOverdueInvoice(invoice) &&
+          invoice.lateFee != null &&
+          invoice.lateFee > 0 &&
+          invoice.lateFeeEmailSentAt &&
+          !invoice.secondOverdueReminderSentAt
+      );
+
+      for (const invoice of overdueSecondTime) {
+        await sendSecondOverdueReminder(invoice);
+      }
+    };
+
     applyLateFeeToOverdue();
-  }, [invoices, loading, user, sendOverdueEmail]);
+    sendSecondOverdueReminders();
+  }, [invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder]);
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
     try {
