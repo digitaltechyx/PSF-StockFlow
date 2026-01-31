@@ -815,12 +815,18 @@ Prep Services FBA Team`;
             invoiceDate: invoiceDateStr,
             dueDate: dueDateStr,
           };
+          const amountPaid = Number(invoice.amountPaid ?? 0);
+          const newOutstanding = Math.max(
+            0,
+            Number((getGrandTotalWithLateFee(updatedInvoice) - amountPaid).toFixed(2))
+          );
 
           // Apply late fee and new dates to database
           await updateDoc(doc(db, "external_invoices", invoice.id), {
             lateFee: 19,
             invoiceDate: invoiceDateStr,
             dueDate: dueDateStr,
+            outstandingBalance: newOutstanding,
             updatedAt: serverTimestamp(),
           });
 
@@ -1465,6 +1471,10 @@ Prep Services FBA Team`;
     options?: { showActions?: boolean; allowDisputeActions?: boolean; hideSendAndDownload?: boolean; showDisputeOnly?: boolean; showDiscount?: boolean; showViewOnly?: boolean }
   ) => {
     const overdue = isOverdueInvoice(invoice);
+    const displayOutstanding = Math.max(
+      0,
+      Number((getGrandTotalWithLateFee(invoice) - Number(invoice.amountPaid ?? 0)).toFixed(2))
+    );
     const lastPayment = invoice.payments?.length ? invoice.payments[invoice.payments.length - 1] : undefined;
     const paymentsDisabled = invoice.status === "cancelled";
     const btnClass = "h-8 w-8 p-0 shrink-0";
@@ -1522,7 +1532,7 @@ Prep Services FBA Team`;
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">
-                  Outstanding ${Number(invoice.outstandingBalance ?? 0).toFixed(2)}
+                  Outstanding ${displayOutstanding.toFixed(2)}
                 </Badge>
                 {invoice.status === "partially_paid" && lastPayment?.date && (
                   <Badge variant="outline" className="text-xs">
