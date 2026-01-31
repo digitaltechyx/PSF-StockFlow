@@ -2321,70 +2321,73 @@ export function QuoteManagement() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-2 shadow-sm">
-          <TabsList className="flex flex-wrap gap-2 bg-transparent">
-            <TabsTrigger 
-              value="new" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-1.5 sm:p-2 shadow-sm overflow-hidden">
+          <TabsList className="flex flex-wrap gap-1.5 sm:gap-2 bg-transparent h-auto min-h-0 w-full justify-start">
+            <TabsTrigger
+              value="new"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="shrink-0" />
               New
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="draft"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <FileText className="h-4 w-4 mr-2" />
+              <FileText className="shrink-0" />
               Draft
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="sent"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <Send className="h-4 w-4 mr-2" />
+              <Send className="shrink-0" />
               Send
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="follow_up"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <Clock className="h-4 w-4 mr-2" />
-              Follow Up
+              <Clock className="shrink-0" />
+              <span className="hidden sm:inline">Follow Up</span>
+              <span className="sm:hidden">Follow</span>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="accepted"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <CheckCircle className="h-4 w-4 mr-2" />
+              <CheckCircle className="shrink-0" />
               Accepted
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="lost"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <XCircle className="h-4 w-4 mr-2" />
+              <XCircle className="shrink-0" />
               Rejected
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="convert"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <FileText className="h-4 w-4 mr-2" />
-              Convert to Invoice
+              <FileText className="shrink-0" />
+              <span className="hidden md:inline">Convert to Invoice</span>
+              <span className="md:hidden">Convert</span>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="deleted"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-gray-500 data-[state=active]:to-gray-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-gray-500 data-[state=active]:to-gray-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <Archive className="h-4 w-4 mr-2" />
+              <Archive className="shrink-0" />
               Deleted
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="address_book"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
             >
-              <BookOpen className="h-4 w-4 mr-2" />
-              Address Book
+              <BookOpen className="shrink-0" />
+              <span className="hidden md:inline">Address Book</span>
+              <span className="md:hidden">Addresses</span>
             </TabsTrigger>
           </TabsList>
         </div>

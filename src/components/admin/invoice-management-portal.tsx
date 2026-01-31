@@ -1891,44 +1891,75 @@ Prep Services FBA Team`;
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="grid grid-cols-5 md:grid-cols-9 gap-2 bg-white dark:bg-gray-900 border shadow-sm p-2 h-auto">
-          <TabsTrigger value="new" className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            New
-          </TabsTrigger>
-          <TabsTrigger value="draft" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Draft
-          </TabsTrigger>
-          <TabsTrigger value="sent" className="flex items-center gap-2">
-            <Send className="h-4 w-4" />
-            Sent
-          </TabsTrigger>
-          <TabsTrigger value="partially_paid" className="flex items-center gap-2">
-            <BadgeDollarSign className="h-4 w-4" />
-            Partially Paid
-          </TabsTrigger>
-          <TabsTrigger value="paid" className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
-            Paid
-          </TabsTrigger>
-          <TabsTrigger value="overdue" className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            Overdue
-          </TabsTrigger>
-          <TabsTrigger value="disputed" className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Disputed
-          </TabsTrigger>
-          <TabsTrigger value="cancelled" className="flex items-center gap-2">
-            <XCircle className="h-4 w-4" />
-            Cancelled / Void
-          </TabsTrigger>
-          <TabsTrigger value="receipts" className="flex items-center gap-2">
-            <Receipt className="h-4 w-4" />
-            Receipts
-          </TabsTrigger>
-        </TabsList>
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-1.5 sm:p-2 shadow-sm overflow-hidden">
+          <TabsList className="flex flex-wrap gap-1.5 sm:gap-2 bg-transparent h-auto min-h-0 w-full justify-start">
+            <TabsTrigger
+              value="new"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Plus className="shrink-0" />
+              New
+            </TabsTrigger>
+            <TabsTrigger
+              value="draft"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <FileText className="shrink-0" />
+              Draft
+            </TabsTrigger>
+            <TabsTrigger
+              value="sent"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Send className="shrink-0" />
+              Sent
+            </TabsTrigger>
+            <TabsTrigger
+              value="partially_paid"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <BadgeDollarSign className="shrink-0" />
+              <span className="hidden sm:inline">Partially Paid</span>
+              <span className="sm:hidden">Partial</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="paid"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <CheckCircle className="shrink-0" />
+              Paid
+            </TabsTrigger>
+            <TabsTrigger
+              value="overdue"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Clock className="shrink-0" />
+              Overdue
+            </TabsTrigger>
+            <TabsTrigger
+              value="disputed"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <AlertTriangle className="shrink-0" />
+              Disputed
+            </TabsTrigger>
+            <TabsTrigger
+              value="cancelled"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-gray-500 data-[state=active]:to-gray-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <XCircle className="shrink-0" />
+              <span className="hidden md:inline">Cancelled / Void</span>
+              <span className="md:hidden">Cancelled</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="receipts"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Receipt className="shrink-0" />
+              Receipts
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="new" className="space-y-4">
           <Card className="border-2 border-fuchsia-200 dark:border-fuchsia-800 shadow-lg">
