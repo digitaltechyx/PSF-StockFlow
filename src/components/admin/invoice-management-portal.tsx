@@ -3549,7 +3549,7 @@ Prep Services FBA Team`;
                 disabled={isSendingResend}
               >
                 {isSendingResend ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Resend invoice with updated totals
+                Resend invoice
               </Button>
             )}
             <Button variant="outline" onClick={() => setDiscountDialogOpen(false)}>
