@@ -17,7 +17,7 @@ import { format } from "date-fns";
 import { hasRole } from "@/lib/permissions";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, Truck, Package, RotateCcw, User, Calendar, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import { Bell, Truck, Package, RotateCcw, Trash2, User, Calendar, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type NotificationType = "shipment_request" | "inventory_request" | "product_return" | "dispose_request";
