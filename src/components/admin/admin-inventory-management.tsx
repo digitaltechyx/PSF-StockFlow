@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,12 @@ interface AdminInventoryManagementProps {
   inventory: InventoryItem[];
   shipped: ShippedItem[];
   loading: boolean;
+  /** When set to "user-requests", opens the User Requests card and section (e.g. from Notifications "Process"). */
+  initialSection?: string;
+  /** Notification type: shipment_request | inventory_request | product_return — selects the corresponding tab. */
+  initialRequestTab?: string;
+  /** Request/return ID to auto-open in the request management component. */
+  initialRequestId?: string;
 }
 
 const editProductSchema = z.object({
@@ -61,11 +67,21 @@ const editLogSchema = z.object({
   reason: z.string().min(1, "Reason for editing is required."),
 });
 
+function notificationTypeToTabValue(type: string): "shipment" | "inventory" | "return" {
+  if (type === "shipment_request") return "shipment";
+  if (type === "inventory_request") return "inventory";
+  if (type === "product_return") return "return";
+  return "shipment";
+}
+
 export function AdminInventoryManagement({
   selectedUser,
   inventory,
   shipped,
-  loading
+  loading,
+  initialSection,
+  initialRequestTab,
+  initialRequestId,
 }: AdminInventoryManagementProps) {
   const { toast } = useToast();
   const { userProfile: adminUser } = useAuth();
@@ -85,6 +101,21 @@ export function AdminInventoryManagement({
   const [editingProductWithLog, setEditingProductWithLog] = useState<InventoryItem | null>(null);
   // Single state to track active section
   const [activeSection, setActiveSection] = useState<string>("current-inventory");
+  // User Requests tab (shipment | inventory | return)
+  const [userRequestsTab, setUserRequestsTab] = useState<"shipment" | "inventory" | "return">(
+    initialRequestTab ? notificationTypeToTabValue(initialRequestTab) : "shipment"
+  );
+
+  // When navigated from Notifications "Process", open User Requests section and correct tab
+  useEffect(() => {
+    if (initialSection === "user-requests") {
+      setActiveSection("user-requests");
+      if (initialRequestTab) {
+        setUserRequestsTab(notificationTypeToTabValue(initialRequestTab));
+      }
+    }
+  }, [initialSection, initialRequestTab]);
+
   const [selectedRemarks, setSelectedRemarks] = useState<string>("");
   const [isRemarksDialogOpen, setIsRemarksDialogOpen] = useState(false);
   const [detailsTitle, setDetailsTitle] = useState<string>("");
@@ -1447,20 +1478,20 @@ export function AdminInventoryManagement({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="shipment" className="w-full">
+            <Tabs value={userRequestsTab} onValueChange={(v) => setUserRequestsTab(v as "shipment" | "inventory" | "return")} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="shipment">Shipment Requests</TabsTrigger>
                 <TabsTrigger value="inventory">Inventory Requests</TabsTrigger>
                 <TabsTrigger value="return">Product Returns</TabsTrigger>
               </TabsList>
               <TabsContent value="shipment" className="mt-4">
-                <ShipmentRequestsManagement selectedUser={selectedUser} inventory={inventory} />
+                <ShipmentRequestsManagement selectedUser={selectedUser} inventory={inventory} initialRequestId={initialRequestId} />
               </TabsContent>
               <TabsContent value="inventory" className="mt-4">
-                <InventoryRequestsManagement selectedUser={selectedUser} />
+                <InventoryRequestsManagement selectedUser={selectedUser} initialRequestId={initialRequestId} />
               </TabsContent>
               <TabsContent value="return" className="mt-4">
-                <ProductReturnsManagement selectedUser={selectedUser} inventory={inventory} />
+                <ProductReturnsManagement selectedUser={selectedUser} inventory={inventory} initialReturnId={initialRequestId} />
               </TabsContent>
             </Tabs>
           </CardContent>

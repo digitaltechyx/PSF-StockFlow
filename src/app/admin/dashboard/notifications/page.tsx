@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn } from "@/types";
@@ -12,12 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { hasRole } from "@/lib/permissions";
-import { ShipmentRequestsManagement } from "@/components/admin/shipment-requests-management";
-import { InventoryRequestsManagement } from "@/components/admin/inventory-requests-management";
-import { ProductReturnsManagement } from "@/components/admin/product-returns-management";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 
@@ -93,17 +90,7 @@ export default function AdminNotificationsPage() {
   const [inventoryRequests, setInventoryRequests] = useState<NotificationRow[]>([]);
   const [productReturns, setProductReturns] = useState<NotificationRow[]>([]);
 
-  // Process modal
-  const [processOpen, setProcessOpen] = useState(false);
-  const [processType, setProcessType] = useState<NotificationType | null>(null);
-  const [processUserId, setProcessUserId] = useState<string>("");
-  const [processRequestId, setProcessRequestId] = useState<string>("");
-
-  // inventory for selected user in process modal
-  const processUser = usersById.get(processUserId) || null;
-  const { data: processInventory } = useCollection<InventoryItem>(
-    processUser?.uid ? `users/${processUser.uid}/inventory` : ""
-  );
+  const router = useRouter();
 
   useEffect(() => {
     if (!canSeeAdminNotifications) return;
@@ -312,10 +299,13 @@ export default function AdminNotificationsPage() {
   }, [activeTab, allRows, fromDate, statusFilter, toDate, typeFilter, userIdFilter]);
 
   const openProcess = (row: NotificationRow) => {
-    setProcessType(row.type);
-    setProcessUserId(row.userId);
-    setProcessRequestId(row.id);
-    setProcessOpen(true);
+    const params = new URLSearchParams({
+      userId: row.userId,
+      section: "user-requests",
+      tab: row.type,
+      requestId: row.id,
+    });
+    router.push(`/admin/dashboard/inventory?${params.toString()}`);
   };
 
   const renderList = (rows: NotificationRow[]) => (
@@ -453,39 +443,6 @@ export default function AdminNotificationsPage() {
           </Tabs>
         </CardContent>
       </Card>
-
-      <Dialog open={processOpen} onOpenChange={setProcessOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="p-6 pb-2">
-            <DialogTitle>Process Request</DialogTitle>
-            <DialogDescription>
-              Process the request using the same controls as the user-specific pages.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 pt-2">
-            {processType === "shipment_request" && (
-              <ShipmentRequestsManagement
-                selectedUser={processUser}
-                inventory={processInventory}
-                initialRequestId={processRequestId}
-              />
-            )}
-            {processType === "inventory_request" && (
-              <InventoryRequestsManagement
-                selectedUser={processUser}
-                initialRequestId={processRequestId}
-              />
-            )}
-            {processType === "product_return" && (
-              <ProductReturnsManagement
-                selectedUser={processUser}
-                inventory={processInventory}
-                initialReturnId={processRequestId}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
