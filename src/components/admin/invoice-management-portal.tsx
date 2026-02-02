@@ -841,7 +841,10 @@ Prep Services FBA Team`;
             attachments: attachmentsPayload,
           }),
         });
-        if (!response.ok) throw new Error(await response.text() || "Failed to send email.");
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || `Email API returned ${response.status}`);
+        }
       } else {
         const payload = new FormData();
         payload.append("to", invoice.clientEmail.trim());
@@ -852,7 +855,10 @@ Prep Services FBA Team`;
           ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
           : "/api/email/send";
         const response = await fetch(apiUrl, { method: "POST", headers, body: payload });
-        if (!response.ok) throw new Error(await response.text() || "Failed to send email.");
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || `Email API returned ${response.status}`);
+        }
       }
       toast({ title: "Invoice resent with updated totals." });
       setDiscountDialogOpen(false);
@@ -861,8 +867,9 @@ Prep Services FBA Team`;
       setDiscountType("percentage");
       setDiscountValue("");
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to resend invoice.";
       console.error("Failed to resend invoice:", error);
-      toast({ variant: "destructive", title: "Failed to resend invoice." });
+      toast({ variant: "destructive", title: "Failed to resend invoice.", description: message });
     } finally {
       setIsSendingResend(false);
     }
@@ -3363,15 +3370,15 @@ Prep Services FBA Team`;
       </Dialog>
 
       <Dialog open={discountDialogOpen} onOpenChange={setDiscountDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] flex flex-col gap-4 p-6 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Apply Discount</DialogTitle>
             <DialogDescription>
               Choose discount by percentage or fixed amount. Invoice total and outstanding balance will be updated.
             </DialogDescription>
           </DialogHeader>
           {discountInvoice && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto overflow-x-hidden pr-2 min-h-0 flex-1">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">
                   Invoice total: ${Number(discountInvoice.total ?? 0).toFixed(2)}
@@ -3486,14 +3493,16 @@ Prep Services FBA Team`;
                         : Number(lateFeeCustomAmount) >= 0
                           ? Number(lateFeeCustomAmount)
                           : currentLateFee;
+                // When not changing late fee, base = current grand total (includes existing discount). When changing late fee, base = invoice total + new late fee.
                 const displayGrandTotalAfterLateFee = Number((invoiceTotal + displayLateFeeAfterAction).toFixed(2));
+                const displayBaseForCalculation = isLateFeeChange ? displayGrandTotalAfterLateFee : getGrandTotalWithLateFee(discountInvoice);
                 const hasDiscount = discountValue.trim() !== "" && Number(discountValue) > 0;
                 const displayDiscountAmount = hasDiscount
                   ? discountType === "percentage"
-                    ? Number((displayGrandTotalAfterLateFee * (Number(discountValue) / 100)).toFixed(2))
-                    : Math.min(Number(discountValue), displayGrandTotalAfterLateFee)
+                    ? Number((displayBaseForCalculation * (Number(discountValue) / 100)).toFixed(2))
+                    : Math.min(Number(discountValue), displayBaseForCalculation)
                   : 0;
-                const displayNewGrandTotal = Number((displayGrandTotalAfterLateFee - displayDiscountAmount).toFixed(2));
+                const displayNewGrandTotal = Number((displayBaseForCalculation - displayDiscountAmount).toFixed(2));
                 const showSummary = hasDiscount || isLateFeeChange;
                 if (!showSummary) return null;
                 return (
@@ -3532,7 +3541,7 @@ Prep Services FBA Team`;
               })()}
             </div>
           )}
-          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <DialogFooter className="flex-shrink-0 flex flex-col sm:flex-row gap-2">
             {discountShowResendButton && discountInvoice && (
               <Button
                 className="order-first sm:order-none w-full sm:w-auto"
