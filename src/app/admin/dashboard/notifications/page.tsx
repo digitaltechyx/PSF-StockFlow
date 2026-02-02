@@ -6,17 +6,19 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn } from "@/types";
 import { db } from "@/lib/firebase";
-import { collection, collectionGroup, getDocs, query, where } from "firebase/firestore";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { collection, collectionGroup, getDocs, query } from "firebase/firestore";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { hasRole } from "@/lib/permissions";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
+import { Bell, Truck, Package, RotateCcw, User, Calendar, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type NotificationType = "shipment_request" | "inventory_request" | "product_return";
 type StatusFilter = "all" | "pending" | "paid" | "approved" | "confirmed" | "rejected" | "in_progress" | "closed" | "cancelled";
@@ -60,6 +62,26 @@ function inRange(ms: number, from?: Date, to?: Date): boolean {
   return true;
 }
 
+function statusBadgeClass(status: string): string {
+  const s = normStatus(status);
+  switch (s) {
+    case "pending": return "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700";
+    case "approved": case "confirmed": case "closed": return "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700";
+    case "rejected": case "cancelled": return "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700";
+    case "in_progress": return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700";
+    case "paid": return "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700";
+    default: return "bg-muted text-muted-foreground border-border";
+  }
+}
+
+function typeIcon(type: NotificationType) {
+  switch (type) {
+    case "shipment_request": return <Truck className="h-4 w-4 shrink-0" />;
+    case "inventory_request": return <Package className="h-4 w-4 shrink-0" />;
+    case "product_return": return <RotateCcw className="h-4 w-4 shrink-0" />;
+  }
+}
+
 export default function AdminNotificationsPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
@@ -78,12 +100,14 @@ export default function AdminNotificationsPage() {
     return map;
   }, [users]);
 
-  const [activeTab, setActiveTab] = useState<"all" | NotificationType>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const NOTIFICATION_ITEMS_PER_PAGE = 10;
+
+  const [activeTab, setActiveTab] = useState<"all" | Exclude<StatusFilter, "all">>("all");
   const [typeFilter, setTypeFilter] = useState<"all" | NotificationType>("all");
   const [userIdFilter, setUserIdFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
   const [toDate, setToDate] = useState<Date | undefined>(undefined);
+  const [notificationPage, setNotificationPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
   const [shipmentRequests, setShipmentRequests] = useState<NotificationRow[]>([]);
@@ -269,34 +293,39 @@ export default function AdminNotificationsPage() {
       .sort((a, b) => b.createdAtMs - a.createdAtMs);
   }, [shipmentRequests, inventoryRequests, productReturns]);
 
-  const pendingCounts = useMemo(() => {
-    const isPending = (r: NotificationRow) => {
-      const s = normStatus(r.status);
-      if (r.type === "shipment_request") return s === "pending";
-      if (r.type === "inventory_request") return s === "pending";
-      if (r.type === "product_return") return ["pending", "approved", "in_progress"].includes(s);
-      return false;
-    };
-    const all = allRows.filter(isPending).length;
-    const shipment = shipmentRequests.filter(isPending).length;
-    const inv = inventoryRequests.filter(isPending).length;
-    const pr = productReturns.filter(isPending).length;
-    return { all, shipment, inv, pr };
-  }, [allRows, shipmentRequests, inventoryRequests, productReturns]);
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: allRows.length };
+    const statuses: Exclude<StatusFilter, "all">[] = ["pending", "paid", "approved", "confirmed", "rejected", "in_progress", "closed", "cancelled"];
+    statuses.forEach((s) => {
+      counts[s] = allRows.filter((r) => normStatus(r.status) === s).length;
+    });
+    return counts;
+  }, [allRows]);
 
   const filteredRows = useMemo(() => {
-    const byTab = (r: NotificationRow) => activeTab === "all" ? true : r.type === activeTab;
+    const byTab = (r: NotificationRow) => activeTab === "all" ? true : normStatus(r.status) === activeTab;
     const byType = (r: NotificationRow) => typeFilter === "all" ? true : r.type === typeFilter;
     const byUser = (r: NotificationRow) => {
       if (!userIdFilter || userIdFilter === "all") return true;
       return r.userId === userIdFilter;
     };
     const byDate = (r: NotificationRow) => inRange(r.createdAtMs, fromDate, toDate);
-    const byStatus = (r: NotificationRow) =>
-      statusFilter === "all" ? true : normStatus(r.status) === statusFilter;
 
-    return allRows.filter((r) => byTab(r) && byType(r) && byUser(r) && byDate(r) && byStatus(r));
-  }, [activeTab, allRows, fromDate, statusFilter, toDate, typeFilter, userIdFilter]);
+    return allRows.filter((r) => byTab(r) && byType(r) && byUser(r) && byDate(r));
+  }, [activeTab, allRows, fromDate, toDate, typeFilter, userIdFilter]);
+
+  // Reset to page 1 when filters or tab change
+  useEffect(() => {
+    setNotificationPage(1);
+  }, [activeTab, typeFilter, userIdFilter, fromDate, toDate]);
+
+  const paginatedResult = useMemo(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / NOTIFICATION_ITEMS_PER_PAGE));
+    const startIndex = (notificationPage - 1) * NOTIFICATION_ITEMS_PER_PAGE;
+    const paginatedRows = filteredRows.slice(startIndex, startIndex + NOTIFICATION_ITEMS_PER_PAGE);
+    const endIndex = Math.min(startIndex + NOTIFICATION_ITEMS_PER_PAGE, filteredRows.length);
+    return { paginatedRows, totalPages, startIndex, endIndex };
+  }, [filteredRows, notificationPage]);
 
   const openProcess = (row: NotificationRow) => {
     const params = new URLSearchParams({
@@ -309,76 +338,128 @@ export default function AdminNotificationsPage() {
   };
 
   const renderList = (rows: NotificationRow[]) => (
-    <div className="space-y-2">
+    <div className="space-y-3 sm:space-y-2">
       {rows.map((r) => {
         const u = usersById.get(r.userId);
-        const date = r.createdAtMs ? format(new Date(r.createdAtMs), "PPP p") : "N/A";
+        const date = r.createdAtMs ? format(new Date(r.createdAtMs), "PP") : "N/A";
+        const typeLabel = r.type === "shipment_request" ? "Shipment" : r.type === "inventory_request" ? "Inventory" : "Return";
         return (
-          <div key={`${r.type}-${r.userId}-${r.id}`} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border rounded-lg bg-background">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="font-semibold truncate">{r.title}</div>
-                <Badge variant="secondary">{r.status}</Badge>
-                <Badge variant="outline">
-                  {r.type === "shipment_request" ? "Shipment" : r.type === "inventory_request" ? "Inventory" : "Product Return"}
+          <div
+            key={`${r.type}-${r.userId}-${r.id}`}
+            className={cn(
+              "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md",
+              "min-h-[44px] touch-manipulation"
+            )}
+          >
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                <span className="text-muted-foreground">{typeIcon(r.type)}</span>
+                <span className="font-semibold text-foreground truncate text-sm sm:text-base">{r.title}</span>
+                <Badge variant="outline" className={cn("shrink-0 text-xs font-medium border", statusBadgeClass(r.status))}>
+                  {r.status}
+                </Badge>
+                <Badge variant="outline" className="shrink-0 text-xs bg-muted/50">
+                  {typeLabel}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                <div>User: {u?.name || "Unknown"} ({u?.email || ""})</div>
-                <div>Date: {date}</div>
-                {r.subtitle && <div>{r.subtitle}</div>}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <User className="h-3.5 w-3.5 shrink-0" />
+                  {u?.name || "Unknown"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 shrink-0" />
+                  {date}
+                </span>
+                {r.subtitle && <span className="w-full sm:w-auto">{r.subtitle}</span>}
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => openProcess(r)}>
-                Process
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              variant="default"
+              className="w-full sm:w-auto min-h-[44px] sm:min-h-9 shrink-0 gap-1"
+              onClick={() => openProcess(r)}
+            >
+              Process
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         );
       })}
       {rows.length === 0 && (
-        <div className="text-sm text-muted-foreground text-center py-10">
-          {loading ? "Loading..." : "No notifications found."}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          {loading ? (
+            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground mb-3" />
+          ) : (
+            <Bell className="h-10 w-10 text-muted-foreground/50 mb-3" />
+          )}
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Loading..." : "No notifications found."}
+          </p>
         </div>
       )}
     </div>
   );
 
+  const paginationUI = filteredRows.length > NOTIFICATION_ITEMS_PER_PAGE ? (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+        Showing {paginatedResult.startIndex + 1}–{paginatedResult.endIndex} of {filteredRows.length}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-[44px] sm:min-h-9"
+          onClick={() => setNotificationPage((p) => Math.max(1, p - 1))}
+          disabled={notificationPage === 1}
+        >
+          <ChevronLeft className="h-4 w-4" /> Previous
+        </Button>
+        <span className="text-sm tabular-nums px-1">{notificationPage} / {paginatedResult.totalPages}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-[44px] sm:min-h-9"
+          onClick={() => setNotificationPage((p) => Math.min(paginatedResult.totalPages, p + 1))}
+          disabled={notificationPage >= paginatedResult.totalPages}
+        >
+          Next <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Notifications</span>
-            <Badge variant="secondary">Pending: {pendingCounts.all}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Filters */}
-          <div className="grid gap-3 md:grid-cols-4">
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Status</div>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+    <div className="space-y-4 sm:space-y-6 p-2 sm:p-0">
+      <Card className="overflow-hidden border-2 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white pb-6 pt-6 sm:pt-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                <Bell className="h-7 w-7" />
+              </div>
+              <div>
+                <CardTitle className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                  Notifications
+                </CardTitle>
+                <CardDescription className="text-indigo-100 mt-0.5 text-sm">
+                  Process shipment, inventory & return requests
+                </CardDescription>
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Type</div>
+            <Badge variant="secondary" className="w-fit bg-white/20 text-white border-white/30 text-sm font-semibold px-3 py-1.5">
+              Total: {allRows.length}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 sm:space-y-5 pt-4 sm:pt-5">
+          {/* Filters: responsive grid — Type, User, Date range */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type</label>
               <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as any)}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-h-[44px] sm:min-h-10">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -389,10 +470,10 @@ export default function AdminNotificationsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">User</div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">User</label>
               <Select value={userIdFilter} onValueChange={setUserIdFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-h-[44px] sm:min-h-10">
                   <SelectValue placeholder="All users" />
                 </SelectTrigger>
                 <SelectContent>
@@ -401,44 +482,94 @@ export default function AdminNotificationsPage() {
                     .sort((a, b) => ((a[1].name || "").toLowerCase()).localeCompare((b[1].name || "").toLowerCase()))
                     .map(([id, u]) => (
                       <SelectItem key={id} value={id}>
-                        {(u.name || "Unknown")} {u.email ? `(${u.email})` : ""}
+                        <span className="truncate">{(u.name || "Unknown")} {u.email ? `(${u.email})` : ""}</span>
                       </SelectItem>
                     ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">From</div>
+            <div className="grid grid-cols-2 gap-2 sm:col-span-2 lg:col-span-1">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">From</label>
                 <DatePicker date={fromDate} setDate={(d) => setFromDate(d)} />
               </div>
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">To</div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">To</label>
                 <DatePicker date={toDate} setDate={(d) => setToDate(d)} />
               </div>
             </div>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-            <TabsList className="grid grid-cols-4 w-full">
-              <TabsTrigger value="all">All <Badge variant="secondary" className="ml-2">{pendingCounts.all}</Badge></TabsTrigger>
-              <TabsTrigger value="shipment_request">Shipments <Badge variant="secondary" className="ml-2">{pendingCounts.shipment}</Badge></TabsTrigger>
-              <TabsTrigger value="inventory_request">Inventory <Badge variant="secondary" className="ml-2">{pendingCounts.inv}</Badge></TabsTrigger>
-              <TabsTrigger value="product_return">Returns <Badge variant="secondary" className="ml-2">{pendingCounts.pr}</Badge></TabsTrigger>
-            </TabsList>
+          {/* Status tabs: horizontal scroll on mobile/tablet, wrap on large screens */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | Exclude<StatusFilter, "all">)} className="w-full">
+            <ScrollArea className="w-full rounded-lg border bg-muted/30 p-1 md:overflow-visible">
+              <TabsList className="inline-flex h-auto w-max gap-1 bg-transparent p-0 md:flex-wrap md:min-w-0">
+                <TabsTrigger value="all" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  All <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.all}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="pending" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Pending <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.pending ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="approved" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Approved <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.approved ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="in_progress" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  In Progress <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.in_progress ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="confirmed" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Confirmed <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.confirmed ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="rejected" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Rejected <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.rejected ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="closed" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Closed <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.closed ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="cancelled" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Cancelled <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.cancelled ?? 0}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="paid" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  Paid <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.paid ?? 0}</Badge>
+                </TabsTrigger>
+              </TabsList>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
 
-            <TabsContent value="all" className="mt-4">
-              {renderList(filteredRows)}
+            <TabsContent value="all" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
             </TabsContent>
-            <TabsContent value="shipment_request" className="mt-4">
-              {renderList(filteredRows.filter(r => r.type === "shipment_request"))}
+            <TabsContent value="pending" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
             </TabsContent>
-            <TabsContent value="inventory_request" className="mt-4">
-              {renderList(filteredRows.filter(r => r.type === "inventory_request"))}
+            <TabsContent value="approved" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
             </TabsContent>
-            <TabsContent value="product_return" className="mt-4">
-              {renderList(filteredRows.filter(r => r.type === "product_return"))}
+            <TabsContent value="in_progress" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
+            </TabsContent>
+            <TabsContent value="confirmed" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
+            </TabsContent>
+            <TabsContent value="rejected" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
+            </TabsContent>
+            <TabsContent value="closed" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
+            </TabsContent>
+            <TabsContent value="cancelled" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
+            </TabsContent>
+            <TabsContent value="paid" className="mt-4 focus-visible:outline-none">
+              {renderList(paginatedResult.paginatedRows)}
+              {paginationUI}
             </TabsContent>
           </Tabs>
         </CardContent>
