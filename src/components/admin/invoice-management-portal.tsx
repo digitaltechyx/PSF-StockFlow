@@ -332,6 +332,11 @@ export function InvoiceManagementPortal() {
   const [discountInvoice, setDiscountInvoice] = useState<ExternalInvoice | null>(null);
   const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage");
   const [discountValue, setDiscountValue] = useState("");
+  const [lateFeeAction, setLateFeeAction] = useState<"keep" | "remove" | "change">("keep");
+  const [lateFeeCustomAmount, setLateFeeCustomAmount] = useState("");
+  const [discountShowResendButton, setDiscountShowResendButton] = useState(false);
+  const [lateFeeWasRemoved, setLateFeeWasRemoved] = useState(false);
+  const [isSendingResend, setIsSendingResend] = useState(false);
 
   const [paymentHistoryPage, setPaymentHistoryPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -785,6 +790,84 @@ Prep Services FBA Team`;
     }
   }, [user]);
 
+  const LATE_FEE_REMOVED_MESSAGE = `Hi,
+
+We'd like to let you know that the late fee on your invoice has been removed as a courtesy.
+
+Please note that the original invoice balance remains due. We kindly ask you to complete the payment at your earliest convenience so we can continue services without interruption.
+
+If you have any questions or need clarification, feel free to reach out—we're happy to help.
+
+Thank you for your cooperation.
+
+Best regards,
+Prep Services FBA Team`;
+
+  const sendResendAfterLateFeeUpdate = useCallback(async (invoice: ExternalInvoice, wasRemoved: boolean) => {
+    if (!user || !invoice.clientEmail) {
+      toast({ variant: "destructive", title: "Missing user or client email." });
+      return;
+    }
+    setIsSendingResend(true);
+    try {
+      const invoiceBlob = await generateQuoteInvoicePdfBlob(buildInvoicePdfData(invoice));
+      const invoiceFile = new File([invoiceBlob], `Invoice-${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
+      const idToken = await user.getIdToken();
+      const headers: HeadersInit = { Authorization: `Bearer ${idToken}` };
+      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+      if (vercelBypass) headers["x-vercel-protection-bypass"] = vercelBypass;
+      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+      const message = wasRemoved
+        ? LATE_FEE_REMOVED_MESSAGE
+        : `Hi,\n\nWe'd like to let you know that the late fee on your invoice has been updated. Please see the attached invoice for the new balance.\n\nIf you have any questions, feel free to reach out.\n\nBest regards,\nPrep Services FBA Team`;
+      const subject = `Updated Invoice - ${invoice.invoiceNumber}`;
+
+      if (externalEmailApi) {
+        const attachmentsPayload = await Promise.all(
+          [invoiceFile].map(async (file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataBase64: toBase64(await file.arrayBuffer()),
+          }))
+        );
+        const response = await fetch(externalEmailApi, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: invoice.clientEmail.trim(),
+            subject,
+            message,
+            attachments: attachmentsPayload,
+          }),
+        });
+        if (!response.ok) throw new Error(await response.text() || "Failed to send email.");
+      } else {
+        const payload = new FormData();
+        payload.append("to", invoice.clientEmail.trim());
+        payload.append("subject", subject);
+        payload.append("message", message);
+        payload.append("attachments", invoiceFile);
+        const apiUrl = vercelBypass
+          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+          : "/api/email/send";
+        const response = await fetch(apiUrl, { method: "POST", headers, body: payload });
+        if (!response.ok) throw new Error(await response.text() || "Failed to send email.");
+      }
+      toast({ title: "Invoice resent with updated totals." });
+      setDiscountDialogOpen(false);
+      setDiscountInvoice(null);
+      setDiscountShowResendButton(false);
+      setDiscountType("percentage");
+      setDiscountValue("");
+    } catch (error) {
+      console.error("Failed to resend invoice:", error);
+      toast({ variant: "destructive", title: "Failed to resend invoice." });
+    } finally {
+      setIsSendingResend(false);
+    }
+  }, [user, toBase64, buildInvoicePdfData]);
+
   // Automatically apply late fee when invoice becomes overdue and send email
   useEffect(() => {
     if (!invoices.length || loading || !user) return;
@@ -906,9 +989,9 @@ Prep Services FBA Team`;
     }
   };
 
-  const downloadPaidInvoicesCsv = () => {
-    if (!paidInvoices.length) {
-      toast({ variant: "destructive", title: "No paid invoices to export." });
+  const downloadInvoicesCsv = (invoices: ExternalInvoice[], filenamePrefix: string) => {
+    if (!invoices.length) {
+      toast({ variant: "destructive", title: "No data to export." });
       return;
     }
     const headers = [
@@ -917,27 +1000,35 @@ Prep Services FBA Team`;
       "Client Email",
       "Invoice Date",
       "Due Date",
+      "Status",
       "Total",
+      "Late Fee",
       "Amount Paid",
       "Outstanding Balance",
       "Payment Count",
       "Last Payment Date",
     ];
-    const rows = paidInvoices.map((invoice) => {
+    const rows = invoices.map((invoice) => {
       const lastPayment = invoice.payments?.length
         ? invoice.payments[invoice.payments.length - 1]
         : undefined;
+      const displayOutstanding = Math.max(
+        0,
+        Number((getGrandTotalWithLateFee(invoice) - Number(invoice.amountPaid ?? 0)).toFixed(2))
+      );
       return [
         invoice.invoiceNumber,
         invoice.clientName,
         invoice.clientEmail,
-        invoice.invoiceDate,
-        invoice.dueDate,
-        invoice.total.toFixed(2),
-        invoice.amountPaid.toFixed(2),
-        invoice.outstandingBalance.toFixed(2),
+        invoice.invoiceDate ?? "",
+        invoice.dueDate ?? "",
+        invoice.status ?? "",
+        Number(invoice.total ?? 0).toFixed(2),
+        Number(invoice.lateFee ?? 0).toFixed(2),
+        Number(invoice.amountPaid ?? 0).toFixed(2),
+        displayOutstanding.toFixed(2),
         String(invoice.payments?.length || 0),
-        lastPayment?.date || "",
+        lastPayment?.date ?? "",
       ];
     });
     const csv = [headers, ...rows]
@@ -947,10 +1038,12 @@ Prep Services FBA Team`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `paid-invoices-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
+
+  const downloadPaidInvoicesCsv = () => downloadInvoicesCsv(paidInvoices, "paid-invoices");
 
   const downloadReceiptPdf = (
     payment: ExternalInvoicePayment & { invoiceNumber: string; clientName: string; total: number }
@@ -1420,44 +1513,79 @@ Prep Services FBA Team`;
 
   const applyDiscount = async () => {
     if (!discountInvoice) return;
+
+    const hasLateFeeSection = discountInvoice.lateFee != null && discountInvoice.lateFee > 0;
+    const isLateFeeUpdate = hasLateFeeSection && (lateFeeAction === "remove" || lateFeeAction === "change");
+
+    let newLateFee = discountInvoice.lateFee ?? 0;
+    if (hasLateFeeSection) {
+      if (lateFeeAction === "remove") {
+        newLateFee = 0;
+      } else if (lateFeeAction === "change") {
+        const custom = Number(lateFeeCustomAmount);
+        newLateFee = Number.isFinite(custom) && custom >= 0 ? Number(custom.toFixed(2)) : 0;
+      }
+    }
+
+    let discountAmount = 0;
+    let payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+
     const raw = discountValue.trim();
-    if (!raw) {
-      toast({ variant: "destructive", title: "Enter a discount value." });
+    if (raw) {
+      const num = Number(raw);
+      if (!Number.isFinite(num) || num < 0) {
+        toast({ variant: "destructive", title: "Enter a valid discount value." });
+        return;
+      }
+      if (discountType === "percentage" && (num > 100 || num <= 0)) {
+        toast({ variant: "destructive", title: "Percentage must be between 0 and 100." });
+        return;
+      }
+      const grandTotalForDiscount = Number(discountInvoice.total ?? 0) + newLateFee;
+      discountAmount =
+        discountType === "percentage"
+          ? Number((grandTotalForDiscount * (num / 100)).toFixed(2))
+          : Math.min(num, grandTotalForDiscount);
+      payload.discountType = discountType;
+      payload.discountValue = discountType === "percentage" ? num : Number(num.toFixed(2));
+    } else if (!isLateFeeUpdate) {
+      toast({ variant: "destructive", title: "Enter a discount value or remove/change late fee." });
       return;
     }
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0) {
-      toast({ variant: "destructive", title: "Enter a valid discount value." });
-      return;
-    }
-    if (discountType === "percentage" && (num > 100 || num <= 0)) {
-      toast({ variant: "destructive", title: "Percentage must be between 0 and 100." });
-      return;
-    }
+
+    const effectiveTotal = raw
+      ? Number(discountInvoice.total ?? 0) - discountAmount
+      : getEffectiveTotal(discountInvoice);
+    const newGrandTotal = Number((effectiveTotal + newLateFee).toFixed(2));
+    const amountPaid = Number(discountInvoice.amountPaid ?? 0);
+    const outstanding = Math.max(0, Number((newGrandTotal - amountPaid).toFixed(2)));
+
+    payload.lateFee = newLateFee;
+    payload.outstandingBalance = outstanding;
+
     setSaving(true);
     try {
-      // Calculate discount on grand total (invoice + late fee)
-      const grandTotal = getGrandTotalWithLateFee(discountInvoice);
-      const discountAmount =
-        discountType === "percentage"
-          ? Number((grandTotal * (num / 100)).toFixed(2))
-          : Math.min(num, grandTotal);
-      const newGrandTotal = Number((grandTotal - discountAmount).toFixed(2));
-      const amountPaid = Number(discountInvoice.amountPaid ?? 0);
-      const outstanding = Math.max(0, Number((newGrandTotal - amountPaid).toFixed(2)));
+      await updateDoc(doc(db, "external_invoices", discountInvoice.id), payload as any);
 
-      await updateDoc(doc(db, "external_invoices", discountInvoice.id), {
-        discountType,
-        discountValue: discountType === "percentage" ? num : Number(num.toFixed(2)),
-        outstandingBalance: outstanding,
-        updatedAt: serverTimestamp(),
-      });
-
-      toast({ title: "Discount applied." });
-      setDiscountDialogOpen(false);
-      setDiscountInvoice(null);
-      setDiscountType("percentage");
-      setDiscountValue("");
+      if (isLateFeeUpdate) {
+        const updatedInvoice: ExternalInvoice = {
+          ...discountInvoice,
+          lateFee: newLateFee,
+          outstandingBalance: outstanding,
+          ...(payload.discountType != null && { discountType: payload.discountType as "percentage" | "amount" }),
+          ...(payload.discountValue != null && { discountValue: payload.discountValue as number }),
+        };
+        setDiscountInvoice(updatedInvoice);
+        setDiscountShowResendButton(true);
+        setLateFeeWasRemoved(newLateFee === 0);
+        toast({ title: "Late fee and totals updated." });
+      } else {
+        toast({ title: "Discount applied." });
+        setDiscountDialogOpen(false);
+        setDiscountInvoice(null);
+        setDiscountType("percentage");
+        setDiscountValue("");
+      }
     } catch (error) {
       console.error("Failed to apply discount:", error);
       toast({ variant: "destructive", title: "Failed to apply discount." });
@@ -1641,6 +1769,10 @@ Prep Services FBA Team`;
                           setDiscountInvoice(invoice);
                           setDiscountType(invoice.discountType ?? "percentage");
                           setDiscountValue(invoice.discountValue != null ? String(invoice.discountValue) : "");
+                          setLateFeeAction("keep");
+                          setLateFeeCustomAmount(invoice.lateFee != null && invoice.lateFee > 0 ? String(invoice.lateFee) : "");
+                          setDiscountShowResendButton(false);
+                          setLateFeeWasRemoved(false);
                           setDiscountDialogOpen(true);
                         }}
                       >
@@ -2203,7 +2335,8 @@ Prep Services FBA Team`;
                 </div>
 
                 <div className="space-y-3">
-                  <div className="grid grid-cols-12 gap-2 items-center border-b border-amber-200/70 pb-2">
+                  {/* Desktop header - hidden on mobile where each row has its own labels */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 items-center border-b border-amber-200/70 pb-2">
                     <div className="col-span-6">
                       <h3 className="font-semibold text-amber-800">Item Description</h3>
                     </div>
@@ -2219,8 +2352,9 @@ Prep Services FBA Team`;
                     <div className="col-span-1" />
                   </div>
                   {formData.items.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-12 gap-2 items-center border-b border-amber-100/50 pb-2 invoice-actions">
-                      <div className="col-span-6">
+                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-2 items-center border-b border-amber-100/50 pb-3 md:pb-2 invoice-actions">
+                      <div className="md:col-span-6 space-y-1">
+                        <label className="text-xs font-medium text-amber-800 md:hidden">Item Description</label>
                         {isPrintMode ? (
                           <p className="text-sm">{item.description || "—"}</p>
                         ) : (
@@ -2228,11 +2362,12 @@ Prep Services FBA Team`;
                             value={item.description}
                             onChange={(event) => updateItem(item.id, "description", event.target.value)}
                             placeholder="Item description"
-                            className="h-9 border-amber-200/70"
+                            className="h-9 border-amber-200/70 w-full"
                           />
                         )}
                       </div>
-                      <div className="col-span-2">
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-xs font-medium text-amber-800 md:hidden">Qty</label>
                         {isPrintMode ? (
                           <p className="text-sm text-center">{Number(item.quantity ?? 0)}</p>
                         ) : (
@@ -2242,11 +2377,12 @@ Prep Services FBA Team`;
                             step={1}
                             value={item.quantity != null ? String(item.quantity) : ""}
                             onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
-                            className="h-9 text-center border-amber-200/70"
+                            className="h-9 text-center border-amber-200/70 w-full"
                           />
                         )}
                       </div>
-                      <div className="col-span-2">
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-xs font-medium text-amber-800 md:hidden">Unit Price ($)</label>
                         {isPrintMode ? (
                           <p className="text-sm text-right">${Number(item.unitPrice ?? 0).toFixed(2)}</p>
                         ) : (
@@ -2256,15 +2392,16 @@ Prep Services FBA Team`;
                             step="0.01"
                             value={item.unitPrice != null ? String(item.unitPrice) : ""}
                             onChange={(event) => updateItem(item.id, "unitPrice", event.target.value)}
-                            className="h-9 text-right border-amber-200/70"
+                            className="h-9 text-right border-amber-200/70 w-full"
                             placeholder="0.00"
                           />
                         )}
                       </div>
-                      <div className="col-span-1">
+                      <div className="md:col-span-1 flex items-center justify-between md:justify-end gap-2">
+                        <label className="text-xs font-medium text-amber-800 md:hidden">Amount</label>
                         <p className="text-sm text-right font-semibold">${Number(item.amount ?? 0).toFixed(2)}</p>
                       </div>
-                      <div className="col-span-1 flex justify-end invoice-remove-column">
+                      <div className="md:col-span-1 flex justify-end invoice-remove-column">
                         <Button
                           variant="destructive"
                           size="sm"
@@ -2394,8 +2531,21 @@ Prep Services FBA Team`;
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <CardTitle>Draft Invoices</CardTitle>
-              <CardDescription>Saved invoices that are not sent.</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Draft Invoices</CardTitle>
+                  <CardDescription>Saved invoices that are not sent.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadInvoicesCsv(draftInvoices, "draft-invoices")}
+                  disabled={!draftInvoices.length}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {draftInvoices.length ? (
@@ -2465,8 +2615,21 @@ Prep Services FBA Team`;
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <CardTitle>Sent Invoices</CardTitle>
-              <CardDescription>All sent invoices with outstanding balances.</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Sent Invoices</CardTitle>
+                  <CardDescription>All sent invoices with outstanding balances.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadInvoicesCsv(sentInvoices, "sent-invoices")}
+                  disabled={!sentInvoices.length}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {sentInvoices.length ? (
@@ -2515,8 +2678,21 @@ Prep Services FBA Team`;
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <CardTitle>Partially Paid</CardTitle>
-              <CardDescription>Invoices with partial payments and outstanding balance.</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Partially Paid</CardTitle>
+                  <CardDescription>Invoices with partial payments and outstanding balance.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadInvoicesCsv(partiallyPaidInvoices, "partially-paid-invoices")}
+                  disabled={!partiallyPaidInvoices.length}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {partiallyPaidInvoices.length ? (
@@ -2623,19 +2799,30 @@ Prep Services FBA Team`;
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <CardTitle>Overdue Invoices</CardTitle>
                   <CardDescription>Invoices past their due date.</CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTestOverdueDialogOpen(true)}
-                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                >
-                  Test Overdue
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadInvoicesCsv(overdueInvoices, "overdue-invoices")}
+                    disabled={!overdueInvoices.length}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTestOverdueDialogOpen(true)}
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                  >
+                    Test Overdue
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2685,8 +2872,21 @@ Prep Services FBA Team`;
           {searchAndDateFilterBar}
           <Card>
             <CardHeader>
-              <CardTitle>Disputed Invoices</CardTitle>
-              <CardDescription>Invoices marked as disputed.</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Disputed Invoices</CardTitle>
+                  <CardDescription>Invoices marked as disputed.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadInvoicesCsv(disputedInvoices, "disputed-invoices")}
+                  disabled={!disputedInvoices.length}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {disputedInvoices.length ? (
@@ -2754,8 +2954,21 @@ Prep Services FBA Team`;
           </div>
           <Card>
             <CardHeader>
-              <CardTitle>Cancelled / Void</CardTitle>
-              <CardDescription>Voided or cancelled invoices, and deleted drafts (restore from here).</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Cancelled / Void</CardTitle>
+                  <CardDescription>Voided or cancelled invoices, and deleted drafts (restore from here).</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadInvoicesCsv(cancelledInvoices, "cancelled-invoices")}
+                  disabled={!cancelledInvoices.length}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {cancelledFilteredByType.length ? (
@@ -3172,6 +3385,52 @@ Prep Services FBA Team`;
                   Grand total: ${getGrandTotalWithLateFee(discountInvoice).toFixed(2)}
                 </p>
               </div>
+              {discountInvoice.lateFee != null && discountInvoice.lateFee > 0 && (
+                <div className="space-y-2 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+                  <Label>Late fee</Label>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="lateFeeAction"
+                        checked={lateFeeAction === "keep"}
+                        onChange={() => setLateFeeAction("keep")}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Keep current (${Number(discountInvoice.lateFee ?? 0).toFixed(2)})</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="lateFeeAction"
+                        checked={lateFeeAction === "remove"}
+                        onChange={() => setLateFeeAction("remove")}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Remove</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="lateFeeAction"
+                        checked={lateFeeAction === "change"}
+                        onChange={() => setLateFeeAction("change")}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Change to $</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        className="w-20 h-8"
+                        value={lateFeeAction === "change" ? lateFeeCustomAmount : ""}
+                        onChange={(e) => setLateFeeCustomAmount(e.target.value)}
+                        onClick={(e) => { e.stopPropagation(); setLateFeeAction("change"); }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Discount type</Label>
                 <div className="flex gap-4">
@@ -3250,13 +3509,28 @@ Prep Services FBA Team`;
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            {discountShowResendButton && discountInvoice && (
+              <Button
+                className="order-first sm:order-none w-full sm:w-auto"
+                onClick={() => sendResendAfterLateFeeUpdate(discountInvoice, lateFeeWasRemoved)}
+                disabled={isSendingResend}
+              >
+                {isSendingResend ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Resend invoice with updated totals
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setDiscountDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={applyDiscount} disabled={saving}>
+            <Button
+              onClick={applyDiscount}
+              disabled={saving || (lateFeeAction === "change" && (!lateFeeCustomAmount.trim() || Number(lateFeeCustomAmount) < 0))}
+            >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Apply Discount
+              {discountInvoice?.lateFee != null && discountInvoice.lateFee > 0 && (lateFeeAction === "remove" || lateFeeAction === "change")
+                ? "Update late fee / discount"
+                : "Apply Discount"}
             </Button>
           </DialogFooter>
         </DialogContent>

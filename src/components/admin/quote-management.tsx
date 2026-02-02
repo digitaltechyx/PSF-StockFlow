@@ -2627,7 +2627,76 @@ export function QuoteManagement() {
                       Add Item
                     </Button>
                   </div>
-                  <div className="border border-amber-200/70 rounded-md overflow-hidden">
+                  {/* Mobile: stacked cards with labeled fields */}
+                  <div className="md:hidden space-y-3">
+                    {formData.items.map((item, index) => (
+                      <div key={item.id} className="border border-amber-200/70 rounded-md p-3 space-y-3 bg-amber-50/30">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-amber-800">Item Description</label>
+                          {isPrintMode ? (
+                            <span className="text-sm block">{item.description || "—"}</span>
+                          ) : (
+                            <Input
+                              value={item.description}
+                              onChange={(event) => updateItem(index, "description", event.target.value)}
+                              placeholder="Manual field"
+                              className="h-8 w-full"
+                            />
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-amber-800">Quantity</label>
+                            {isPrintMode ? (
+                              <span className="text-sm block">{item.quantity || 0}</span>
+                            ) : (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={item.quantity}
+                                onChange={(event) => updateItem(index, "quantity", event.target.value)}
+                                className="h-8 w-full"
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-amber-800">Unit Price ($)</label>
+                            {isPrintMode ? (
+                              <span className="text-sm block">${(item.unitPrice || 0).toFixed(2)}</span>
+                            ) : (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.unitPrice}
+                                onChange={(event) => updateItem(index, "unitPrice", event.target.value)}
+                                className="h-8 w-full"
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-amber-100">
+                          <span className="text-xs font-semibold text-amber-800">Total Price ($)</span>
+                          <span className="text-sm font-medium">${item.amount.toFixed(2)}</span>
+                        </div>
+                        {!isPrintMode && (
+                          <div className="flex justify-end quote-actions">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeItem(index)}
+                              className="text-destructive h-8 quote-actions"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Desktop: table */}
+                  <div className="hidden md:block border border-amber-200/70 rounded-md overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-amber-50 text-amber-900">
                         <tr className="text-left">
