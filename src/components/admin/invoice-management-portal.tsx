@@ -3471,42 +3471,65 @@ Prep Services FBA Team`;
                   onChange={(e) => setDiscountValue(e.target.value)}
                 />
               </div>
-              {discountValue.trim() && Number(discountValue) > 0 && (
-                <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-md border">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Previous grand total:</span>
-                    <span className="text-sm font-semibold">${getGrandTotalWithLateFee(discountInvoice).toFixed(2)}</span>
+              {(() => {
+                const hasLateFee = discountInvoice.lateFee != null && discountInvoice.lateFee > 0;
+                const isLateFeeChange = hasLateFee && (lateFeeAction === "remove" || lateFeeAction === "change");
+                const invoiceTotal = Number(discountInvoice.total ?? 0);
+                const currentLateFee = Number(discountInvoice.lateFee ?? 0);
+                const displayLateFeeAfterAction =
+                  !hasLateFee
+                    ? 0
+                    : lateFeeAction === "keep"
+                      ? currentLateFee
+                      : lateFeeAction === "remove"
+                        ? 0
+                        : Number(lateFeeCustomAmount) >= 0
+                          ? Number(lateFeeCustomAmount)
+                          : currentLateFee;
+                const displayGrandTotalAfterLateFee = Number((invoiceTotal + displayLateFeeAfterAction).toFixed(2));
+                const hasDiscount = discountValue.trim() !== "" && Number(discountValue) > 0;
+                const displayDiscountAmount = hasDiscount
+                  ? discountType === "percentage"
+                    ? Number((displayGrandTotalAfterLateFee * (Number(discountValue) / 100)).toFixed(2))
+                    : Math.min(Number(discountValue), displayGrandTotalAfterLateFee)
+                  : 0;
+                const displayNewGrandTotal = Number((displayGrandTotalAfterLateFee - displayDiscountAmount).toFixed(2));
+                const showSummary = hasDiscount || isLateFeeChange;
+                if (!showSummary) return null;
+                return (
+                  <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-md border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Previous grand total:</span>
+                      <span className="text-sm font-semibold">${getGrandTotalWithLateFee(discountInvoice).toFixed(2)}</span>
+                    </div>
+                    {isLateFeeChange && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          {lateFeeAction === "remove" ? "Late fee removed" : "Late fee changed"}:
+                        </span>
+                        <span className="text-sm font-semibold">
+                          ${displayGrandTotalAfterLateFee.toFixed(2)}
+                          {hasDiscount ? " (before discount)" : ""}
+                        </span>
+                      </div>
+                    )}
+                    {hasDiscount && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Discount:</span>
+                        <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                          -${displayDiscountAmount.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between border-t pt-2">
+                      <span className="text-sm font-semibold">New grand total:</span>
+                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                        ${displayNewGrandTotal.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Discount:</span>
-                    <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                      -$
-                      {(() => {
-                        const grandTotal = getGrandTotalWithLateFee(discountInvoice);
-                        const discountAmount =
-                          discountType === "percentage"
-                            ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
-                            : Math.min(Number(discountValue), grandTotal);
-                        return discountAmount.toFixed(2);
-                      })()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between border-t pt-2">
-                    <span className="text-sm font-semibold">New grand total:</span>
-                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                      $
-                      {(() => {
-                        const grandTotal = getGrandTotalWithLateFee(discountInvoice);
-                        const discountAmount =
-                          discountType === "percentage"
-                            ? Number((grandTotal * (Number(discountValue) / 100)).toFixed(2))
-                            : Math.min(Number(discountValue), grandTotal);
-                        return (grandTotal - discountAmount).toFixed(2);
-                      })()}
-                    </span>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
