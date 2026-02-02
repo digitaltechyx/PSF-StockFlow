@@ -189,6 +189,22 @@ export interface RecycledInventoryItem {
   remarks?: string; // Reason for recycling
 }
 
+/** User-initiated dispose request (user selects product, quantity, reason; admin approves or rejects). */
+export interface DisposeRequest {
+  id?: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  requestedAt?: { seconds: number; nanoseconds: number } | string;
+  approvedBy?: string;
+  approvedAt?: { seconds: number; nanoseconds: number } | string;
+  rejectedBy?: string;
+  rejectedAt?: { seconds: number; nanoseconds: number } | string;
+  adminFeedback?: string;
+}
+
 export interface DeleteLog {
   id: string;
   productName: string;
