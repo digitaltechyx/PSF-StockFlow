@@ -277,25 +277,30 @@ export default function AdminNotificationsPage() {
 
         // Dispose Requests (per-user; no collectionGroup for disposeRequests)
         {
-          const results = await Promise.all(userIds.map(async (uid) => {
-            const base = collection(db, `users/${uid}/disposeRequests`);
-            const q = query(base);
-            const snap = await getDocs(q);
-            return snap.docs.map((d) => {
-              const data = d.data() as any as DisposeRequest;
-              const dateMs = toMs(data.requestedAt) || 0;
-              return {
-                type: "dispose_request" as const,
-                id: d.id,
-                userId: uid,
-                status: String(data.status || ""),
-                createdAtMs: dateMs,
-                title: `Dispose Request • ${String(data.productName || "").substring(0, 40)}`,
-                subtitle: `Qty: ${data.quantity ?? 0} • ${(data.reason || "").substring(0, 30)}`,
-              };
-            });
-          }));
-          setDisposeRequests(results.flat());
+          try {
+            const results = await Promise.all(userIds.map(async (uid) => {
+              const base = collection(db, `users/${uid}/disposeRequests`);
+              const q = query(base);
+              const snap = await getDocs(q);
+              return snap.docs.map((d) => {
+                const data = d.data() as any as DisposeRequest;
+                const dateMs = toMs(data.requestedAt) || 0;
+                return {
+                  type: "dispose_request" as const,
+                  id: d.id,
+                  userId: uid,
+                  status: String(data.status || ""),
+                  createdAtMs: dateMs,
+                  title: `Dispose Request • ${String(data.productName || "").substring(0, 40)}`,
+                  subtitle: `Qty: ${data.quantity ?? 0} • ${(data.reason || "").substring(0, 30)}`,
+                };
+              });
+            }));
+            setDisposeRequests(results.flat());
+          } catch (e) {
+            console.warn("Notifications: Could not fetch dispose requests.", e);
+            setDisposeRequests([]);
+          }
         }
 
         // Note: If anyFailed is true, we used per-user fallback instead of collectionGroup
@@ -304,6 +309,12 @@ export default function AdminNotificationsPage() {
         if (anyFailed) {
           console.log("Notifications: Using per-user fallback (collectionGroup queries not available)");
         }
+      } catch (err) {
+        console.error("Notifications: Error loading notifications.", err);
+        setShipmentRequests((prev) => prev.length ? prev : []);
+        setInventoryRequests((prev) => prev.length ? prev : []);
+        setProductReturns((prev) => prev.length ? prev : []);
+        setDisposeRequests([]);
       } finally {
         setLoading(false);
       }
