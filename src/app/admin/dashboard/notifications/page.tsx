@@ -83,6 +83,23 @@ function typeIcon(type: NotificationType) {
   }
 }
 
+/** True when this request type is in a terminal/completed state (hide Process button). */
+function isProcessComplete(type: NotificationType, status: string): boolean {
+  const s = normStatus(status);
+  switch (type) {
+    case "shipment_request":
+      return ["confirmed", "closed", "rejected", "cancelled", "paid"].includes(s);
+    case "inventory_request":
+      return ["approved", "rejected"].includes(s);
+    case "product_return":
+      return ["confirmed", "closed", "rejected", "cancelled"].includes(s);
+    case "dispose_request":
+      return ["approved", "rejected"].includes(s);
+    default:
+      return false;
+  }
+}
+
 export default function AdminNotificationsPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
@@ -409,15 +426,17 @@ export default function AdminNotificationsPage() {
                 {r.subtitle && <span className="w-full sm:w-auto">{r.subtitle}</span>}
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="default"
-              className="w-full sm:w-auto min-h-[44px] sm:min-h-9 shrink-0 gap-1"
-              onClick={() => openProcess(r)}
-            >
-              Process
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            {!isProcessComplete(r.type, r.status) && (
+              <Button
+                size="sm"
+                variant="default"
+                className="w-full sm:w-auto min-h-[44px] sm:min-h-9 shrink-0 gap-1"
+                onClick={() => openProcess(r)}
+              >
+                Process
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         );
       })}
