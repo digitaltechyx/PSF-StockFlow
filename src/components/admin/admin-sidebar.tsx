@@ -28,7 +28,6 @@ import {
   Bell,
   FolderOpen,
   Receipt,
-  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -244,13 +243,6 @@ export function AdminSidebar() {
       title: "Pricing",
       url: "/admin/dashboard/pricing",
       icon: DollarSign,
-      color: "text-amber-600",
-      requiredFeature: "admin_dashboard" as const,
-    },
-    {
-      title: "Dispose Requests",
-      url: "/admin/dashboard/dispose-requests",
-      icon: RotateCcw,
       color: "text-amber-600",
       requiredFeature: "admin_dashboard" as const,
     },
