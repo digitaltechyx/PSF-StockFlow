@@ -18,6 +18,9 @@ function InventoryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId");
+  const section = searchParams.get("section");
+  const tab = searchParams.get("tab");
+  const requestId = searchParams.get("requestId");
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
   
@@ -253,6 +256,9 @@ function InventoryContent() {
             inventory={inventory}
             shipped={shipped}
             loading={inventoryLoading}
+            initialSection={section || undefined}
+            initialRequestTab={tab || undefined}
+            initialRequestId={requestId || undefined}
           />
         )}
       </CardContent>
