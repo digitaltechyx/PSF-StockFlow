@@ -84,8 +84,17 @@ export function DisposeRequestsManagement({
     });
   }, [requests, statusFilter]);
 
+  const closeDialog = () => {
+    setSelectedRequest(null);
+    setRejectFeedback("");
+  };
+
   const handleApprove = async (request: DisposeRequest) => {
     if (!selectedUser || !adminProfile) return;
+    if (!request.id) {
+      toast({ variant: "destructive", title: "Error", description: "Request ID missing." });
+      return;
+    }
     const invItem = inventory.find((i) => i.id === request.productId);
     if (!invItem) {
       toast({ variant: "destructive", title: "Product not found", description: "This product may have been removed from inventory." });
@@ -98,7 +107,7 @@ export function DisposeRequestsManagement({
     setIsProcessing(true);
     setRejectFeedback("");
     try {
-      const requestRef = doc(db, `users/${userId}/disposeRequests`, request.id!);
+      const requestRef = doc(db, `users/${userId}/disposeRequests`, request.id);
       const recycledCol = collection(db, `users/${userId}/recycledInventory`);
       const inventoryRef = doc(db, `users/${userId}/inventory`, invItem.id);
 
@@ -137,7 +146,7 @@ export function DisposeRequestsManagement({
       });
 
       toast({ title: "Request approved", description: `${request.quantity} unit(s) of "${request.productName}" disposed.` });
-      setSelectedRequest(null);
+      closeDialog();
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Failed to approve", description: err instanceof Error ? err.message : "Please try again." });
     } finally {
@@ -147,18 +156,22 @@ export function DisposeRequestsManagement({
 
   const handleReject = async (request: DisposeRequest) => {
     if (!selectedUser || !adminProfile) return;
+    if (!request.id) {
+      toast({ variant: "destructive", title: "Error", description: "Request ID missing." });
+      return;
+    }
     setIsProcessing(true);
     try {
-      const requestRef = doc(db, `users/${userId}/disposeRequests`, request.id!);
-      await updateDoc(requestRef, {
+      const requestRef = doc(db, `users/${userId}/disposeRequests`, request.id);
+      const updateData: Record<string, unknown> = {
         status: "rejected",
         rejectedBy: adminProfile.uid,
         rejectedAt: Timestamp.now(),
-        adminFeedback: rejectFeedback.trim() || undefined,
-      });
+      };
+      if (rejectFeedback.trim()) updateData.adminFeedback = rejectFeedback.trim();
+      await updateDoc(requestRef, updateData as Parameters<typeof updateDoc>[1]);
       toast({ title: "Request rejected", description: rejectFeedback.trim() ? "Feedback saved for the user." : "Request rejected." });
-      setSelectedRequest(null);
-      setRejectFeedback("");
+      closeDialog();
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Failed to reject", description: err instanceof Error ? err.message : "Please try again." });
     } finally {
@@ -247,7 +260,7 @@ export function DisposeRequestsManagement({
         </CardContent>
       </Card>
 
-      <Dialog open={!!selectedRequest} onOpenChange={(open) => !open && setSelectedRequest(null)}>
+      <Dialog open={!!selectedRequest} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Process dispose request</DialogTitle>
