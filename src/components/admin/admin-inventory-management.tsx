@@ -18,9 +18,13 @@ import * as z from "zod";
 import { doc, updateDoc, deleteDoc, addDoc, collection, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar, Plus, Truck, FileText, List } from "lucide-react";
+import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar, Plus, Truck, FileText, List, Bell } from "lucide-react";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
+import { ShipmentRequestsManagement } from "@/components/admin/shipment-requests-management";
+import { InventoryRequestsManagement } from "@/components/admin/inventory-requests-management";
+import { ProductReturnsManagement } from "@/components/admin/product-returns-management";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem, DeleteLog, EditLog } from "@/types";
 import { arrayToCSV, downloadCSV, formatDateForCSV, type InventoryCSVRow, type ShippedCSVRow } from "@/lib/csv-utils";
@@ -1400,10 +1404,68 @@ export function AdminInventoryManagement({
                   </div>
                 </div>
               </div>
+
+              {/* User Requests (Notifications) Card */}
+              <div
+                onClick={() => setActiveSection("user-requests")}
+                className={`relative cursor-pointer rounded-xl border-2 transition-all duration-300 p-4 ${
+                  activeSection === "user-requests"
+                    ? "border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 shadow-lg scale-105 ring-2 ring-amber-200"
+                    : "border-gray-200 bg-white hover:border-amber-300 hover:shadow-md"
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className={`p-3 rounded-lg ${
+                    activeSection === "user-requests" ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-600"
+                  } transition-colors`}>
+                    <Bell className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-xs ${
+                      activeSection === "user-requests" ? "text-amber-900" : "text-gray-700"
+                    }`}>
+                      User Requests
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Shipment · Inventory · Return
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </CardHeader>
       </Card>
+
+      {/* User Requests (per-user notifications) */}
+      {activeSection === "user-requests" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>User Requests — {selectedUser.name}</CardTitle>
+            <CardDescription>
+              Process this user&apos;s shipment, inventory, and return requests. Each tab shows only this user&apos;s requests.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="shipment" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="shipment">Shipment Requests</TabsTrigger>
+                <TabsTrigger value="inventory">Inventory Requests</TabsTrigger>
+                <TabsTrigger value="return">Product Returns</TabsTrigger>
+              </TabsList>
+              <TabsContent value="shipment" className="mt-4">
+                <ShipmentRequestsManagement selectedUser={selectedUser} inventory={inventory} />
+              </TabsContent>
+              <TabsContent value="inventory" className="mt-4">
+                <InventoryRequestsManagement selectedUser={selectedUser} />
+              </TabsContent>
+              <TabsContent value="return" className="mt-4">
+                <ProductReturnsManagement selectedUser={selectedUser} inventory={inventory} />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Current Inventory */}
       {activeSection === "current-inventory" && (
