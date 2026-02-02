@@ -18,12 +18,13 @@ import * as z from "zod";
 import { doc, updateDoc, deleteDoc, addDoc, collection, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar, Plus, Truck, FileText, List, Bell } from "lucide-react";
+import { Trash2, Edit, Package, Eye, EyeOff, Search, Filter, X, Download, History, RotateCcw, Calendar, Plus, Truck, FileText, List, Bell, ClipboardList } from "lucide-react";
 import { AddInventoryForm } from "@/components/admin/add-inventory-form";
 import { ShipInventoryForm } from "@/components/admin/ship-inventory-form";
 import { ShipmentRequestsManagement } from "@/components/admin/shipment-requests-management";
 import { InventoryRequestsManagement } from "@/components/admin/inventory-requests-management";
 import { ProductReturnsManagement } from "@/components/admin/product-returns-management";
+import { DisposeRequestsManagement } from "@/components/admin/dispose-requests-management";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import type { InventoryItem, ShippedItem, UserProfile, RestockHistory, RecycledShippedItem, RecycledRestockHistory, RecycledInventoryItem, DeleteLog, EditLog } from "@/types";
@@ -67,10 +68,11 @@ const editLogSchema = z.object({
   reason: z.string().min(1, "Reason for editing is required."),
 });
 
-function notificationTypeToTabValue(type: string): "shipment" | "inventory" | "return" {
+function notificationTypeToTabValue(type: string): "shipment" | "inventory" | "return" | "dispose" {
   if (type === "shipment_request") return "shipment";
   if (type === "inventory_request") return "inventory";
   if (type === "product_return") return "return";
+  if (type === "dispose_request") return "dispose";
   return "shipment";
 }
 
@@ -101,10 +103,12 @@ export function AdminInventoryManagement({
   const [editingProductWithLog, setEditingProductWithLog] = useState<InventoryItem | null>(null);
   // Single state to track active section
   const [activeSection, setActiveSection] = useState<string>("current-inventory");
-  // User Requests tab (shipment | inventory | return)
-  const [userRequestsTab, setUserRequestsTab] = useState<"shipment" | "inventory" | "return">(
+  // User Requests tab (shipment | inventory | return | dispose)
+  const [userRequestsTab, setUserRequestsTab] = useState<"shipment" | "inventory" | "return" | "dispose">(
     initialRequestTab ? notificationTypeToTabValue(initialRequestTab) : "shipment"
   );
+  // Dispose requests dedicated section sub-tab (requests | log)
+  const [disposeRequestsSubTab, setDisposeRequestsSubTab] = useState<"requests" | "log">("requests");
 
   // When navigated from Notifications "Process", open User Requests section and correct tab
   useEffect(() => {
@@ -1458,7 +1462,7 @@ export function AdminInventoryManagement({
                       User Requests
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Shipment · Inventory · Return
+                      Shipment · Inventory · Return · Dispose
                     </p>
                   </div>
                 </div>
@@ -1478,11 +1482,12 @@ export function AdminInventoryManagement({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={userRequestsTab} onValueChange={(v) => setUserRequestsTab(v as "shipment" | "inventory" | "return")} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="shipment">Shipment Requests</TabsTrigger>
-                <TabsTrigger value="inventory">Inventory Requests</TabsTrigger>
-                <TabsTrigger value="return">Product Returns</TabsTrigger>
+            <Tabs value={userRequestsTab} onValueChange={(v) => setUserRequestsTab(v as "shipment" | "inventory" | "return" | "dispose")} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+                <TabsTrigger value="shipment">Shipment</TabsTrigger>
+                <TabsTrigger value="inventory">Inventory</TabsTrigger>
+                <TabsTrigger value="return">Returns</TabsTrigger>
+                <TabsTrigger value="dispose">Dispose</TabsTrigger>
               </TabsList>
               <TabsContent value="shipment" className="mt-4">
                 <ShipmentRequestsManagement selectedUser={selectedUser} inventory={inventory} initialRequestId={initialRequestId} />
@@ -1492,6 +1497,9 @@ export function AdminInventoryManagement({
               </TabsContent>
               <TabsContent value="return" className="mt-4">
                 <ProductReturnsManagement selectedUser={selectedUser} inventory={inventory} initialReturnId={initialRequestId} />
+              </TabsContent>
+              <TabsContent value="dispose" className="mt-4">
+                <DisposeRequestsManagement selectedUser={selectedUser} inventory={inventory} initialRequestId={initialRequestId} />
               </TabsContent>
             </Tabs>
           </CardContent>

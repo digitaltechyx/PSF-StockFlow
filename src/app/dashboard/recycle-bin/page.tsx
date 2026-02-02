@@ -2,21 +2,33 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { RecycledInventoryItem } from "@/types";
+import type { RecycledInventoryItem, InventoryItem } from "@/types";
+import { db } from "@/lib/firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Search, X, Calendar } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { RotateCcw, Search, X, Calendar, Plus, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
 
 export default function RecycleBinPage() {
   const { userProfile } = useAuth();
+  const { toast } = useToast();
   const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
   const [recycleSearch, setRecycleSearch] = useState("");
   const [recyclePage, setRecyclePage] = useState(1);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [disposeQuantity, setDisposeQuantity] = useState<string>("");
+  const [disposeReason, setDisposeReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const itemsPerPage = 10;
 
   const { 
@@ -25,6 +37,14 @@ export default function RecycleBinPage() {
   } = useCollection<RecycledInventoryItem>(
     userProfile ? `users/${userProfile.uid}/recycledInventory` : ""
   );
+
+  const { data: inventory } = useCollection<InventoryItem>(
+    userProfile ? `users/${userProfile.uid}/inventory` : ""
+  );
+
+  const inStockInventory = inventory.filter((item) => item.quantity > 0);
+  const selectedProduct = inStockInventory.find((p) => p.id === selectedProductId);
+  const maxQty = selectedProduct?.quantity ?? 0;
 
   const formatDate = (date: any) => {
     if (!date) return "N/A";
@@ -82,22 +102,128 @@ export default function RecycleBinPage() {
     .slice(startRecycleIndex, endRecycleIndex);
   const resetRecyclePagination = () => setRecyclePage(1);
 
+  const handleSubmitDisposeRequest = async () => {
+    if (!userProfile || !selectedProduct) return;
+    const qty = parseInt(disposeQuantity, 10);
+    if (!Number.isFinite(qty) || qty < 1 || qty > maxQty) {
+      toast({ variant: "destructive", title: "Invalid quantity", description: `Enter a quantity between 1 and ${maxQty}.` });
+      return;
+    }
+    if (!disposeReason.trim()) {
+      toast({ variant: "destructive", title: "Reason required", description: "Please enter why you want to dispose this quantity." });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const ref = collection(db, `users/${userProfile.uid}/disposeRequests`);
+      await addDoc(ref, {
+        productId: selectedProduct.id,
+        productName: selectedProduct.productName,
+        quantity: qty,
+        reason: disposeReason.trim(),
+        status: "pending",
+        requestedAt: serverTimestamp(),
+      });
+      toast({ title: "Request submitted", description: "Your dispose request has been sent. An admin will review it." });
+      setRequestDialogOpen(false);
+      setSelectedProductId("");
+      setDisposeQuantity("");
+      setDisposeReason("");
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Failed to submit", description: err instanceof Error ? err.message : "Please try again." });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="border-2 shadow-xl overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-orange-500 to-amber-600 text-white pb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
                 <RotateCcw className="h-6 w-6" />
                 Disposed Inventory
               </CardTitle>
               <CardDescription className="text-orange-100 mt-2">
-                View inventory items that were disposed by admins ({filteredRecycledInventory.length} records)
+                View disposed items or request to dispose inventory ({filteredRecycledInventory.length} records)
               </CardDescription>
             </div>
-            <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <RotateCcw className="h-7 w-7 text-white" />
+            <div className="flex items-center gap-2">
+              <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="bg-white text-orange-600 hover:bg-orange-50 shadow-md">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Request dispose
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Request to dispose inventory</DialogTitle>
+                    <DialogDescription>
+                      Select a product, quantity, and reason. An admin will approve or reject your request.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-2">
+                      <Label>Product</Label>
+                      <Select value={selectedProductId} onValueChange={(v) => { setSelectedProductId(v); setDisposeQuantity(""); }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {inStockInventory.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.productName} (available: {p.quantity})
+                            </SelectItem>
+                          ))}
+                          {inStockInventory.length === 0 && (
+                            <SelectItem value="_none" disabled>No products in stock</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {selectedProduct && (
+                      <>
+                        <div className="space-y-2">
+                          <Label>Quantity (max {maxQty})</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={maxQty}
+                            value={disposeQuantity}
+                            onChange={(e) => setDisposeQuantity(e.target.value)}
+                            placeholder="e.g. 5"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Reason</Label>
+                          <Textarea
+                            value={disposeReason}
+                            onChange={(e) => setDisposeReason(e.target.value)}
+                            placeholder="Why do you want to dispose this quantity?"
+                            rows={3}
+                          />
+                        </div>
+                      </>
+                    )}
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button variant="outline" onClick={() => setRequestDialogOpen(false)}>Cancel</Button>
+                      <Button
+                        onClick={handleSubmitDisposeRequest}
+                        disabled={!selectedProduct || !disposeQuantity || !disposeReason.trim() || submitting}
+                      >
+                        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Submit request
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+                <RotateCcw className="h-7 w-7 text-white" />
+              </div>
             </div>
           </div>
         </CardHeader>

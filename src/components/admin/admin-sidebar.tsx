@@ -29,6 +29,7 @@ import {
   Bell,
   FolderOpen,
   Receipt,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -252,6 +253,13 @@ export function AdminSidebar() {
       url: "/admin/dashboard/product-returns",
       icon: ArrowLeftRight,
       color: "text-orange-600",
+      requiredFeature: "admin_dashboard" as const,
+    },
+    {
+      title: "Dispose Requests",
+      url: "/admin/dashboard/dispose-requests",
+      icon: RotateCcw,
+      color: "text-amber-600",
       requiredFeature: "admin_dashboard" as const,
     },
     {

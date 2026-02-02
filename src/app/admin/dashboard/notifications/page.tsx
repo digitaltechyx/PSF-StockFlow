@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn } from "@/types";
+import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn, DisposeRequest } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, collectionGroup, getDocs, query } from "firebase/firestore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Bell, Truck, Package, RotateCcw, User, Calendar, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NotificationType = "shipment_request" | "inventory_request" | "product_return";
+type NotificationType = "shipment_request" | "inventory_request" | "product_return" | "dispose_request";
 type StatusFilter = "all" | "pending" | "paid" | "approved" | "confirmed" | "rejected" | "in_progress" | "closed" | "cancelled";
 
 type NotificationRow = {
@@ -79,6 +79,7 @@ function typeIcon(type: NotificationType) {
     case "shipment_request": return <Truck className="h-4 w-4 shrink-0" />;
     case "inventory_request": return <Package className="h-4 w-4 shrink-0" />;
     case "product_return": return <RotateCcw className="h-4 w-4 shrink-0" />;
+    case "dispose_request": return <Trash2 className="h-4 w-4 shrink-0" />;
   }
 }
 
@@ -113,6 +114,7 @@ export default function AdminNotificationsPage() {
   const [shipmentRequests, setShipmentRequests] = useState<NotificationRow[]>([]);
   const [inventoryRequests, setInventoryRequests] = useState<NotificationRow[]>([]);
   const [productReturns, setProductReturns] = useState<NotificationRow[]>([]);
+  const [disposeRequests, setDisposeRequests] = useState<NotificationRow[]>([]);
 
   const router = useRouter();
 
@@ -273,6 +275,29 @@ export default function AdminNotificationsPage() {
           }
         }
 
+        // Dispose Requests (per-user; no collectionGroup for disposeRequests)
+        {
+          const results = await Promise.all(userIds.map(async (uid) => {
+            const base = collection(db, `users/${uid}/disposeRequests`);
+            const q = query(base);
+            const snap = await getDocs(q);
+            return snap.docs.map((d) => {
+              const data = d.data() as any as DisposeRequest;
+              const dateMs = toMs(data.requestedAt) || 0;
+              return {
+                type: "dispose_request" as const,
+                id: d.id,
+                userId: uid,
+                status: String(data.status || ""),
+                createdAtMs: dateMs,
+                title: `Dispose Request • ${String(data.productName || "").substring(0, 40)}`,
+                subtitle: `Qty: ${data.quantity ?? 0} • ${(data.reason || "").substring(0, 30)}`,
+              };
+            });
+          }));
+          setDisposeRequests(results.flat());
+        }
+
         // Note: If anyFailed is true, we used per-user fallback instead of collectionGroup
         // This is expected when collectionGroup queries are blocked by Firestore security rules
         // The fallback works correctly and loads all notifications
@@ -289,9 +314,9 @@ export default function AdminNotificationsPage() {
   }, [userProfile, users, toast]);
 
   const allRows = useMemo(() => {
-    return [...shipmentRequests, ...inventoryRequests, ...productReturns]
+    return [...shipmentRequests, ...inventoryRequests, ...productReturns, ...disposeRequests]
       .sort((a, b) => b.createdAtMs - a.createdAtMs);
-  }, [shipmentRequests, inventoryRequests, productReturns]);
+  }, [shipmentRequests, inventoryRequests, productReturns, disposeRequests]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: allRows.length };
@@ -342,7 +367,6 @@ export default function AdminNotificationsPage() {
       {rows.map((r) => {
         const u = usersById.get(r.userId);
         const date = r.createdAtMs ? format(new Date(r.createdAtMs), "PP") : "N/A";
-        const typeLabel = r.type === "shipment_request" ? "Shipment" : r.type === "inventory_request" ? "Inventory" : "Return";
         return (
           <div
             key={`${r.type}-${r.userId}-${r.id}`}
@@ -359,7 +383,7 @@ export default function AdminNotificationsPage() {
                   {r.status}
                 </Badge>
                 <Badge variant="outline" className="shrink-0 text-xs bg-muted/50">
-                  {typeLabel}
+                  {r.type === "shipment_request" ? "Shipment" : r.type === "inventory_request" ? "Inventory" : r.type === "product_return" ? "Return" : "Dispose"}
                 </Badge>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -467,6 +491,7 @@ export default function AdminNotificationsPage() {
                   <SelectItem value="shipment_request">Shipment Requests</SelectItem>
                   <SelectItem value="inventory_request">Inventory Requests</SelectItem>
                   <SelectItem value="product_return">Product Returns</SelectItem>
+                  <SelectItem value="dispose_request">Dispose Requests</SelectItem>
                 </SelectContent>
               </Select>
             </div>
