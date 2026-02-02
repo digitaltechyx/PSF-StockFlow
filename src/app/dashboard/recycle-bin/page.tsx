@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
-import type { RecycledInventoryItem, InventoryItem } from "@/types";
+import type { RecycledInventoryItem, InventoryItem, DisposeRequest } from "@/types";
 import { db } from "@/lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +42,10 @@ export default function RecycleBinPage() {
     userProfile ? `users/${userProfile.uid}/inventory` : ""
   );
 
+  const { data: disposeRequests = [] } = useCollection<DisposeRequest & { id: string }>(
+    userProfile ? `users/${userProfile.uid}/disposeRequests` : ""
+  );
+
   const inStockInventory = inventory.filter((item) => item.quantity > 0);
   const selectedProduct = inStockInventory.find((p) => p.id === selectedProductId);
   const maxQty = selectedProduct?.quantity ?? 0;
@@ -51,6 +55,14 @@ export default function RecycleBinPage() {
     if (typeof date === 'string') return format(new Date(date), "MMM dd, yyyy");
     if (date.seconds) return format(new Date(date.seconds * 1000), "MMM dd, yyyy");
     return "N/A";
+  };
+
+  const getRequestDate = (req: DisposeRequest) => {
+    const raw = req.requestedAt;
+    if (!raw) return null;
+    if (typeof raw === 'string') return new Date(raw).getTime();
+    if (raw.seconds) return raw.seconds * 1000;
+    return null;
   };
 
   const matchesDateFilter = (date: any, filter: string) => {
@@ -82,6 +94,10 @@ export default function RecycleBinPage() {
     }
   };
 
+  type ListEntry =
+    | { kind: "recycled"; item: RecycledInventoryItem }
+    | { kind: "request"; item: DisposeRequest & { id: string } };
+
   const filteredRecycledInventory = recycledInventory.filter((item) => {
     const matchesSearch = item.productName.toLowerCase().includes(recycleSearch.toLowerCase()) ||
                           (item.remarks && item.remarks.toLowerCase().includes(recycleSearch.toLowerCase())) ||
@@ -90,16 +106,35 @@ export default function RecycleBinPage() {
     return matchesSearch && matchesDate;
   });
 
-  const totalRecyclePages = Math.ceil(filteredRecycledInventory.length / itemsPerPage);
+  const filteredDisposeRequests = disposeRequests.filter((req) => {
+    const searchLower = recycleSearch.toLowerCase();
+    const matchesSearch =
+      !recycleSearch.trim() ||
+      (req.productName && req.productName.toLowerCase().includes(searchLower)) ||
+      (req.reason && req.reason.toLowerCase().includes(searchLower));
+    const reqDateMs = getRequestDate(req);
+    const matchesDate = !reqDateMs ? true : matchesDateFilter({ seconds: reqDateMs / 1000 }, recycleDateFilter);
+    return matchesSearch && matchesDate;
+  });
+
+  const combinedList: ListEntry[] = [
+    ...filteredRecycledInventory.map((item) => ({ kind: "recycled" as const, item })),
+    ...filteredDisposeRequests.map((item) => ({ kind: "request" as const, item })),
+  ].sort((a, b) => {
+    const dateA = a.kind === "recycled"
+      ? (typeof a.item.recycledAt === "string" ? new Date(a.item.recycledAt) : new Date((a.item.recycledAt as any)?.seconds ? (a.item.recycledAt as any).seconds * 1000 : 0)).getTime()
+      : getRequestDate(a.item) ?? 0;
+    const dateB = b.kind === "recycled"
+      ? (typeof b.item.recycledAt === "string" ? new Date(b.item.recycledAt) : new Date((b.item.recycledAt as any)?.seconds ? (b.item.recycledAt as any).seconds * 1000 : 0)).getTime()
+      : getRequestDate(b.item) ?? 0;
+    return dateB - dateA;
+  });
+
+  const totalRecords = combinedList.length;
+  const totalRecyclePages = Math.ceil(totalRecords / itemsPerPage);
   const startRecycleIndex = (recyclePage - 1) * itemsPerPage;
   const endRecycleIndex = startRecycleIndex + itemsPerPage;
-  const paginatedRecycledInventory = filteredRecycledInventory
-    .sort((a, b) => {
-      const dateA = typeof a.recycledAt === 'string' ? new Date(a.recycledAt) : new Date(a.recycledAt?.seconds ? a.recycledAt.seconds * 1000 : 0);
-      const dateB = typeof b.recycledAt === 'string' ? new Date(b.recycledAt) : new Date(b.recycledAt?.seconds ? b.recycledAt.seconds * 1000 : 0);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(startRecycleIndex, endRecycleIndex);
+  const paginatedList = combinedList.slice(startRecycleIndex, endRecycleIndex);
   const resetRecyclePagination = () => setRecyclePage(1);
 
   const handleSubmitDisposeRequest = async () => {
@@ -147,7 +182,7 @@ export default function RecycleBinPage() {
                 Disposed Inventory
               </CardTitle>
               <CardDescription className="text-orange-100 mt-2">
-                View disposed items or request to dispose inventory ({filteredRecycledInventory.length} records)
+                View disposed items or request to dispose inventory ({totalRecords} records)
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -278,76 +313,131 @@ export default function RecycleBinPage() {
                 <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />
               ))}
             </div>
-          ) : filteredRecycledInventory.length > 0 ? (
+          ) : totalRecords > 0 ? (
             <div className="space-y-4">
-              {paginatedRecycledInventory.map((item) => (
-                <div 
-                  key={item.id}
-                  className="group relative overflow-hidden rounded-xl border-2 border-orange-100 bg-gradient-to-r from-orange-50 to-amber-50/50 p-5 shadow-md hover:shadow-lg transition-all duration-200 hover:border-orange-300"
-                >
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-bold text-gray-900">{item.productName}</h3>
-                          <Badge className="bg-orange-500 text-white shadow-md px-3 py-1">
-                            Qty: {item.quantity}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            <span>Added: {formatDate(item.dateAdded)}</span>
+              {paginatedList.map((entry) =>
+                entry.kind === "recycled" ? (
+                  <div
+                    key={`recycled-${entry.item.id}`}
+                    className="group relative overflow-hidden rounded-xl border-2 border-orange-100 bg-gradient-to-r from-orange-50 to-amber-50/50 p-5 shadow-md hover:shadow-lg transition-all duration-200 hover:border-orange-300"
+                  >
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-lg font-bold text-gray-900">{entry.item.productName}</h3>
+                            <Badge className="bg-orange-500 text-white shadow-md px-3 py-1">
+                              Qty: {entry.item.quantity}
+                            </Badge>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium text-orange-600">Recycled:</span>
-                            <span className="text-orange-700 font-semibold">{formatDate(item.recycledAt)}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium">By:</span>
-                            <span className="text-gray-800">{item.recycledBy}</span>
-                          </div>
-                        </div>
-                        {item.remarks && (
-                          <div className="bg-white/60 rounded-lg p-3 border border-orange-200 mb-3">
-                            <div className="flex items-start gap-2">
-                              <RotateCcw className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="text-xs font-semibold text-orange-700">Reason: </span>
-                                <span className="text-sm text-orange-800">{item.remarks}</span>
-                              </div>
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>Added: {formatDate(entry.item.dateAdded)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium text-orange-600">Recycled:</span>
+                              <span className="text-orange-700 font-semibold">{formatDate(entry.item.recycledAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">By:</span>
+                              <span className="text-gray-800">{entry.item.recycledBy}</span>
                             </div>
                           </div>
-                        )}
-                        <Badge 
-                          variant={item.status === "In Stock" ? "default" : "destructive"}
-                          className="shadow-sm"
-                        >
-                          {item.status}
-                        </Badge>
+                          {entry.item.remarks && (
+                            <div className="bg-white/60 rounded-lg p-3 border border-orange-200 mb-3">
+                              <div className="flex items-start gap-2">
+                                <RotateCcw className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <span className="text-xs font-semibold text-orange-700">Reason: </span>
+                                  <span className="text-sm text-orange-800">{entry.item.remarks}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          <Badge
+                            variant={entry.item.status === "In Stock" ? "default" : "destructive"}
+                            className="shadow-sm"
+                          >
+                            {entry.item.status}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div
+                    key={`request-${entry.item.id}`}
+                    className="group relative overflow-hidden rounded-xl border-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/50 p-5 shadow-md hover:shadow-lg transition-all duration-200 hover:border-amber-400"
+                  >
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <h3 className="text-lg font-bold text-gray-900">{entry.item.productName}</h3>
+                            <Badge className="bg-amber-500 text-white shadow-md px-3 py-1">
+                              Qty: {entry.item.quantity}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={
+                                entry.item.status === "pending"
+                                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                                  : entry.item.status === "approved"
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                    : "bg-red-100 text-red-800 border-red-300"
+                              }
+                            >
+                              {entry.item.status.charAt(0).toUpperCase() + entry.item.status.slice(1)}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">Request</Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>Requested: {formatDate(entry.item.requestedAt)}</span>
+                            </div>
+                          </div>
+                          <div className="bg-white/60 rounded-lg p-3 border border-amber-200 mb-3">
+                            <div className="flex items-start gap-2">
+                              <RotateCcw className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="text-xs font-semibold text-amber-700">Reason: </span>
+                                <span className="text-sm text-amber-800">{entry.item.reason || "—"}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {entry.item.adminFeedback && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Admin: {entry.item.adminFeedback}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           ) : (
             <div className="text-center py-16">
               <div className="mx-auto h-20 w-20 rounded-full bg-orange-100 flex items-center justify-center mb-4">
                 <RotateCcw className="h-10 w-10 text-orange-600" />
               </div>
-              <h3 className="text-xl font-bold mb-2">No recycled inventory items</h3>
+              <h3 className="text-xl font-bold mb-2">No disposed items or requests</h3>
               <p className="text-muted-foreground">
-                {recycledInventory.length === 0 ? "No inventory items have been recycled yet." : "No recycled inventory items match your filters."}
+                {recycledInventory.length === 0 && disposeRequests.length === 0
+                  ? "No recycled inventory yet. Use \"Request dispose\" to submit a request."
+                  : "No items or requests match your filters."}
               </p>
             </div>
           )}
           
           {/* Pagination */}
-          {filteredRecycledInventory.length > itemsPerPage && (
+          {totalRecords > itemsPerPage && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-6 border-t">
               <div className="text-sm text-muted-foreground">
-                Showing {startRecycleIndex + 1} to {Math.min(endRecycleIndex, filteredRecycledInventory.length)} of {filteredRecycledInventory.length} records
+                Showing {startRecycleIndex + 1} to {Math.min(endRecycleIndex, totalRecords)} of {totalRecords} records
               </div>
               <div className="flex items-center gap-2">
                 <Button

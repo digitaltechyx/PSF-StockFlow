@@ -25,7 +25,6 @@ import {
   UserCheck,
   Briefcase,
   DollarSign,
-  ArrowLeftRight,
   Bell,
   FolderOpen,
   Receipt,
@@ -246,13 +245,6 @@ export function AdminSidebar() {
       url: "/admin/dashboard/pricing",
       icon: DollarSign,
       color: "text-amber-600",
-      requiredFeature: "admin_dashboard" as const,
-    },
-    {
-      title: "Product Returns",
-      url: "/admin/dashboard/product-returns",
-      icon: ArrowLeftRight,
-      color: "text-orange-600",
       requiredFeature: "admin_dashboard" as const,
     },
     {
