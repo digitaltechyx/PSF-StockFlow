@@ -1901,28 +1901,29 @@ export function ProductReturnsManagement({
               </div>
             </DialogContent>
           </Dialog>
-
-          <Dialog open={addReturnDialogOpen} onOpenChange={setAddReturnDialogOpen}>
-            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0">
-              <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
-                <DialogTitle>Submit return request for {selectedUser.name}</DialogTitle>
-                <DialogDescription>
-                  Fill the form to create a product return request on behalf of this user. It will appear in Notifications for processing.
-                </DialogDescription>
-              </DialogHeader>
-              <ScrollArea className="flex-1 px-6 pb-6">
-                <div className="pr-4">
-                  <ProductReturnRequestForm
-                    targetUserId={selectedUser.uid}
-                    targetUserInventory={inventory}
-                    onSuccess={() => setAddReturnDialogOpen(false)}
-                  />
-                </div>
-              </ScrollArea>
-            </DialogContent>
-          </Dialog>
         </>
       )}
+
+      {/* Submit return for user - always mounted so button can open it */}
+      <Dialog open={addReturnDialogOpen} onOpenChange={setAddReturnDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
+            <DialogTitle>Submit return request for {selectedUser.name}</DialogTitle>
+            <DialogDescription>
+              Fill the form to create a product return request on behalf of this user. It will appear in Notifications for processing.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 px-6 pb-6">
+            <div className="pr-4">
+              <ProductReturnRequestForm
+                targetUserId={selectedUser.uid}
+                targetUserInventory={inventory}
+                onSuccess={() => setAddReturnDialogOpen(false)}
+              />
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
