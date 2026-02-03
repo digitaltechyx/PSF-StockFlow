@@ -1913,8 +1913,8 @@ export function ProductReturnsManagement({
               Fill the form to create a product return request on behalf of this user. It will appear in Notifications for processing.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 px-6 pb-6">
-            <div className="pr-4">
+          <ScrollArea className="flex-1 min-h-0 px-6 pb-6">
+            <div className="pr-4 pb-4">
               <ProductReturnRequestForm
                 targetUserId={selectedUser.uid}
                 targetUserInventory={inventory}
