@@ -100,14 +100,29 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-export function ProductReturnRequestForm() {
+export interface ProductReturnRequestFormProps {
+  /** When set, form submits a return request on behalf of this user (admin flow). */
+  targetUserId?: string;
+  /** That user's inventory (required when targetUserId is set). */
+  targetUserInventory?: InventoryItem[];
+  /** Called after successful submit (e.g. close dialog). */
+  onSuccess?: () => void;
+}
+
+export function ProductReturnRequestForm({
+  targetUserId,
+  targetUserInventory = [],
+  onSuccess,
+}: ProductReturnRequestFormProps = {}) {
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isOnBehalfOfUser = !!targetUserId && targetUserInventory.length >= 0;
 
-  const { data: inventory } = useCollection<InventoryItem>(
-    userProfile ? `users/${userProfile.uid}/inventory` : ""
+  const { data: currentUserInventory } = useCollection<InventoryItem>(
+    !isOnBehalfOfUser && userProfile ? `users/${userProfile.uid}/inventory` : ""
   );
+  const inventory = (isOnBehalfOfUser ? targetUserInventory : currentUserInventory) ?? [];
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -165,7 +180,8 @@ export function ProductReturnRequestForm() {
   }, [selectedProductId, returnType, availableInventory, form]);
 
   const onSubmit = async (values: FormValues) => {
-    if (!userProfile) {
+    const userId = targetUserId || userProfile?.uid;
+    if (!userId) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -177,16 +193,13 @@ export function ProductReturnRequestForm() {
     setIsSubmitting(true);
     try {
       const now = Timestamp.now();
-      
+
       // Prepare additional services (user only selects, admin adds quantities)
       const additionalServices: any = {
         packIntoBoxes: values.packIntoBoxes,
         placeOnPallet: values.placeOnPallet,
         shipToAddress: values.shipToAddress,
       };
-
-      // Admin will add boxesCount and palletsCount during approval
-      // User only selects which services they want
 
       if (values.shipToAddress) {
         additionalServices.shippingAddress = {
@@ -199,9 +212,8 @@ export function ProductReturnRequestForm() {
         };
       }
 
-      // Prepare return data
       const returnData: any = {
-        userId: userProfile.uid,
+        userId,
         type: values.type,
         requestedQuantity: values.requestedQuantity,
         receivedQuantity: 0,
@@ -216,24 +228,22 @@ export function ProductReturnRequestForm() {
         returnData.productId = values.productId;
         returnData.productName = values.productName;
         returnData.sku = values.sku;
-        returnData.returnType = values.returnType; // Combine or Partial
+        returnData.returnType = values.returnType;
       } else {
         returnData.newProductName = values.newProductName;
         returnData.newProductSku = values.newProductSku;
-        returnData.productName = values.newProductName; // For display purposes
+        returnData.productName = values.newProductName;
       }
 
-      await addDoc(
-        collection(db, `users/${userProfile.uid}/productReturns`),
-        returnData
-      );
+      await addDoc(collection(db, `users/${userId}/productReturns`), returnData);
 
       toast({
         title: "Success",
-        description: "Product return request created successfully",
+        description: isOnBehalfOfUser
+          ? "Return request created for user. It will appear in Notifications."
+          : "Product return request created successfully",
       });
 
-      // Reset form
       form.reset({
         type: "existing",
         returnType: undefined,
@@ -241,6 +251,7 @@ export function ProductReturnRequestForm() {
         placeOnPallet: false,
         shipToAddress: false,
       });
+      onSuccess?.();
     } catch (error: any) {
       console.error("Error creating return request:", error);
       toast({
