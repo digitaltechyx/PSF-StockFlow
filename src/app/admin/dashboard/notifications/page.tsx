@@ -448,7 +448,7 @@ export default function AdminNotificationsPage() {
             <Bell className="h-10 w-10 text-muted-foreground/50 mb-3" />
           )}
           <p className="text-sm text-muted-foreground">
-            {loading ? "Loading..." : "No notifications found."}
+          {loading ? "Loading..." : "No notifications found."}
           </p>
         </div>
       )}
@@ -496,7 +496,7 @@ export default function AdminNotificationsPage() {
               <div>
                 <CardTitle className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                   Notifications
-                </CardTitle>
+          </CardTitle>
                 <CardDescription className="text-indigo-100 mt-0.5 text-sm">
                   Process shipment, inventory & return requests
                 </CardDescription>
@@ -586,7 +586,7 @@ export default function AdminNotificationsPage() {
                 <TabsTrigger value="paid" className="flex-shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   Paid <Badge variant="secondary" className="ml-1.5 text-[10px] sm:text-xs">{statusCounts.paid ?? 0}</Badge>
                 </TabsTrigger>
-              </TabsList>
+            </TabsList>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
 

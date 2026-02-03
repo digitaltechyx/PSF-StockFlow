@@ -62,6 +62,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { generateInvoicePDF } from "@/lib/invoice-generator";
+import { ProductReturnRequestForm } from "@/components/dashboard/product-return-request-form";
 
 function formatDate(date: ProductReturn["createdAt"]) {
   if (!date) return "N/A";
@@ -114,6 +115,7 @@ export function ProductReturnsManagement({
   const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [isShipDialogOpen, setIsShipDialogOpen] = useState(false);
+  const [addReturnDialogOpen, setAddReturnDialogOpen] = useState(false);
   const [newQuantity, setNewQuantity] = useState<string>("");
   const [quantityNotes, setQuantityNotes] = useState<string>("");
   const [rejectReason, setRejectReason] = useState<string>("");
@@ -1025,10 +1027,22 @@ export function ProductReturnsManagement({
       {/* Returns Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Product Returns</CardTitle>
-          <CardDescription>
-            Manage product return requests from {selectedUser.name}
-          </CardDescription>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <CardTitle>Product Returns</CardTitle>
+              <CardDescription>
+                Manage product return requests from {selectedUser.name}
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              className="w-full sm:w-auto shrink-0"
+              onClick={() => setAddReturnDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Submit return for user
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {error && (
@@ -1885,6 +1899,26 @@ export function ProductReturnsManagement({
                   </Button>
                 </div>
               </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={addReturnDialogOpen} onOpenChange={setAddReturnDialogOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+              <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
+                <DialogTitle>Submit return request for {selectedUser.name}</DialogTitle>
+                <DialogDescription>
+                  Fill the form to create a product return request on behalf of this user. It will appear in Notifications for processing.
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-1 px-6 pb-6">
+                <div className="pr-4">
+                  <ProductReturnRequestForm
+                    targetUserId={selectedUser.uid}
+                    targetUserInventory={inventory}
+                    onSuccess={() => setAddReturnDialogOpen(false)}
+                  />
+                </div>
+              </ScrollArea>
             </DialogContent>
           </Dialog>
         </>
