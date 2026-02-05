@@ -58,9 +58,11 @@ export default function IntegrationsPage() {
   }, [user?.uid]);
 
   const handleConnectShopify = () => {
-    const shop = shopInput.trim().toLowerCase().replace(/\.myshopify\.com$/i, "");
+    // Normalize: Shopify store subdomains are lowercase, no spaces (use hyphen e.g. my-store)
+    let shop = shopInput.trim().toLowerCase().replace(/\.myshopify\.com$/i, "");
+    shop = shop.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""); // spaces -> hyphen, remove invalid chars
     if (!shop) {
-      toast({ variant: "destructive", title: "Enter your store name", description: "e.g. mystore from mystore.myshopify.com" });
+      toast({ variant: "destructive", title: "Enter your store name", description: "Use only letters, numbers, or hyphens (e.g. mystore or my-store). No spaces." });
       return;
     }
     const clientId = process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID;
@@ -142,20 +144,20 @@ export default function IntegrationsPage() {
                   <DialogHeader>
                     <DialogTitle>Connect Shopify store</DialogTitle>
                     <DialogDescription>
-                      Enter your store name (the part before .myshopify.com). You’ll be redirected to Shopify to authorize.
+                      Enter your store name (the part before .myshopify.com). Use letters, numbers, or hyphens—no spaces.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 pt-2">
                     <div className="space-y-2">
                       <Label>Store name</Label>
                       <Input
-                        placeholder="e.g. mystore"
+                        placeholder="e.g. mystore or my-store"
                         value={shopInput}
                         onChange={(e) => setShopInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleConnectShopify()}
                       />
                       <p className="text-xs text-muted-foreground">
-                        From mystore.myshopify.com use: mystore
+                        From mystore.myshopify.com use: mystore. Use a hyphen for multi-word stores (e.g. psf-testing). Spaces are removed.
                       </p>
                     </div>
                     <div className="flex justify-end gap-2">
