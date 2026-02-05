@@ -33,6 +33,7 @@ import {
   FileUp,
   ArrowLeftRight,
   FolderOpen,
+  Plug,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -165,6 +166,15 @@ export function DashboardSidebar() {
       url: "/dashboard/documents",
       icon: FolderOpen,
       color: "text-indigo-600",
+      badge: null,
+      requiredRole: "user" as const,
+      requiredFeature: null,
+    },
+    {
+      title: "Integrations",
+      url: "/dashboard/integrations",
+      icon: Plug,
+      color: "text-emerald-600",
       badge: null,
       requiredRole: "user" as const,
       requiredFeature: null,

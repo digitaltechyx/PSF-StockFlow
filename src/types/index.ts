@@ -205,6 +205,15 @@ export interface DisposeRequest {
   adminFeedback?: string;
 }
 
+/** One connected Shopify store for a user (multiple allowed per user). */
+export interface ShopifyConnection {
+  id?: string;
+  shop: string; // e.g. mystore.myshopify.com
+  shopName?: string; // Display name
+  accessToken: string;
+  connectedAt: { seconds: number; nanoseconds: number } | string;
+}
+
 export interface DeleteLog {
   id: string;
   productName: string;
