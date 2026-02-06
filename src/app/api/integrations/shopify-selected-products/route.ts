@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, adminFieldValue } from "@/lib/firebase-admin";
 import type { ShopifySelectedVariant } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-/** PUT: Save selected variants for a connected store. Body: { shop: string, selectedVariants: ShopifySelectedVariant[] } */
+type ShopifyVariant = {
+  id: number;
+  product_id: number;
+  title: string;
+  sku?: string | null;
+  inventory_quantity?: number;
+};
+
+type ShopifyProduct = {
+  id: number;
+  title: string;
+  variants: ShopifyVariant[];
+};
+
+/** PUT: Save selected variants for a connected store and sync them into user inventory. */
 export async function PUT(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -58,7 +72,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const db = adminDb();
-    const snapshot = await db
+    const connSnap = await db
       .collection("users")
       .doc(uid)
       .collection("shopifyConnections")
@@ -66,11 +80,68 @@ export async function PUT(request: NextRequest) {
       .limit(1)
       .get();
 
-    if (snapshot.empty) {
+    if (connSnap.empty) {
       return NextResponse.json({ error: "Store not connected" }, { status: 404 });
     }
 
-    await snapshot.docs[0].ref.update({ selectedVariants });
+    const accessToken = connSnap.docs[0].data().accessToken as string;
+    await connSnap.docs[0].ref.update({ selectedVariants });
+
+    const selectedIds = new Set(selectedVariants.map((v) => v.variantId));
+    const FieldValue = adminFieldValue();
+    const invRef = db.collection("users").doc(uid).collection("inventory");
+
+    if (selectedVariants.length > 0 && accessToken) {
+      const productsRes = await fetch(
+        `https://${shop}/admin/api/2024-01/products.json?limit=250`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": accessToken,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      const variantQtyMap: Record<string, { quantity: number; sku: string | null }> = {};
+      if (productsRes.ok) {
+        const data = (await productsRes.json()) as { products?: ShopifyProduct[] };
+        for (const p of data.products ?? []) {
+          for (const v of p.variants ?? []) {
+            variantQtyMap[String(v.id)] = {
+              quantity: typeof v.inventory_quantity === "number" ? v.inventory_quantity : 0,
+              sku: v.sku ?? null,
+            };
+          }
+        }
+      }
+
+      for (const v of selectedVariants) {
+        const info = variantQtyMap[v.variantId] ?? { quantity: 0, sku: null };
+        const quantity = info.quantity;
+        const status = quantity > 0 ? "In Stock" : "Out of Stock";
+        const docId = `shopify_${shop.replace(/\./g, "_")}_${v.variantId}`;
+        const docData: Record<string, unknown> = {
+          productName: v.title,
+          quantity,
+          status,
+          dateAdded: FieldValue.serverTimestamp(),
+          source: "shopify",
+          shopifyVariantId: v.variantId,
+          shopifyProductId: v.productId,
+          shop,
+        };
+        if (v.sku != null && v.sku !== "") docData.sku = v.sku;
+        else if (info.sku) docData.sku = info.sku;
+        await invRef.doc(docId).set(docData, { merge: true });
+      }
+    }
+
+    const toRemove = await invRef.where("source", "==", "shopify").where("shop", "==", shop).get();
+    for (const d of toRemove.docs) {
+      const data = d.data();
+      const vid = data.shopifyVariantId as string | undefined;
+      if (vid && !selectedIds.has(vid)) await d.ref.delete();
+    }
+
     return NextResponse.json({ success: true, count: selectedVariants.length });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Server error";
