@@ -129,9 +129,9 @@ export default function ShopifyProductsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ shop, selectedVariants }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save");
+        throw new Error(typeof data.error === "string" ? data.error : "Failed to save");
       }
       toast({ title: "Saved", description: `${selectedVariants.length} product(s) will be fulfilled by PSF.` });
     } catch (e) {
