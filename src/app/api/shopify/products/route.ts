@@ -3,12 +3,14 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
-/** Shopify product variant from REST API */
+/** Shopify product variant from REST API (includes inventory when available). */
 type ShopifyVariant = {
   id: number;
   product_id: number;
   title: string;
   sku?: string | null;
+  inventory_quantity?: number;
+  inventory_management?: string | null;
 };
 
 /** Shopify product from REST API */
@@ -89,6 +91,8 @@ export async function GET(request: NextRequest) {
       variantId: String(v.id),
       title: v.title || "Default",
       sku: v.sku ?? null,
+      inventoryQuantity: typeof v.inventory_quantity === "number" ? v.inventory_quantity : null,
+      inventoryManagement: v.inventory_management ?? null,
     })),
   }));
 

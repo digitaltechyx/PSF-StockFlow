@@ -17,6 +17,8 @@ type VariantRow = {
   productTitle: string;
   title: string;
   sku: string | null;
+  inventoryQuantity: number | null;
+  inventoryManagement: string | null;
 };
 
 type ShopifySelectedVariant = { variantId: string; productId: string; title: string; sku?: string };
@@ -26,7 +28,11 @@ export default function ShopifyProductsPage() {
   const shop = searchParams.get("shop") ?? "";
   const { user } = useAuth();
   const { toast } = useToast();
-  const [products, setProducts] = useState<{ productId: string; productTitle: string; variants: { variantId: string; title: string; sku: string | null }[] }[]>([]);
+  const [products, setProducts] = useState<{
+    productId: string;
+    productTitle: string;
+    variants: { variantId: string; title: string; sku: string | null; inventoryQuantity: number | null; inventoryManagement: string | null }[];
+  }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -84,6 +90,8 @@ export default function ShopifyProductsPage() {
       productTitle: p.productTitle,
       title: v.title,
       sku: v.sku,
+      inventoryQuantity: v.inventoryQuantity ?? null,
+      inventoryManagement: v.inventoryManagement ?? null,
     }))
   );
 
@@ -169,10 +177,19 @@ export default function ShopifyProductsPage() {
         </div>
       </div>
 
+      <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Stock &amp; quantity</CardTitle>
+          <CardDescription>
+            Stock status and quantity are read from Shopify when you open this page. We do not store quantities in PSF—so when inventory decreases on Shopify, you see the latest numbers only after you open this page again or refresh. To get live updates in the future we can add Shopify webhooks.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Select products</CardTitle>
-          <CardDescription>Only orders containing at least one selected variant will be fulfilled through PSF.</CardDescription>
+          <CardDescription>Only orders containing at least one selected variant will be fulfilled through PSF. Out-of-stock items can still be selected (e.g. if you are restocking).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -217,6 +234,15 @@ export default function ShopifyProductsPage() {
                         {v.title}
                         {v.sku ? ` · ${v.sku}` : ""}
                       </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {v.inventoryManagement == null || v.inventoryManagement === "" ? (
+                        <span className="text-xs text-muted-foreground">Not tracked</span>
+                      ) : v.inventoryQuantity !== null && v.inventoryQuantity <= 0 ? (
+                        <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Out of stock</span>
+                      ) : v.inventoryQuantity !== null ? (
+                        <span className="text-xs text-muted-foreground">Qty: {v.inventoryQuantity}</span>
+                      ) : null}
                     </div>
                   </label>
                 ))}
