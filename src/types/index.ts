@@ -205,6 +205,14 @@ export interface DisposeRequest {
   adminFeedback?: string;
 }
 
+/** One selected variant – PSF will only fulfill orders containing these. */
+export interface ShopifySelectedVariant {
+  variantId: string;
+  productId: string;
+  title: string;
+  sku?: string;
+}
+
 /** One connected Shopify store for a user (multiple allowed per user). */
 export interface ShopifyConnection {
   id?: string;
@@ -212,6 +220,8 @@ export interface ShopifyConnection {
   shopName?: string; // Display name
   accessToken: string;
   connectedAt: { seconds: number; nanoseconds: number } | string;
+  /** Variants the user selected for PSF to fulfill (orders with these only). */
+  selectedVariants?: ShopifySelectedVariant[];
 }
 
 export interface DeleteLog {

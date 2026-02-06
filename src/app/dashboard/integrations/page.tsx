@@ -14,16 +14,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plug, Loader2, Plus, Trash2, ExternalLink } from "lucide-react";
+import { Plug, Loader2, Plus, Trash2, Package } from "lucide-react";
 import { format } from "date-fns";
+import Link from "next/link";
 
 const SHOPIFY_SCOPES = "read_orders,read_products,write_fulfillments,read_inventory";
+
+type ShopifySelectedVariant = { variantId: string; productId: string; title: string; sku?: string };
 
 type ShopifyConnectionSummary = {
   id: string;
   shop: string;
   shopName: string;
   connectedAt: { seconds: number; nanoseconds: number } | string;
+  selectedVariants?: ShopifySelectedVariant[];
 };
 
 export default function IntegrationsPage() {
@@ -191,7 +195,15 @@ export default function IntegrationsPage() {
                       <p className="text-sm text-muted-foreground truncate">{conn.shop}</p>
                       <p className="text-xs text-muted-foreground mt-1">Connected {formatConnectedAt(conn.connectedAt)}</p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/dashboard/integrations/shopify/products?shop=${encodeURIComponent(conn.shop)}`}>
+                          <Package className="h-4 w-4 mr-1" />
+                          {Array.isArray(conn.selectedVariants) && conn.selectedVariants.length > 0
+                            ? `Products (${conn.selectedVariants.length})`
+                            : "Manage products"}
+                        </Link>
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"

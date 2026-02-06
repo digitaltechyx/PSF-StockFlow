@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
         shop: data.shop,
         shopName: data.shopName ?? data.shop?.replace(".myshopify.com", "") ?? "",
         connectedAt: data.connectedAt,
+        selectedVariants: data.selectedVariants ?? [],
       };
     });
     return NextResponse.json({ connections: list });
