@@ -100,7 +100,14 @@ export async function POST(request: NextRequest) {
       }
     );
     if (!locRes.ok) {
-      return NextResponse.json({ error: "Could not get location from Shopify" }, { status: 502 });
+      const errBody = await locRes.text();
+      const hint = locRes.status === 403
+        ? " Add read_locations scope in your Shopify app and re-connect the store."
+        : "";
+      return NextResponse.json(
+        { error: `Could not get location from Shopify (${locRes.status})${hint}` },
+        { status: 502 }
+      );
     }
     const locData = (await locRes.json()) as { locations?: { id: number }[] };
     const locationId = locData.locations?.[0]?.id;

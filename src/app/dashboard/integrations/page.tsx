@@ -18,7 +18,7 @@ import { Plug, Loader2, Plus, Trash2, Package } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 
-const SHOPIFY_SCOPES = "read_orders,read_products,write_fulfillments,read_inventory";
+const SHOPIFY_SCOPES = "read_orders,read_products,write_fulfillments,read_inventory,read_locations,write_inventory";
 
 type ShopifySelectedVariant = { variantId: string; productId: string; title: string; sku?: string };
 
@@ -38,6 +38,8 @@ export default function IntegrationsPage() {
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
   const [shopInput, setShopInput] = useState("");
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
+  const [pendingDisconnect, setPendingDisconnect] = useState<{ id: string; shopName: string } | null>(null);
 
   const fetchConnections = async () => {
     if (!user) return;
@@ -82,12 +84,13 @@ export default function IntegrationsPage() {
     window.location.href = url;
   };
 
-  const handleDisconnect = async (id: string) => {
+  const handleDisconnect = async (id: string, removeInventory: boolean) => {
     if (!user) return;
     setDisconnectingId(id);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`/api/integrations/shopify-connections?id=${encodeURIComponent(id)}`, {
+      const url = `/api/integrations/shopify-connections?id=${encodeURIComponent(id)}${removeInventory ? "&removeInventory=true" : ""}`;
+      const res = await fetch(url, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -95,13 +98,27 @@ export default function IntegrationsPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to disconnect");
       }
-      toast({ title: "Disconnected", description: "Shopify store has been disconnected." });
+      const data = await res.json().catch(() => ({}));
+      const removed = (data.removedInventoryCount as number) ?? 0;
+      toast({
+        title: "Disconnected",
+        description: removed > 0
+          ? `Shopify store disconnected. ${removed} linked product(s) removed from your inventory.`
+          : "Shopify store has been disconnected.",
+      });
+      setDisconnectDialogOpen(false);
+      setPendingDisconnect(null);
       fetchConnections();
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Error", description: err instanceof Error ? err.message : "Could not disconnect." });
     } finally {
       setDisconnectingId(null);
     }
+  };
+
+  const openDisconnectDialog = (conn: ShopifyConnectionSummary) => {
+    setPendingDisconnect({ id: conn.id, shopName: conn.shopName || conn.shop?.replace(".myshopify.com", "") || "this store" });
+    setDisconnectDialogOpen(true);
   };
 
   const formatConnectedAt = (raw: ShopifyConnectionSummary["connectedAt"]) => {
@@ -173,6 +190,37 @@ export default function IntegrationsPage() {
               </Dialog>
             </div>
 
+            <Dialog open={disconnectDialogOpen} onOpenChange={(open) => { setDisconnectDialogOpen(open); if (!open) setPendingDisconnect(null); }}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Disconnect Shopify store?</DialogTitle>
+                  <DialogDescription>
+                    This will remove the connection to {pendingDisconnect?.shopName ?? "this store"}. You can either keep the products that were linked to this store in your PSF inventory, or remove them.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => pendingDisconnect && handleDisconnect(pendingDisconnect.id, false)}
+                    disabled={!pendingDisconnect || disconnectingId === pendingDisconnect.id}
+                  >
+                    {pendingDisconnect && disconnectingId === pendingDisconnect.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Disconnect only (keep linked products in inventory)
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => pendingDisconnect && handleDisconnect(pendingDisconnect.id, true)}
+                    disabled={!pendingDisconnect || disconnectingId === pendingDisconnect.id}
+                  >
+                    Disconnect and remove linked products from inventory
+                  </Button>
+                  <Button variant="ghost" onClick={() => { setDisconnectDialogOpen(false); setPendingDisconnect(null); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             {loading ? (
               <div className="flex items-center gap-2 text-muted-foreground py-6">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -208,7 +256,7 @@ export default function IntegrationsPage() {
                         variant="outline"
                         size="sm"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => handleDisconnect(conn.id)}
+                        onClick={() => openDisconnectDialog(conn)}
                         disabled={disconnectingId === conn.id}
                       >
                         {disconnectingId === conn.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}

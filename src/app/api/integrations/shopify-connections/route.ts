@@ -71,22 +71,44 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
+  const removeInventory = searchParams.get("removeInventory") === "true";
   if (!id) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
   try {
-    const ref = adminDb()
-      .collection("users")
-      .doc(uid)
-      .collection("shopifyConnections")
-      .doc(id);
+    const db = adminDb();
+    const ref = db.collection("users").doc(uid).collection("shopifyConnections").doc(id);
     const doc = await ref.get();
     if (!doc.exists) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
+    const data = doc.data()!;
+    let shopNorm: string | null = (data.shop as string)?.trim() || null;
+    if (shopNorm && !shopNorm.includes(".myshopify.com")) {
+      shopNorm = `${shopNorm}.myshopify.com`;
+    }
+
     await ref.delete();
-    return NextResponse.json({ success: true });
+
+    let removedInventoryCount = 0;
+    if (removeInventory && shopNorm) {
+      const invSnap = await db
+        .collection("users")
+        .doc(uid)
+        .collection("inventory")
+        .where("source", "==", "shopify")
+        .where("shop", "==", shopNorm)
+        .get();
+      const batch = db.batch();
+      invSnap.docs.forEach((d) => batch.delete(d.ref));
+      if (invSnap.docs.length > 0) {
+        await batch.commit();
+        removedInventoryCount = invSnap.docs.length;
+      }
+    }
+
+    return NextResponse.json({ success: true, removedInventoryCount });
   } catch (err: unknown) {
     console.error("[shopify-connections DELETE]", err);
     return NextResponse.json(

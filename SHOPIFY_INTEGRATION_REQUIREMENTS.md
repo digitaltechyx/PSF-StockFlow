@@ -95,6 +95,7 @@ This document describes the **requirements** and **planned build** for connectin
 - **read_orders** – sync orders.
 - **read_products** – sync products (optional).
 - **read_inventory** – read inventory levels (for product selection and sync).
+- **read_locations** – required to get store location ID so we can call `inventory_levels/set` (PSF → Shopify sync).
 - **write_inventory** – set inventory on Shopify when PSF updates (dispose, edit, restock, ship, delete). Required for two-way inventory sync; users must re-authorize after adding.
 - **write_fulfillments** (or equivalent) – create fulfillments and update fulfillment status on Shopify when admin clicks **Mark as fulfilled** or completes **Create label**.
 
