@@ -179,9 +179,9 @@ export default function ShopifyProductsPage() {
 
       <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Stock &amp; quantity</CardTitle>
+          <CardTitle className="text-base">Two-way sync — no re-selection needed</CardTitle>
           <CardDescription>
-            Stock status and quantity are read from Shopify when you open this page. We do not store quantities in PSF—so when inventory decreases on Shopify, you see the latest numbers only after you open this page again or refresh. To get live updates in the future we can add Shopify webhooks.
+            Once you save your selection, these products stay linked. Changes in PSF (edit, restock, delete, dispose, ship) update Shopify automatically. Changes on Shopify for these products update PSF in real time via webhook. You do not need to select products again after making changes.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -189,7 +189,7 @@ export default function ShopifyProductsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Select products</CardTitle>
-          <CardDescription>Only orders containing at least one selected variant will be fulfilled through PSF. Out-of-stock items can still be selected (e.g. if you are restocking).</CardDescription>
+          <CardDescription>Only orders containing at least one selected variant will be fulfilled through PSF. Quantities sync both ways in real time; no need to re-select after changes. Out-of-stock items can still be selected (e.g. if you are restocking).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (

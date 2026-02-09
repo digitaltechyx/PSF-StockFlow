@@ -96,7 +96,7 @@ export function AdminInventoryManagement({
     if (item.source !== "shopify" || !item.shop || !item.shopifyVariantId || !authUser) return;
     try {
       const token = await authUser.getIdToken();
-      await fetch("/api/shopify/sync-inventory", {
+      const res = await fetch("/api/shopify/sync-inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -107,8 +107,20 @@ export function AdminInventoryManagement({
           newQuantity,
         }),
       });
-    } catch {
-      // PSF updated; Shopify sync failed silently
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "PSF updated; Shopify did not update",
+          description: typeof data.error === "string" ? data.error : "Add write_inventory scope in Shopify app and re-connect the store.",
+        });
+      }
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "PSF updated; Shopify did not update",
+        description: e instanceof Error ? e.message : "Re-connect the store in Integrations if the app was updated.",
+      });
     }
   };
   

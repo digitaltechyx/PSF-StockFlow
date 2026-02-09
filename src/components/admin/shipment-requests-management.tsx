@@ -404,7 +404,7 @@ export function ShipmentRequestsManagement({
             const newQty = Math.max(0, invItem.quantity - totalUnitsShipped);
             try {
               const token = await authUser.getIdToken();
-              await fetch("/api/shopify/sync-inventory", {
+              const res = await fetch("/api/shopify/sync-inventory", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
@@ -415,8 +415,20 @@ export function ShipmentRequestsManagement({
                   newQuantity: newQty,
                 }),
               });
-            } catch {
-              // PSF updated; Shopify sync failed silently
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                toast({
+                  variant: "destructive",
+                  title: "Shipment processed; Shopify inventory did not update",
+                  description: typeof data.error === "string" ? data.error : "Add write_inventory scope and re-connect the store.",
+                });
+              }
+            } catch (e) {
+              toast({
+                variant: "destructive",
+                title: "Shipment processed; Shopify inventory did not update",
+                description: e instanceof Error ? e.message : "Re-connect the store in Integrations.",
+              });
             }
           }
         }
@@ -507,7 +519,7 @@ export function ShipmentRequestsManagement({
             const newQty = invItem.quantity + totalRestore;
             try {
               const token = await authUser.getIdToken();
-              await fetch("/api/shopify/sync-inventory", {
+              const res = await fetch("/api/shopify/sync-inventory", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
@@ -518,8 +530,20 @@ export function ShipmentRequestsManagement({
                   newQuantity: newQty,
                 }),
               });
-            } catch {
-              // ignore
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                toast({
+                  variant: "destructive",
+                  title: "Quantities restored in PSF; Shopify did not update",
+                  description: typeof data.error === "string" ? data.error : "Add write_inventory scope and re-connect the store.",
+                });
+              }
+            } catch (e) {
+              toast({
+                variant: "destructive",
+                title: "Quantities restored in PSF; Shopify did not update",
+                description: e instanceof Error ? e.message : "Re-connect the store in Integrations.",
+              });
             }
           }
         }

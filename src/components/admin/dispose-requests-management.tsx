@@ -150,7 +150,7 @@ export function DisposeRequestsManagement({
       if (shopifyItem.source === "shopify" && shopifyItem.shop && shopifyItem.shopifyVariantId && authUser && userId) {
         try {
           const token = await authUser.getIdToken();
-          await fetch("/api/shopify/sync-inventory", {
+          const res = await fetch("/api/shopify/sync-inventory", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({
@@ -161,8 +161,20 @@ export function DisposeRequestsManagement({
               newQuantity: newQtyAfterDispose,
             }),
           });
-        } catch {
-          // Sync to Shopify failed; PSF is already updated
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast({
+              variant: "destructive",
+              title: "Disposed in PSF; Shopify did not update",
+              description: typeof data.error === "string" ? data.error : "Add write_inventory scope and re-connect the store.",
+            });
+          }
+        } catch (e) {
+          toast({
+            variant: "destructive",
+            title: "Disposed in PSF; Shopify did not update",
+            description: e instanceof Error ? e.message : "Re-connect the store in Integrations.",
+          });
         }
       }
 
