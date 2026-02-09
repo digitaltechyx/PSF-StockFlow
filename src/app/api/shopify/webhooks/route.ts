@@ -47,49 +47,61 @@ export async function POST(request: NextRequest) {
   const shopNorm = shop.includes(".myshopify.com") ? shop : `${shop}.myshopify.com`;
 
   if (topic === "inventory_levels/update") {
+    console.log("[Shopify webhooks] received inventory_levels/update", { shop: shopNorm });
     const raw = payload as Record<string, unknown>;
     const data = (raw?.inventory_level as Record<string, unknown>) ?? raw;
-    const inventoryItemId = data.inventory_item_id;
     const available = data.available != null ? Number(data.available) : 0;
-    if (inventoryItemId == null) {
+    // Prefer extracting inventory_item_id from raw body as string to avoid JS number precision loss (Shopify IDs can be > 2^53)
+    let idStr: string | null = null;
+    const idMatch = rawBody.match(/"inventory_item_id"\s*:\s*"?(\d+)"?/);
+    if (idMatch) idStr = idMatch[1];
+    if (!idStr) {
+      const fromPayload = data.inventory_item_id;
+      if (fromPayload != null) idStr = String(fromPayload);
+    }
+    if (!idStr) {
       console.warn("[Shopify webhooks] inventory_levels/update missing inventory_item_id", { shop: shopNorm });
       return NextResponse.json({ error: "Missing inventory_item_id" }, { status: 400 });
     }
-    const idStr = String(inventoryItemId);
 
     try {
       const db = adminDb();
-      const invSnap = await db
-        .collectionGroup("inventory")
-        .where("source", "==", "shopify")
-        .where("shop", "==", shopNorm)
-        .where("shopifyInventoryItemId", "==", idStr)
-        .get();
+      const lookupRef = db.collection("shopifyInventoryLookup");
       const status = available > 0 ? "In Stock" : "Out of Stock";
-      if (invSnap.empty) {
-        console.warn("[Shopify webhooks] inventory_levels/update no matching PSF doc", {
+
+      const lookupId = `${shopNorm.replace(/\./g, "_")}_${idStr}`;
+      let lookupSnap = await lookupRef.doc(lookupId).get();
+      if (!lookupSnap.exists) {
+        const roundedId = String(Number(idStr));
+        if (roundedId !== idStr) {
+          const altLookupId = `${shopNorm.replace(/\./g, "_")}_${roundedId}`;
+          lookupSnap = await lookupRef.doc(altLookupId).get();
+        }
+      }
+
+      if (!lookupSnap.exists) {
+        console.warn("[Shopify webhooks] inventory_levels/update no lookup doc — re-save product selection in Integrations → Manage products", {
           shop: shopNorm,
           shopifyInventoryItemId: idStr,
           available,
         });
       } else {
-        for (const doc of invSnap.docs) {
-          await doc.ref.update({ quantity: available, status });
+        const lookup = lookupSnap.data()!;
+        const path = lookup.inventoryPath as string;
+        if (path) {
+          await db.doc(path).update({ quantity: available, status });
+          console.log("[Shopify webhooks] inventory_levels/update OK", {
+            shop: shopNorm,
+            shopifyInventoryItemId: idStr,
+            available,
+          });
+        } else {
+          console.warn("[Shopify webhooks] lookup doc missing inventoryPath", { lookupId });
         }
-        console.log("[Shopify webhooks] inventory_levels/update OK", {
-          shop: shopNorm,
-          shopifyInventoryItemId: idStr,
-          available,
-          updated: invSnap.size,
-        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[Shopify webhooks inventory_levels/update]", msg, err);
-      // Firestore often returns a URL to create the missing index in the error
-      if (msg.includes("index") || msg.includes("Index")) {
-        console.error("[Shopify webhooks] Deploy Firestore index: run 'firebase deploy --only firestore:indexes' (see firestore.indexes.json)");
-      }
       return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
   }

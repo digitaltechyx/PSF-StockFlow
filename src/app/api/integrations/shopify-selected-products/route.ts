@@ -91,6 +91,7 @@ export async function PUT(request: NextRequest) {
     const selectedIds = new Set(selectedVariants.map((v) => v.variantId));
     const FieldValue = adminFieldValue();
     const invRef = db.collection("users").doc(uid).collection("inventory");
+    const lookupRef = db.collection("shopifyInventoryLookup");
 
     if (selectedVariants.length > 0 && accessToken) {
       const productsRes = await fetch(
@@ -135,6 +136,16 @@ export async function PUT(request: NextRequest) {
         if (v.sku != null && v.sku !== "") docData.sku = v.sku;
         else if (info.sku) docData.sku = info.sku;
         await invRef.doc(docId).set(docData, { merge: true });
+        // Lookup for webhook: no collection-group index needed
+        if (info.inventoryItemId) {
+          const lookupId = `${shop.replace(/\./g, "_")}_${info.inventoryItemId}`;
+          await lookupRef.doc(lookupId).set({
+            userId: uid,
+            inventoryPath: `users/${uid}/inventory/${docId}`,
+            shop,
+            shopifyInventoryItemId: info.inventoryItemId,
+          }, { merge: true });
+        }
       }
     }
 
@@ -142,7 +153,14 @@ export async function PUT(request: NextRequest) {
     for (const d of toRemove.docs) {
       const data = d.data();
       const vid = data.shopifyVariantId as string | undefined;
-      if (vid && !selectedIds.has(vid)) await d.ref.delete();
+      const invItemId = data.shopifyInventoryItemId as string | undefined;
+      if (vid && !selectedIds.has(vid)) {
+        await d.ref.delete();
+        if (invItemId) {
+          const lookupId = `${shop.replace(/\./g, "_")}_${invItemId}`;
+          await lookupRef.doc(lookupId).delete();
+        }
+      }
     }
 
     return NextResponse.json({ success: true, count: selectedVariants.length });
