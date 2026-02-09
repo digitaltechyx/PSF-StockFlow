@@ -4,6 +4,14 @@ import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
+/** GET: Test that the webhook URL is reachable (e.g. open in browser). Shopify sends POST only. */
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    message: "Shopify webhook endpoint. POST only (inventory_levels/update).",
+  });
+}
+
 /**
  * POST: Shopify webhooks (e.g. inventory_levels/update).
  * Verify X-Shopify-Hmac-Sha256, then update PSF inventory for matching docs.
@@ -76,7 +84,12 @@ export async function POST(request: NextRequest) {
         });
       }
     } catch (err: unknown) {
-      console.error("[Shopify webhooks inventory_levels/update]", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[Shopify webhooks inventory_levels/update]", msg, err);
+      // Firestore often returns a URL to create the missing index in the error
+      if (msg.includes("index") || msg.includes("Index")) {
+        console.error("[Shopify webhooks] Deploy Firestore index: run 'firebase deploy --only firestore:indexes' (see firestore.indexes.json)");
+      }
       return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
   }
