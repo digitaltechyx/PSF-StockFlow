@@ -60,7 +60,7 @@ export function ShipmentRequestsManagement({
   initialRequestId?: string;
 }) {
   const { toast } = useToast();
-  const { userProfile: adminProfile } = useAuth();
+  const { user: authUser, userProfile: adminProfile } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState<ShipmentRequest | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedRemarks, setSelectedRemarks] = useState<string | null>(null);
@@ -395,6 +395,33 @@ export function ShipmentRequestsManagement({
 
       });
 
+      if (authUser && targetUserId) {
+        for (const shipment of request.shipments || []) {
+          if (!shipment.productId) continue;
+          const invItem = inventory.find((i) => i.id === shipment.productId) as (InventoryItem & { source?: string; shop?: string; shopifyVariantId?: string; shopifyInventoryItemId?: string }) | undefined;
+          if (invItem?.source === "shopify" && invItem.shop && invItem.shopifyVariantId) {
+            const totalUnitsShipped = (shipment.quantity || 0) * (shipment.packOf || 1);
+            const newQty = Math.max(0, invItem.quantity - totalUnitsShipped);
+            try {
+              const token = await authUser.getIdToken();
+              await fetch("/api/shopify/sync-inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                  userId: targetUserId,
+                  shop: invItem.shop,
+                  shopifyVariantId: invItem.shopifyVariantId,
+                  shopifyInventoryItemId: invItem.shopifyInventoryItemId,
+                  newQuantity: newQty,
+                }),
+              });
+            } catch {
+              // PSF updated; Shopify sync failed silently
+            }
+          }
+        }
+      }
+
       toast({
         title: "Success",
         description: "Shipment request confirmed and processed.",
@@ -470,6 +497,33 @@ export function ShipmentRequestsManagement({
           }
         }
       });
+
+      if (request.status === "confirmed" && request.shipments && authUser && targetUserId) {
+        for (const shipment of request.shipments) {
+          if (!shipment.productId) continue;
+          const invItem = inventory.find((i) => i.id === shipment.productId) as (InventoryItem & { source?: string; shop?: string; shopifyVariantId?: string; shopifyInventoryItemId?: string }) | undefined;
+          if (invItem?.source === "shopify" && invItem.shop && invItem.shopifyVariantId) {
+            const totalRestore = (shipment.quantity || 0) * (shipment.packOf || 1);
+            const newQty = invItem.quantity + totalRestore;
+            try {
+              const token = await authUser.getIdToken();
+              await fetch("/api/shopify/sync-inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                  userId: targetUserId,
+                  shop: invItem.shop,
+                  shopifyVariantId: invItem.shopifyVariantId,
+                  shopifyInventoryItemId: invItem.shopifyInventoryItemId,
+                  newQuantity: newQty,
+                }),
+              });
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
 
       toast({
         title: "Success",

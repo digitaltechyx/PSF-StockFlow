@@ -86,7 +86,31 @@ export function AdminInventoryManagement({
   initialRequestId,
 }: AdminInventoryManagementProps) {
   const { toast } = useToast();
-  const { userProfile: adminUser } = useAuth();
+  const { user: authUser, userProfile: adminUser } = useAuth();
+
+  const syncShopifyInventoryIfNeeded = async (
+    item: InventoryItem & { source?: string; shop?: string; shopifyVariantId?: string; shopifyInventoryItemId?: string },
+    newQuantity: number,
+    userId: string
+  ) => {
+    if (item.source !== "shopify" || !item.shop || !item.shopifyVariantId || !authUser) return;
+    try {
+      const token = await authUser.getIdToken();
+      await fetch("/api/shopify/sync-inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          userId,
+          shop: item.shop,
+          shopifyVariantId: item.shopifyVariantId,
+          shopifyInventoryItemId: item.shopifyInventoryItemId,
+          newQuantity,
+        }),
+      });
+    } catch {
+      // PSF updated; Shopify sync failed silently
+    }
+  };
   
   // Debug authentication state
   console.log("=== ADMIN INVENTORY MANAGEMENT DEBUG ===");
@@ -273,6 +297,7 @@ export function AdminInventoryManagement({
         quantity: values.quantity,
         status: values.quantity > 0 ? "In Stock" : "Out of Stock",
       });
+      await syncShopifyInventoryIfNeeded(editingProduct as any, values.quantity, selectedUser.uid);
 
       toast({
         title: "Success",
@@ -301,6 +326,7 @@ export function AdminInventoryManagement({
         quantity: newQuantity,
         status: "In Stock",
       });
+      await syncShopifyInventoryIfNeeded(restockingProduct as any, newQuantity, selectedUser.uid);
 
       // Record restock history with selected date
       const restockHistoryRef = collection(db, `users/${selectedUser.uid}/restockHistory`);
@@ -364,6 +390,7 @@ export function AdminInventoryManagement({
       // Delete the product
       const productRef = doc(db, `users/${selectedUser.uid}/inventory`, deletingProduct.id);
       await deleteDoc(productRef);
+      await syncShopifyInventoryIfNeeded(deletingProduct as any, 0, selectedUser.uid);
 
       toast({
         title: "Success",
@@ -398,12 +425,14 @@ export function AdminInventoryManagement({
       const previousStatus = currentData.status;
 
       // Update the product
-      const newStatus = editForm.getValues("quantity") > 0 ? "In Stock" : "Out of Stock";
+      const newQty = editForm.getValues("quantity");
+      const newStatus = newQty > 0 ? "In Stock" : "Out of Stock";
       await updateDoc(productRef, {
         productName: editForm.getValues("productName"),
-        quantity: editForm.getValues("quantity"),
+        quantity: newQty,
         status: newStatus,
       });
+      await syncShopifyInventoryIfNeeded(editingProductWithLog as any, newQty, selectedUser.uid);
 
       // Log the edit
       const editLogRef = collection(db, `users/${selectedUser.uid}/editLogs`);
@@ -621,6 +650,7 @@ export function AdminInventoryManagement({
         // Delete from original collection
         const inventoryRef = doc(db, `users/${selectedUser.uid}/inventory`, inventoryItem.id);
         await deleteDoc(inventoryRef);
+        await syncShopifyInventoryIfNeeded(inventoryItem as any, 0, selectedUser.uid);
 
         toast({
           title: "Success",
@@ -637,6 +667,7 @@ export function AdminInventoryManagement({
           quantity: newQuantity,
           status: newStatus,
         });
+        await syncShopifyInventoryIfNeeded(inventoryItem as any, newQuantity, selectedUser.uid);
 
         // Add partial quantity to recycled collection
         const recycledRef = collection(db, `users/${selectedUser.uid}/recycledInventory`);

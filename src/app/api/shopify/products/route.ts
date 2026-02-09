@@ -11,6 +11,7 @@ type ShopifyVariant = {
   sku?: string | null;
   inventory_quantity?: number;
   inventory_management?: string | null;
+  inventory_item_id?: number;
 };
 
 /** Shopify product from REST API */
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
       sku: v.sku ?? null,
       inventoryQuantity: typeof v.inventory_quantity === "number" ? v.inventory_quantity : null,
       inventoryManagement: v.inventory_management ?? null,
+      inventoryItemId: v.inventory_item_id != null ? String(v.inventory_item_id) : null,
     })),
   }));
 

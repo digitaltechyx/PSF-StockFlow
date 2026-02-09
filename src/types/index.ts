@@ -59,6 +59,8 @@ export interface InventoryItem {
   source?: 'shopify';
   shopifyVariantId?: string;
   shopifyProductId?: string;
+  /** Shopify inventory_item_id (for inventory_levels API and webhooks). */
+  shopifyInventoryItemId?: string;
   shop?: string;
   sku?: string;
 }

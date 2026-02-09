@@ -10,6 +10,7 @@ type ShopifyVariant = {
   title: string;
   sku?: string | null;
   inventory_quantity?: number;
+  inventory_item_id?: number;
 };
 
 type ShopifyProduct = {
@@ -101,7 +102,7 @@ export async function PUT(request: NextRequest) {
           },
         }
       );
-      const variantQtyMap: Record<string, { quantity: number; sku: string | null }> = {};
+      const variantQtyMap: Record<string, { quantity: number; sku: string | null; inventoryItemId: string | null }> = {};
       if (productsRes.ok) {
         const data = (await productsRes.json()) as { products?: ShopifyProduct[] };
         for (const p of data.products ?? []) {
@@ -109,13 +110,14 @@ export async function PUT(request: NextRequest) {
             variantQtyMap[String(v.id)] = {
               quantity: typeof v.inventory_quantity === "number" ? v.inventory_quantity : 0,
               sku: v.sku ?? null,
+              inventoryItemId: v.inventory_item_id != null ? String(v.inventory_item_id) : null,
             };
           }
         }
       }
 
       for (const v of selectedVariants) {
-        const info = variantQtyMap[v.variantId] ?? { quantity: 0, sku: null };
+        const info = variantQtyMap[v.variantId] ?? { quantity: 0, sku: null, inventoryItemId: null };
         const quantity = info.quantity;
         const status = quantity > 0 ? "In Stock" : "Out of Stock";
         const docId = `shopify_${shop.replace(/\./g, "_")}_${v.variantId}`;
@@ -129,6 +131,7 @@ export async function PUT(request: NextRequest) {
           shopifyProductId: v.productId,
           shop,
         };
+        if (info.inventoryItemId) docData.shopifyInventoryItemId = info.inventoryItemId;
         if (v.sku != null && v.sku !== "") docData.sku = v.sku;
         else if (info.sku) docData.sku = info.sku;
         await invRef.doc(docId).set(docData, { merge: true });

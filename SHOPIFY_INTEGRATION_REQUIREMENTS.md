@@ -94,9 +94,20 @@ This document describes the **requirements** and **planned build** for connectin
 
 - **read_orders** – sync orders.
 - **read_products** – sync products (optional).
+- **read_inventory** – read inventory levels (for product selection and sync).
+- **write_inventory** – set inventory on Shopify when PSF updates (dispose, edit, restock, ship, delete). Required for two-way inventory sync; users must re-authorize after adding.
 - **write_fulfillments** (or equivalent) – create fulfillments and update fulfillment status on Shopify when admin clicks **Mark as fulfilled** or completes **Create label**.
 
 (Exact scope names may vary by Shopify API version; we'll confirm when implementing. Label purchase may require additional carrier/fulfillment permissions.)
+
+### 5.1 Two-way inventory sync (Shopify ↔ PSF)
+
+- **PSF → Shopify:** When admin performs dispose, edit quantity, restock, delete, recycle, or confirm shipment on a Shopify-synced item, the app calls Shopify’s `inventory_levels/set` API so the store’s inventory updates in real time.
+- **Shopify → PSF:** Register a webhook in Shopify admin so PSF stays in sync when inventory changes on Shopify:
+  - **Webhook URL:** `https://your-domain.com/api/shopify/webhooks`
+  - **Topic:** `inventory_levels/update`
+  - Verification uses `X-Shopify-Hmac-Sha256` with `SHOPIFY_CLIENT_SECRET`.
+  - On receive, PSF updates the matching inventory doc(s) (by `shopifyInventoryItemId` and shop) with the new `available` quantity.
 
 ---
 

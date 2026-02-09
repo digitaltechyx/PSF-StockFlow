@@ -56,7 +56,7 @@ export function DisposeRequestsManagement({
   initialRequestId?: string;
 }) {
   const { toast } = useToast();
-  const { userProfile: adminProfile } = useAuth();
+  const { user: authUser, userProfile: adminProfile } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState<DisposeRequest | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -144,6 +144,27 @@ export function DisposeRequestsManagement({
           approvedAt: now,
         });
       });
+
+      const newQtyAfterDispose = request.quantity >= invItem.quantity ? 0 : invItem.quantity - request.quantity;
+      const shopifyItem = invItem as InventoryItem & { source?: string; shop?: string; shopifyVariantId?: string; shopifyInventoryItemId?: string };
+      if (shopifyItem.source === "shopify" && shopifyItem.shop && shopifyItem.shopifyVariantId && authUser && userId) {
+        try {
+          const token = await authUser.getIdToken();
+          await fetch("/api/shopify/sync-inventory", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              userId,
+              shop: shopifyItem.shop,
+              shopifyVariantId: shopifyItem.shopifyVariantId,
+              shopifyInventoryItemId: shopifyItem.shopifyInventoryItemId,
+              newQuantity: newQtyAfterDispose,
+            }),
+          });
+        } catch {
+          // Sync to Shopify failed; PSF is already updated
+        }
+      }
 
       toast({ title: "Request approved", description: `${request.quantity} unit(s) of "${request.productName}" disposed.` });
       closeDialog();
