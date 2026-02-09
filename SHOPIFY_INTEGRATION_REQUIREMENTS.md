@@ -112,6 +112,14 @@ This document describes the **requirements** and **planned build** for connectin
   - On receive, PSF updates the matching inventory doc(s) (by `shopifyInventoryItemId` and shop) with the new `available` quantity.
   - If the store was connected before this feature, disconnect and reconnect the store once (with the env var set) to register the webhook.
 
+**If Shopify → PSF still doesn’t update:**
+
+1. **Production URL** – `NEXT_PUBLIC_APP_URL` must be set in the **deployment** environment (e.g. Vercel → Project → Settings → Environment Variables), not only in `.env.local`. Use your live app URL (e.g. `https://dev.prepservicesfba.com`). The webhook URL must be reachable by Shopify (no localhost, no password-protected preview).
+2. **Reconnect on production** – Open your **deployed** app (not localhost), go to Integrations, disconnect the store, then connect again. That registers the webhook with the production URL.
+3. **Firestore index** – Deploy the index so the webhook can find inventory docs: run `firebase deploy --only firestore:indexes` (uses `firestore.indexes.json`). If the index is missing, server logs will show an error when the webhook runs.
+4. **Check Shopify** – In Shopify admin: Settings → Notifications → Webhooks. Confirm there is an `inventory_levels/update` subscription pointing to `https://your-domain.com/api/shopify/webhooks`. If it’s missing, reconnect the store from the deployed app.
+5. **Server logs** – When you change quantity on Shopify, check your app’s server logs (e.g. Vercel → Deployments → Logs). You should see `[Shopify webhooks] inventory_levels/update OK` on success, or `no matching PSF doc` if the product isn’t linked.
+
 ---
 
 ## 6. Out of scope (for this phase)

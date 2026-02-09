@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-    if (baseUrl) {
+    const isPublicUrl = baseUrl && !baseUrl.includes("localhost");
+    if (isPublicUrl) {
       const webhookAddress = `${baseUrl}/api/shopify/webhooks`;
       const webhookRes = await fetch(
         `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,
@@ -115,8 +116,10 @@ export async function POST(request: NextRequest) {
         // 422 can mean duplicate; store is still connected
         console.warn("[Shopify exchange-token] Webhook registration:", webhookRes.status, errText);
       }
-    } else {
+    } else if (!baseUrl) {
       console.warn("[Shopify exchange-token] Set NEXT_PUBLIC_APP_URL or VERCEL_URL to enable Shopify→PSF inventory webhook.");
+    } else {
+      console.warn("[Shopify exchange-token] Webhook skipped: URL must be public (no localhost). Set NEXT_PUBLIC_APP_URL to your production URL.");
     }
 
     return NextResponse.json({ success: true, shop: normalizedShop });

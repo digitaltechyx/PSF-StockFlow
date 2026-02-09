@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     const inventoryItemId = data.inventory_item_id;
     const available = data.available != null ? Number(data.available) : 0;
     if (inventoryItemId == null) {
+      console.warn("[Shopify webhooks] inventory_levels/update missing inventory_item_id", { shop: shopNorm });
       return NextResponse.json({ error: "Missing inventory_item_id" }, { status: 400 });
     }
     const idStr = String(inventoryItemId);
@@ -57,8 +58,22 @@ export async function POST(request: NextRequest) {
         .where("shopifyInventoryItemId", "==", idStr)
         .get();
       const status = available > 0 ? "In Stock" : "Out of Stock";
-      for (const doc of invSnap.docs) {
-        await doc.ref.update({ quantity: available, status });
+      if (invSnap.empty) {
+        console.warn("[Shopify webhooks] inventory_levels/update no matching PSF doc", {
+          shop: shopNorm,
+          shopifyInventoryItemId: idStr,
+          available,
+        });
+      } else {
+        for (const doc of invSnap.docs) {
+          await doc.ref.update({ quantity: available, status });
+        }
+        console.log("[Shopify webhooks] inventory_levels/update OK", {
+          shop: shopNorm,
+          shopifyInventoryItemId: idStr,
+          available,
+          updated: invSnap.size,
+        });
       }
     } catch (err: unknown) {
       console.error("[Shopify webhooks inventory_levels/update]", err);
