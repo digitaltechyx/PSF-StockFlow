@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
   const shopNorm = shop.includes(".myshopify.com") ? shop : `${shop}.myshopify.com`;
 
   if (topic === "inventory_levels/update") {
-    const data = payload as { inventory_item_id?: number; available?: number | null };
+    const raw = payload as Record<string, unknown>;
+    const data = (raw?.inventory_level as Record<string, unknown>) ?? raw;
     const inventoryItemId = data.inventory_item_id;
     const available = data.available != null ? Number(data.available) : 0;
     if (inventoryItemId == null) {

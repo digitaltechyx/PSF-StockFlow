@@ -87,6 +87,38 @@ export async function POST(request: NextRequest) {
       await col.add(docData);
     }
 
+    // Register inventory_levels/update webhook so Shopify → PSF updates work without re-selecting
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+    if (baseUrl) {
+      const webhookAddress = `${baseUrl}/api/shopify/webhooks`;
+      const webhookRes = await fetch(
+        `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,
+        {
+          method: "POST",
+          headers: {
+            "X-Shopify-Access-Token": accessToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            webhook: {
+              topic: "inventory_levels/update",
+              address: webhookAddress,
+              format: "json",
+            },
+          }),
+        }
+      );
+      if (!webhookRes.ok) {
+        const errText = await webhookRes.text();
+        // 422 can mean duplicate; store is still connected
+        console.warn("[Shopify exchange-token] Webhook registration:", webhookRes.status, errText);
+      }
+    } else {
+      console.warn("[Shopify exchange-token] Set NEXT_PUBLIC_APP_URL or VERCEL_URL to enable Shopify→PSF inventory webhook.");
+    }
+
     return NextResponse.json({ success: true, shop: normalizedShop });
   } catch (err: unknown) {
     console.error("[Shopify exchange-token]", err);

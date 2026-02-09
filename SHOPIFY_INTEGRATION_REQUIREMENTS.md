@@ -104,11 +104,13 @@ This document describes the **requirements** and **planned build** for connectin
 ### 5.1 Two-way inventory sync (Shopify ↔ PSF)
 
 - **PSF → Shopify:** When admin performs dispose, edit quantity, restock, delete, recycle, or confirm shipment on a Shopify-synced item, the app calls Shopify’s `inventory_levels/set` API so the store’s inventory updates in real time.
-- **Shopify → PSF:** Register a webhook in Shopify admin so PSF stays in sync when inventory changes on Shopify:
-  - **Webhook URL:** `https://your-domain.com/api/shopify/webhooks`
+- **Shopify → PSF:** When a store is connected (OAuth callback), the app automatically registers an `inventory_levels/update` webhook so changes on Shopify update PSF without re-selecting products.
+  - **Webhook URL:** `{NEXT_PUBLIC_APP_URL}/api/shopify/webhooks` (or `https://{VERCEL_URL}/...` if only Vercel is set).
   - **Topic:** `inventory_levels/update`
+  - **Required:** Set `NEXT_PUBLIC_APP_URL` (e.g. `https://dev.prepservicesfba.com`) or deploy on Vercel so `VERCEL_URL` is set; otherwise the webhook is not registered.
   - Verification uses `X-Shopify-Hmac-Sha256` with `SHOPIFY_CLIENT_SECRET`.
   - On receive, PSF updates the matching inventory doc(s) (by `shopifyInventoryItemId` and shop) with the new `available` quantity.
+  - If the store was connected before this feature, disconnect and reconnect the store once (with the env var set) to register the webhook.
 
 ---
 
