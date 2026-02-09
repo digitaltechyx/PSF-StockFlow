@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     const locRes = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/locations.json?limit=1`,
+      `https://${shopNorm}/admin/api/2024-01/locations.json?limit=250`,
       {
         headers: {
           "X-Shopify-Access-Token": accessToken,
@@ -110,33 +110,40 @@ export async function POST(request: NextRequest) {
       );
     }
     const locData = (await locRes.json()) as { locations?: { id: number }[] };
-    const locationId = locData.locations?.[0]?.id;
-    if (!locationId) {
+    const locations = locData.locations ?? [];
+    if (locations.length === 0) {
       return NextResponse.json({ error: "No location on store" }, { status: 400 });
     }
 
-    const setRes = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/inventory_levels/set.json`,
-      {
-        method: "POST",
-        headers: {
-          "X-Shopify-Access-Token": accessToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          location_id: locationId,
-          inventory_item_id: Number(inventoryItemId),
-          available: newQuantity,
-        }),
-      }
-    );
-    if (!setRes.ok) {
-      const errText = await setRes.text();
-      console.error("[Shopify sync-inventory]", setRes.status, errText);
-      return NextResponse.json(
-        { error: "Shopify rejected inventory update. Ensure app has write_inventory scope." },
-        { status: 502 }
+    // Set primary (first) location to newQuantity; set all other locations to 0
+    // so total inventory in Shopify matches PSF (avoids e.g. 60 + 50 = 110).
+    const headers = {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    };
+    for (let i = 0; i < locations.length; i++) {
+      const locationId = locations[i].id;
+      const available = i === 0 ? newQuantity : 0;
+      const setRes = await fetch(
+        `https://${shopNorm}/admin/api/2024-01/inventory_levels/set.json`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            location_id: locationId,
+            inventory_item_id: Number(inventoryItemId),
+            available,
+          }),
+        }
       );
+      if (!setRes.ok) {
+        const errText = await setRes.text();
+        console.error("[Shopify sync-inventory]", setRes.status, errText);
+        return NextResponse.json(
+          { error: "Shopify rejected inventory update. Ensure app has write_inventory scope." },
+          { status: 502 }
+        );
+      }
     }
 
     return NextResponse.json({ success: true, available: newQuantity });
