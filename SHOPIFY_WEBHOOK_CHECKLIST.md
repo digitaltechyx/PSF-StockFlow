@@ -42,7 +42,9 @@ The webhook only updates inventory docs that have:
 - `shop` = your store (e.g. `psf-testing.myshopify.com`)
 - `shopifyInventoryItemId` = the Shopify inventory item ID
 
-If you added products before this field existed, **re-save the selection**: go to **Integrations** → **Manage products** for the store → click **Save selection**. That rewrites inventory docs with `shopifyInventoryItemId`.
+If you added products before this field existed, **re-save the selection**: go to **Integrations** → **Manage products** for the store → click **Save selection**. That rewrites inventory docs with `shopifyInventoryItemId` and populates the product lookup used for **products/update** and **products/delete** sync.
+
+**Full sync (Shopify → PSF):** The app subscribes to `inventory_levels/update` (quantity), `products/update` (title/name), and `products/delete` (remove from PSF when product is deleted on Shopify). Re-connect the store once to register all three webhooks; re-save product selection once so product lookups exist for update/delete.
 
 ## 6. Check server logs
 

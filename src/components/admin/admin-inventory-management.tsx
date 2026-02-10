@@ -123,6 +123,41 @@ export function AdminInventoryManagement({
       });
     }
   };
+
+  const syncShopifyProductTitleIfNeeded = async (
+    item: InventoryItem & { source?: string; shop?: string; shopifyProductId?: string },
+    newTitle: string,
+    userId: string
+  ) => {
+    if (item.source !== "shopify" || !item.shop || !item.shopifyProductId || !authUser) return;
+    try {
+      const token = await authUser.getIdToken();
+      const res = await fetch("/api/shopify/update-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          userId,
+          shop: item.shop,
+          shopifyProductId: item.shopifyProductId,
+          title: newTitle,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "PSF updated; Shopify product name did not update",
+          description: typeof data.error === "string" ? data.error : "Add write_products scope and re-connect the store.",
+        });
+      }
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "PSF updated; Shopify product name did not update",
+        description: e instanceof Error ? e.message : "Re-connect the store in Integrations.",
+      });
+    }
+  };
   
   // Debug authentication state
   console.log("=== ADMIN INVENTORY MANAGEMENT DEBUG ===");
@@ -310,6 +345,9 @@ export function AdminInventoryManagement({
         status: values.quantity > 0 ? "In Stock" : "Out of Stock",
       });
       await syncShopifyInventoryIfNeeded(editingProduct as any, values.quantity, selectedUser.uid);
+      if (values.productName && (editingProduct as any).productName !== values.productName) {
+        await syncShopifyProductTitleIfNeeded(editingProduct as any, values.productName, selectedUser.uid);
+      }
 
       toast({
         title: "Success",
@@ -445,6 +483,9 @@ export function AdminInventoryManagement({
         status: newStatus,
       });
       await syncShopifyInventoryIfNeeded(editingProductWithLog as any, newQty, selectedUser.uid);
+      if (previousProductName !== editForm.getValues("productName")) {
+        await syncShopifyProductTitleIfNeeded(editingProductWithLog as any, editForm.getValues("productName"), selectedUser.uid);
+      }
 
       // Log the edit
       const editLogRef = collection(db, `users/${selectedUser.uid}/editLogs`);

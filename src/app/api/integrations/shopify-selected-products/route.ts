@@ -92,6 +92,7 @@ export async function PUT(request: NextRequest) {
     const FieldValue = adminFieldValue();
     const invRef = db.collection("users").doc(uid).collection("inventory");
     const lookupRef = db.collection("shopifyInventoryLookup");
+    const productLookupRef = db.collection("shopifyProductLookup");
 
     if (selectedVariants.length > 0 && accessToken) {
       const productsRes = await fetch(
@@ -117,11 +118,13 @@ export async function PUT(request: NextRequest) {
         }
       }
 
+      const productPathsMap: Record<string, { paths: string[]; lookupIds: string[] }> = {};
       for (const v of selectedVariants) {
         const info = variantQtyMap[v.variantId] ?? { quantity: 0, sku: null, inventoryItemId: null };
         const quantity = info.quantity;
         const status = quantity > 0 ? "In Stock" : "Out of Stock";
         const docId = `shopify_${shop.replace(/\./g, "_")}_${v.variantId}`;
+        const inventoryPath = `users/${uid}/inventory/${docId}`;
         const docData: Record<string, unknown> = {
           productName: v.title,
           quantity,
@@ -136,16 +139,25 @@ export async function PUT(request: NextRequest) {
         if (v.sku != null && v.sku !== "") docData.sku = v.sku;
         else if (info.sku) docData.sku = info.sku;
         await invRef.doc(docId).set(docData, { merge: true });
-        // Lookup for webhook: no collection-group index needed
+        // Lookup for inventory_levels webhook
         if (info.inventoryItemId) {
           const lookupId = `${shop.replace(/\./g, "_")}_${info.inventoryItemId}`;
           await lookupRef.doc(lookupId).set({
             userId: uid,
-            inventoryPath: `users/${uid}/inventory/${docId}`,
+            inventoryPath,
             shop,
             shopifyInventoryItemId: info.inventoryItemId,
           }, { merge: true });
+          // Product-level lookup for products/delete webhook
+          const pid = String(v.productId);
+          if (!productPathsMap[pid]) productPathsMap[pid] = { paths: [], lookupIds: [] };
+          productPathsMap[pid].paths.push(inventoryPath);
+          productPathsMap[pid].lookupIds.push(lookupId);
         }
+      }
+      for (const [productId, { paths, lookupIds }] of Object.entries(productPathsMap)) {
+        const plId = `${shop.replace(/\./g, "_")}_${productId}`;
+        await productLookupRef.doc(plId).set({ userId: uid, paths, lookupIds, shop }, { merge: true });
       }
     }
 
@@ -154,11 +166,27 @@ export async function PUT(request: NextRequest) {
       const data = d.data();
       const vid = data.shopifyVariantId as string | undefined;
       const invItemId = data.shopifyInventoryItemId as string | undefined;
+      const productId = data.shopifyProductId as string | undefined;
       if (vid && !selectedIds.has(vid)) {
         await d.ref.delete();
         if (invItemId) {
           const lookupId = `${shop.replace(/\./g, "_")}_${invItemId}`;
           await lookupRef.doc(lookupId).delete();
+        }
+        if (productId) {
+          const plId = `${shop.replace(/\./g, "_")}_${productId}`;
+          const plSnap = await productLookupRef.doc(plId).get();
+          if (plSnap.exists) {
+            const pl = plSnap.data()!;
+            const paths = (pl.paths as string[]) || [];
+            const lookupIds = (pl.lookupIds as string[]) || [];
+            const invPath = `users/${uid}/inventory/${d.id}`;
+            const newPaths = paths.filter((p) => p !== invPath);
+            const removedLookupId = invItemId ? `${shop.replace(/\./g, "_")}_${invItemId}` : "";
+            const newLookupIds = lookupIds.filter((id) => id !== removedLookupId);
+            if (newPaths.length === 0) await productLookupRef.doc(plId).delete();
+            else await productLookupRef.doc(plId).set({ paths: newPaths, lookupIds: newLookupIds }, { merge: true });
+          }
         }
       }
     }

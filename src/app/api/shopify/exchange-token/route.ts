@@ -94,27 +94,26 @@ export async function POST(request: NextRequest) {
     const isPublicUrl = baseUrl && !baseUrl.includes("localhost");
     if (isPublicUrl) {
       const webhookAddress = `${baseUrl}/api/shopify/webhooks`;
-      const webhookRes = await fetch(
-        `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,
-        {
-          method: "POST",
-          headers: {
-            "X-Shopify-Access-Token": accessToken,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            webhook: {
-              topic: "inventory_levels/update",
-              address: webhookAddress,
-              format: "json",
-            },
-          }),
+      const headers = {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      };
+      const topics = ["inventory_levels/update", "products/update", "products/delete"];
+      for (const topic of topics) {
+        const webhookRes = await fetch(
+          `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              webhook: { topic, address: webhookAddress, format: "json" },
+            }),
+          }
+        );
+        if (!webhookRes.ok) {
+          const errText = await webhookRes.text();
+          console.warn("[Shopify exchange-token] Webhook registration:", topic, webhookRes.status, errText);
         }
-      );
-      if (!webhookRes.ok) {
-        const errText = await webhookRes.text();
-        // 422 can mean duplicate; store is still connected
-        console.warn("[Shopify exchange-token] Webhook registration:", webhookRes.status, errText);
       }
     } else if (!baseUrl) {
       console.warn("[Shopify exchange-token] Set NEXT_PUBLIC_APP_URL or VERCEL_URL to enable Shopify→PSF inventory webhook.");

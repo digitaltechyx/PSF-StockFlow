@@ -97,13 +97,14 @@ This document describes the **requirements** and **planned build** for connectin
 - **read_inventory** – read inventory levels (for product selection and sync).
 - **read_locations** – required to get store location ID so we can call `inventory_levels/set` (PSF → Shopify sync).
 - **write_inventory** – set inventory on Shopify when PSF updates (dispose, edit, restock, ship, delete). Required for two-way inventory sync; users must re-authorize after adding.
+- **write_products** – update product title on Shopify when admin edits product name in PSF (optional; re-connect after adding).
 - **write_fulfillments** (or equivalent) – create fulfillments and update fulfillment status on Shopify when admin clicks **Mark as fulfilled** or completes **Create label**.
 
 (Exact scope names may vary by Shopify API version; we'll confirm when implementing. Label purchase may require additional carrier/fulfillment permissions.)
 
 ### 5.1 Two-way inventory sync (Shopify ↔ PSF)
 
-- **PSF → Shopify:** When admin performs dispose, edit quantity, restock, delete, recycle, or confirm shipment on a Shopify-synced item, the app calls Shopify’s `inventory_levels/set` API so the store’s inventory updates in real time.
+- **PSF → Shopify:** When admin performs dispose, edit quantity, restock, delete, recycle, or confirm shipment on a Shopify-synced item, the app calls Shopify’s `inventory_levels/set` API so the store’s inventory updates in real time. When admin edits the **product name** in PSF, the product title is updated on Shopify (requires `write_products` scope). When admin **deletes** an item from PSF, the app sets that variant's quantity to 0 on Shopify; the product is **not** removed from the Shopify store.
 - **Shopify → PSF:** When a store is connected (OAuth callback), the app automatically registers an `inventory_levels/update` webhook so changes on Shopify update PSF without re-selecting products.
   - **Webhook URL:** `{NEXT_PUBLIC_APP_URL}/api/shopify/webhooks` (or `https://{VERCEL_URL}/...` if only Vercel is set).
   - **Topic:** `inventory_levels/update`

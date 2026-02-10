@@ -18,7 +18,7 @@ import { Plug, Loader2, Plus, Trash2, Package } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 
-const SHOPIFY_SCOPES = "read_orders,read_products,write_fulfillments,read_inventory,read_locations,write_inventory";
+const SHOPIFY_SCOPES = "read_orders,read_products,write_products,write_fulfillments,read_inventory,read_locations,write_inventory";
 
 type ShopifySelectedVariant = { variantId: string; productId: string; title: string; sku?: string };
 

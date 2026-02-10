@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: "Shopify webhook endpoint. POST only (inventory_levels/update).",
+    message: "Shopify webhook endpoint. POST only (inventory_levels/update, products/update, products/delete).",
   });
 }
 
@@ -102,6 +102,84 @@ export async function POST(request: NextRequest) {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[Shopify webhooks inventory_levels/update]", msg, err);
+      return NextResponse.json({ error: "Update failed" }, { status: 500 });
+    }
+  }
+
+  if (topic === "products/delete") {
+    const raw = payload as Record<string, unknown>;
+    const productObj = raw?.product as Record<string, unknown> | undefined;
+    const productId = (productObj?.id ?? raw?.id) != null ? String(productObj?.id ?? raw?.id) : null;
+    if (!productId) {
+      console.warn("[Shopify webhooks] products/delete missing id", { shop: shopNorm });
+      return NextResponse.json({ received: true });
+    }
+    try {
+      const db = adminDb();
+      const productLookupRef = db.collection("shopifyProductLookup");
+      const lookupRef = db.collection("shopifyInventoryLookup");
+      const plId = `${shopNorm.replace(/\./g, "_")}_${productId}`;
+      const plSnap = await productLookupRef.doc(plId).get();
+      if (!plSnap.exists) {
+        console.log("[Shopify webhooks] products/delete no product lookup", { shop: shopNorm, productId });
+        return NextResponse.json({ received: true });
+      }
+      const pl = plSnap.data()!;
+      const paths = (pl.paths as string[]) || [];
+      const lookupIds = (pl.lookupIds as string[]) || [];
+      for (const path of paths) {
+        try {
+          await db.doc(path).delete();
+        } catch (e) {
+          console.warn("[Shopify webhooks] products/delete could not delete doc", path, e);
+        }
+      }
+      for (const lid of lookupIds) {
+        try {
+          await lookupRef.doc(lid).delete();
+        } catch (e) {
+          console.warn("[Shopify webhooks] products/delete could not delete lookup", lid, e);
+        }
+      }
+      await productLookupRef.doc(plId).delete();
+      console.log("[Shopify webhooks] products/delete OK", { shop: shopNorm, productId, removed: paths.length });
+    } catch (err: unknown) {
+      console.error("[Shopify webhooks products/delete]", err);
+      return NextResponse.json({ error: "Update failed" }, { status: 500 });
+    }
+  }
+
+  if (topic === "products/update") {
+    const raw = payload as Record<string, unknown>;
+    const product = (raw?.product as Record<string, unknown>) ?? raw;
+    const productId = product?.id != null ? String(product.id) : null;
+    const title = typeof product?.title === "string" ? product.title.trim() : null;
+    if (!productId) {
+      console.warn("[Shopify webhooks] products/update missing product id", { shop: shopNorm });
+      return NextResponse.json({ received: true });
+    }
+    if (!title) return NextResponse.json({ received: true });
+    try {
+      const db = adminDb();
+      const productLookupRef = db.collection("shopifyProductLookup");
+      const plId = `${shopNorm.replace(/\./g, "_")}_${productId}`;
+      const plSnap = await productLookupRef.doc(plId).get();
+      if (!plSnap.exists) {
+        console.log("[Shopify webhooks] products/update no product lookup", { shop: shopNorm, productId });
+        return NextResponse.json({ received: true });
+      }
+      const pl = plSnap.data()!;
+      const paths = (pl.paths as string[]) || [];
+      for (const path of paths) {
+        try {
+          await db.doc(path).update({ productName: title });
+        } catch (e) {
+          console.warn("[Shopify webhooks] products/update could not update doc", path, e);
+        }
+      }
+      console.log("[Shopify webhooks] products/update OK", { shop: shopNorm, productId, title, updated: paths.length });
+    } catch (err: unknown) {
+      console.error("[Shopify webhooks products/update]", err);
       return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
   }
