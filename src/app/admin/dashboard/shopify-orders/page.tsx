@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -370,12 +371,13 @@ export default function AdminShopifyOrdersPage() {
   return (
     <div className="space-y-6">
       <Suspense
-        fallback={
+        fallback={(
           <Card className="border-2 shadow-xl">
             <CardContent className="p-6">
               <Skeleton className="h-64 w-full rounded-xl" />
             </CardContent>
-          }
+          </Card>
+        )}
       >
         <ShopifyOrdersContent />
       </Suspense>
