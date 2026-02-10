@@ -91,6 +91,16 @@ export async function DELETE(request: NextRequest) {
 
     await ref.delete();
 
+    // Remove shop → user mapping so order webhooks don't route to this user
+    if (shopNorm) {
+      const shopKey = shopNorm.replace(/\./g, "_");
+      try {
+        await db.collection("shopifyShopToUser").doc(shopKey).delete();
+      } catch (e) {
+        console.warn("[shopify-connections DELETE] shopToUser delete failed", e);
+      }
+    }
+
     let removedInventoryCount = 0;
     if (removeInventory && shopNorm) {
       const invSnap = await db

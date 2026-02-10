@@ -162,6 +162,39 @@ export interface RecycledShippedItem {
   totalSkus?: number;
 }
 
+/** Shopify order synced via webhook; stored in users/{uid}/shopifyOrders/{orderId}. */
+export interface ShopifyOrder {
+  id: string; // Shopify order id
+  order_number: number;
+  name?: string; // e.g. "#1001"
+  shop: string;
+  email?: string;
+  financial_status?: string;
+  fulfillment_status?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  line_items?: Array<{
+    title?: string;
+    quantity?: number;
+    sku?: string;
+    variant_id?: number;
+    id?: number;
+  }>;
+  shipping_address?: {
+    first_name?: string;
+    last_name?: string;
+    address1?: string;
+    city?: string;
+    province?: string;
+    country?: string;
+    zip?: string;
+    phone?: string;
+  };
+  billing_address?: Record<string, unknown>;
+  customer?: { email?: string; first_name?: string; last_name?: string };
+  note?: string;
+}
+
 export interface RecycledRestockHistory {
   id: string;
   productName: string;

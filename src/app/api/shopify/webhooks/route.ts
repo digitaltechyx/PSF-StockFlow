@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: "Shopify webhook endpoint. POST only (inventory_levels/update, products/update, products/delete).",
+    message: "Shopify webhook endpoint. POST only (inventory_levels/update, products/update, products/delete, orders/create, orders/updated).",
   });
 }
 
@@ -145,6 +145,77 @@ export async function POST(request: NextRequest) {
       console.log("[Shopify webhooks] products/delete OK", { shop: shopNorm, productId, removed: paths.length });
     } catch (err: unknown) {
       console.error("[Shopify webhooks products/delete]", err);
+      return NextResponse.json({ error: "Update failed" }, { status: 500 });
+    }
+  }
+
+  if (topic === "orders/create" || topic === "orders/updated") {
+    const raw = payload as Record<string, unknown>;
+    const order = (raw?.order as Record<string, unknown>) ?? raw;
+    const orderId = order?.id != null ? String(order.id) : null;
+    if (!orderId) {
+      console.warn("[Shopify webhooks] orders missing id", { shop: shopNorm });
+      return NextResponse.json({ received: true });
+    }
+    try {
+      const db = adminDb();
+      const shopKey = shopNorm.replace(/\./g, "_");
+      const shopToUserSnap = await db.collection("shopifyShopToUser").doc(shopKey).get();
+      if (!shopToUserSnap.exists) {
+        console.warn("[Shopify webhooks] orders no shopToUser", { shop: shopNorm });
+        return NextResponse.json({ received: true });
+      }
+      const userId = shopToUserSnap.data()?.userId as string;
+      if (!userId) {
+        console.warn("[Shopify webhooks] orders no userId in shopToUser", { shop: shopNorm });
+        return NextResponse.json({ received: true });
+      }
+      const orderNumber = order.order_number != null ? Number(order.order_number) : 0;
+      const name = typeof order.name === "string" ? order.name : undefined;
+      const email = typeof order.email === "string" ? order.email : undefined;
+      const financialStatus = typeof order.financial_status === "string" ? order.financial_status : undefined;
+      const fulfillmentStatus = order.fulfillment_status != null ? String(order.fulfillment_status) : null;
+      const createdAt = order.created_at != null ? String(order.created_at) : undefined;
+      const updatedAt = order.updated_at != null ? String(order.updated_at) : undefined;
+      const note = typeof order.note === "string" ? order.note : undefined;
+      const lineItems = Array.isArray(order.line_items)
+        ? order.line_items.map((li: Record<string, unknown>) => ({
+            title: typeof li.title === "string" ? li.title : undefined,
+            quantity: typeof li.quantity === "number" ? li.quantity : undefined,
+            sku: typeof li.sku === "string" ? li.sku : undefined,
+            variant_id: typeof li.variant_id === "number" ? li.variant_id : undefined,
+            id: typeof li.id === "number" ? li.id : undefined,
+          }))
+        : undefined;
+      const shippingAddress = order.shipping_address && typeof order.shipping_address === "object"
+        ? (order.shipping_address as Record<string, unknown>)
+        : undefined;
+      const billingAddress = order.billing_address && typeof order.billing_address === "object"
+        ? (order.billing_address as Record<string, unknown>)
+        : undefined;
+      const customer = order.customer && typeof order.customer === "object"
+        ? (order.customer as Record<string, unknown>)
+        : undefined;
+      const orderData = {
+        id: orderId,
+        order_number: orderNumber,
+        name,
+        shop: shopNorm,
+        email,
+        financial_status: financialStatus,
+        fulfillment_status: fulfillmentStatus,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        note,
+        line_items: lineItems,
+        shipping_address: shippingAddress,
+        billing_address: billingAddress,
+        customer,
+      };
+      await db.collection("users").doc(userId).collection("shopifyOrders").doc(orderId).set(orderData, { merge: true });
+      console.log("[Shopify webhooks] orders saved", { shop: shopNorm, orderId, userId });
+    } catch (err: unknown) {
+      console.error("[Shopify webhooks orders]", err);
       return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
   }

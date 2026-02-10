@@ -87,6 +87,10 @@ export async function POST(request: NextRequest) {
       await col.add(docData);
     }
 
+    // Map shop → userId for order webhooks
+    const shopToUserRef = db.collection("shopifyShopToUser").doc(normalizedShop.replace(/\./g, "_"));
+    await shopToUserRef.set({ userId: uid });
+
     // Register inventory_levels/update webhook so Shopify → PSF updates work without re-selecting
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
@@ -98,7 +102,7 @@ export async function POST(request: NextRequest) {
         "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
       };
-      const topics = ["inventory_levels/update", "products/update", "products/delete"];
+      const topics = ["inventory_levels/update", "products/update", "products/delete", "orders/create", "orders/updated"];
       for (const topic of topics) {
         const webhookRes = await fetch(
           `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,

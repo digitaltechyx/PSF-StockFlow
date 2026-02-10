@@ -28,6 +28,7 @@ import {
   Bell,
   FolderOpen,
   Receipt,
+  ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -252,6 +253,13 @@ export function AdminSidebar() {
       icon: FolderOpen,
       color: "text-indigo-600",
       badge: pendingDocumentRequestsCount > 0 ? pendingDocumentRequestsCount : null,
+      requiredFeature: "admin_dashboard" as const,
+    },
+    {
+      title: "Shopify Orders",
+      url: "/admin/dashboard/shopify-orders",
+      icon: ShoppingBag,
+      color: "text-green-600",
       requiredFeature: "admin_dashboard" as const,
     },
   ];
