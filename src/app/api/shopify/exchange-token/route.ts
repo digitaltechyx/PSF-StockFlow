@@ -116,7 +116,17 @@ export async function POST(request: NextRequest) {
         );
         if (!webhookRes.ok) {
           const errText = await webhookRes.text();
-          console.warn("[Shopify exchange-token] Webhook registration:", topic, webhookRes.status, errText);
+          if (webhookRes.status === 422 && errText.includes("already been taken")) {
+            // Webhook already registered (e.g. from previous connect); skip
+            continue;
+          }
+          if (webhookRes.status === 403 && (topic === "orders/create" || topic === "orders/updated")) {
+            console.warn(
+              "[Shopify exchange-token] Orders webhooks require Protected Customer Data access. In Partner Dashboard: Apps → Your app → API access requests → Protected customer data access → Request access. See docs/SHOPIFY_ORDERS_WEBHOOK_PCD.md"
+            );
+          } else {
+            console.warn("[Shopify exchange-token] Webhook registration:", topic, webhookRes.status, errText);
+          }
         }
       }
     } else if (!baseUrl) {
