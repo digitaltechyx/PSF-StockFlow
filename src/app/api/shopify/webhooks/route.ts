@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     console.log("[Shopify webhooks] received inventory_levels/update", { shop: shopNorm });
     const raw = payload as Record<string, unknown>;
     const data = (raw?.inventory_level as Record<string, unknown>) ?? raw;
-    const available = data.available != null ? Number(data.available) : 0;
+    const availableFromWebhook = data.available != null ? Number(data.available) : 0;
     // Prefer extracting inventory_item_id from raw body as string to avoid JS number precision loss (Shopify IDs can be > 2^53)
     let idStr: string | null = null;
     const idMatch = rawBody.match(/"inventory_item_id"\s*:\s*"?(\d+)"?/);
@@ -66,15 +66,39 @@ export async function POST(request: NextRequest) {
 
     try {
       const db = adminDb();
+      // Use total available across ALL locations so PSF shows correct qty (e.g. "My Custom Location" has 25, others 0 → show 25, not 0)
+      let available = availableFromWebhook;
+      const shopKey = shopNorm.replace(/\./g, "_");
+      const shopToUserSnap = await db.collection("shopifyShopToUser").doc(shopKey).get();
+      if (shopToUserSnap.exists) {
+        const userId = shopToUserSnap.data()?.userId as string | undefined;
+        if (userId) {
+          const connSnap = await db.collection("users").doc(userId).collection("shopifyConnections").where("shop", "==", shopNorm).limit(1).get();
+          if (!connSnap.empty) {
+            const accessToken = connSnap.docs[0].data().accessToken as string;
+            const levelsRes = await fetch(
+              `https://${shopNorm}/admin/api/2024-01/inventory_levels.json?inventory_item_ids=${encodeURIComponent(idStr)}&limit=250`,
+              { headers: { "X-Shopify-Access-Token": accessToken } }
+            );
+            if (levelsRes.ok) {
+              const levelsData = (await levelsRes.json()) as { inventory_levels?: Array<{ available?: number }> };
+              const levels = levelsData.inventory_levels ?? [];
+              const total = levels.reduce((sum, l) => sum + (l.available != null ? Number(l.available) : 0), 0);
+              available = total;
+            }
+          }
+        }
+      }
+
       const lookupRef = db.collection("shopifyInventoryLookup");
       const status = available > 0 ? "In Stock" : "Out of Stock";
 
-      const lookupId = `${shopNorm.replace(/\./g, "_")}_${idStr}`;
+      const lookupId = `${shopKey}_${idStr}`;
       let lookupSnap = await lookupRef.doc(lookupId).get();
       if (!lookupSnap.exists) {
         const roundedId = String(Number(idStr));
         if (roundedId !== idStr) {
-          const altLookupId = `${shopNorm.replace(/\./g, "_")}_${roundedId}`;
+          const altLookupId = `${shopKey}_${roundedId}`;
           lookupSnap = await lookupRef.doc(altLookupId).get();
         }
       }
@@ -150,6 +174,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (topic === "orders/create" || topic === "orders/updated") {
+    console.log("[Shopify webhooks] received order webhook", { topic, shop: shopNorm });
     const raw = payload as Record<string, unknown>;
     const order = (raw?.order as Record<string, unknown>) ?? raw;
     const orderId = order?.id != null ? String(order.id) : null;
@@ -162,7 +187,7 @@ export async function POST(request: NextRequest) {
       const shopKey = shopNorm.replace(/\./g, "_");
       const shopToUserSnap = await db.collection("shopifyShopToUser").doc(shopKey).get();
       if (!shopToUserSnap.exists) {
-        console.warn("[Shopify webhooks] orders no shopToUser", { shop: shopNorm });
+        console.warn("[Shopify webhooks] orders no shopToUser — disconnect and reconnect the store in PSF Integrations so orders can sync", { shop: shopNorm });
         return NextResponse.json({ received: true });
       }
       const userId = shopToUserSnap.data()?.userId as string;
