@@ -790,6 +790,71 @@ Prep Services FBA Team`;
     }
   }, [user]);
 
+  const sendPaymentConfirmationEmail = useCallback(
+    async (
+      invoice: ExternalInvoice,
+      newStatus: "partially_paid" | "paid",
+      outstandingBalance: number
+    ): Promise<void> => {
+      const to = (invoice.clientEmail || "").trim();
+      if (!user || !to) return;
+      const invNum = invoice.invoiceNumber || invoice.id;
+      const isPaidInFull = newStatus === "paid";
+      const subject = isPaidInFull
+        ? `Invoice ${invNum} Paid in Full – Thank You`
+        : `Payment Received – Invoice ${invNum} (Partial)`;
+      const message = isPaidInFull
+        ? `Hi,
+
+Thank you for your payment. We have received the full amount for Invoice ${invNum}, and this invoice is now paid in full.
+
+No further action is needed. If you have any questions, we're happy to help.
+
+Best regards,
+Prep Services FBA Team`
+        : `Hi,
+
+Thank you for your payment. We have received the amount you sent and applied it to Invoice ${invNum}.
+
+Your remaining balance on this invoice is $${outstandingBalance.toFixed(2)}. If you have any questions, just let us know.
+
+Best regards,
+Prep Services FBA Team`;
+
+      try {
+        const idToken = await user.getIdToken();
+        const headers: HeadersInit = { Authorization: `Bearer ${idToken}` };
+        const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+        const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+        if (vercelBypass) headers["x-vercel-protection-bypass"] = vercelBypass;
+
+        if (externalEmailApi) {
+          const res = await fetch(externalEmailApi, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({ to, subject, message, attachments: [] }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+        } else {
+          const payload = new FormData();
+          payload.append("to", to);
+          payload.append("subject", subject);
+          payload.append("message", message);
+          const apiUrl = vercelBypass
+            ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+            : "/api/email/send";
+          const res = await fetch(apiUrl, { method: "POST", headers, body: payload });
+          if (!res.ok) throw new Error(await res.text());
+        }
+        console.log(`Payment confirmation email sent for invoice ${invNum} (${newStatus})`);
+      } catch (err) {
+        console.error(`Failed to send payment confirmation email for invoice ${invNum}:`, err);
+        throw err;
+      }
+    },
+    [user]
+  );
+
   const LATE_FEE_REMOVED_MESSAGE = `Hi,
 
 We'd like to let you know that the late fee on your invoice has been removed as a courtesy.
@@ -1348,6 +1413,11 @@ Prep Services FBA Team`;
         updatedAt: serverTimestamp(),
       });
 
+      const newStatus = outstanding === 0 ? "paid" : "partially_paid";
+      sendPaymentConfirmationEmail(partialInvoice, newStatus, outstanding).catch(() => {
+        toast({ variant: "destructive", title: "Payment applied, but notification email failed." });
+      });
+
       toast({ title: "Partial payment applied." });
       setPartialDialogOpen(false);
       setPartialAmount("");
@@ -1400,6 +1470,11 @@ Prep Services FBA Team`;
         status: outstanding === 0 ? "paid" : "partially_paid",
         payments,
         updatedAt: serverTimestamp(),
+      });
+
+      const newStatus = outstanding === 0 ? "paid" : "partially_paid";
+      sendPaymentConfirmationEmail(paidInvoice, newStatus, outstanding).catch(() => {
+        toast({ variant: "destructive", title: "Payment recorded, but notification email failed." });
       });
 
       toast({ title: "Payment recorded." });
