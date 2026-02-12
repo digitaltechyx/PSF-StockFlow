@@ -4,6 +4,20 @@ import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
+/** Recursively remove undefined values so Firestore accepts the object. */
+function stripUndefined<T>(value: T): T {
+  if (value === undefined) return value;
+  if (Array.isArray(value)) return value.map((v) => stripUndefined(v)) as T;
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /** GET: Test that the webhook URL is reachable (e.g. open in browser). Shopify sends POST only. */
 export async function GET() {
   return NextResponse.json({
@@ -221,7 +235,7 @@ export async function POST(request: NextRequest) {
       const customer = order.customer && typeof order.customer === "object"
         ? (order.customer as Record<string, unknown>)
         : undefined;
-      const orderData = {
+      const orderDataRaw: Record<string, unknown> = {
         id: orderId,
         order_number: orderNumber,
         name,
@@ -237,6 +251,8 @@ export async function POST(request: NextRequest) {
         billing_address: billingAddress,
         customer,
       };
+      // Firestore does not accept undefined; strip undefined at all nesting levels
+      const orderData = stripUndefined(orderDataRaw) as Record<string, unknown>;
       await db.collection("users").doc(userId).collection("shopifyOrders").doc(orderId).set(orderData, { merge: true });
       console.log("[Shopify webhooks] orders saved", { shop: shopNorm, orderId, userId });
     } catch (err: unknown) {
