@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     const res = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/products/${productId}.json`,
+      `https://${shopNorm}/admin/api/2025-04/products/${productId}.json`,
       {
         method: "PUT",
         headers: {

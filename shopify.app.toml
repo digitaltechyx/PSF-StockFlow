@@ -5,7 +5,7 @@
 # All mandatory compliance webhooks are sent to this single endpoint; the app verifies HMAC and returns 200.
 
 [webhooks]
-api_version = "2024-01"
+api_version = "2025-04"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]

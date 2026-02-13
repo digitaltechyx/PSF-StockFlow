@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     let inventoryItemId = shopifyInventoryItemId;
     if (!inventoryItemId) {
       const variantRes = await fetch(
-        `https://${shopNorm}/admin/api/2024-01/variants/${shopifyVariantId}.json`,
+        `https://${shopNorm}/admin/api/2025-04/variants/${shopifyVariantId}.json`,
         {
           headers: {
             "X-Shopify-Access-Token": accessToken,
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     const locRes = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/locations.json?limit=250`,
+      `https://${shopNorm}/admin/api/2025-04/locations.json?limit=250`,
       {
         headers: {
           "X-Shopify-Access-Token": accessToken,
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       const locationId = locations[i].id;
       const available = i === 0 ? newQuantity : 0;
       const setRes = await fetch(
-        `https://${shopNorm}/admin/api/2024-01/inventory_levels/set.json`,
+        `https://${shopNorm}/admin/api/2025-04/inventory_levels/set.json`,
         {
           method: "POST",
           headers,

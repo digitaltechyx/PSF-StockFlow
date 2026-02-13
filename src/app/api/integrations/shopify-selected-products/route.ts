@@ -96,7 +96,7 @@ export async function PUT(request: NextRequest) {
 
     if (selectedVariants.length > 0 && accessToken) {
       const productsRes = await fetch(
-        `https://${shop}/admin/api/2024-01/products.json?limit=250`,
+        `https://${shop}/admin/api/2025-04/products.json?limit=250`,
         {
           headers: {
             "X-Shopify-Access-Token": accessToken,

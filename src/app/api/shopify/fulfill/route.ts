@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     // Get fulfillment orders for this order
     const foRes = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/orders/${orderId}/fulfillment_orders.json`,
+      `https://${shopNorm}/admin/api/2025-04/orders/${orderId}/fulfillment_orders.json`,
       {
         headers: {
           "X-Shopify-Access-Token": accessToken,
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     }
 
     const createRes = await fetch(
-      `https://${shopNorm}/admin/api/2024-01/fulfillments.json`,
+      `https://${shopNorm}/admin/api/2025-04/fulfillments.json`,
       {
         method: "POST",
         headers: {

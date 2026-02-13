@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Store not connected" }, { status: 404 });
   }
 
-  const url = `https://${shop}/admin/api/2024-01/products.json?limit=250`;
+  const url = `https://${shop}/admin/api/2025-04/products.json?limit=250`;
   const res = await fetch(url, {
     headers: {
       "X-Shopify-Access-Token": accessToken,

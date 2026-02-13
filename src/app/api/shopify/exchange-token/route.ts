@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
       ];
       for (const topic of topics) {
         const webhookRes = await fetch(
-          `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,
+          `https://${normalizedShop}/admin/api/2025-04/webhooks.json`,
           {
             method: "POST",
             headers,

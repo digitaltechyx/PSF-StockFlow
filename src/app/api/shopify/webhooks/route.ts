@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
           if (!connSnap.empty) {
             const accessToken = connSnap.docs[0].data().accessToken as string;
             const levelsRes = await fetch(
-              `https://${shopNorm}/admin/api/2024-01/inventory_levels.json?inventory_item_ids=${encodeURIComponent(idStr)}&limit=250`,
+              `https://${shopNorm}/admin/api/2025-04/inventory_levels.json?inventory_item_ids=${encodeURIComponent(idStr)}&limit=250`,
               { headers: { "X-Shopify-Access-Token": accessToken } }
             );
             if (levelsRes.ok) {
