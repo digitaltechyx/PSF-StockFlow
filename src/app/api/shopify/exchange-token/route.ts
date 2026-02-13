@@ -57,8 +57,15 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       const text = await res.text();
       console.error("[Shopify exchange-token]", res.status, text);
+      let detail: string | undefined;
+      try {
+        const errJson = JSON.parse(text) as { error?: string; error_description?: string };
+        detail = errJson.error_description || errJson.error || text.slice(0, 200);
+      } catch {
+        detail = text.slice(0, 200);
+      }
       return NextResponse.json(
-        { error: "Failed to exchange code with Shopify" },
+        { error: "Failed to exchange code with Shopify", detail },
         { status: 502 }
       );
     }

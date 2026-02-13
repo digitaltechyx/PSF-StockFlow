@@ -43,7 +43,8 @@ export default function ShopifyCallbackPage() {
         if (cancelled) return;
         if (!res.ok) {
           setStatus("error");
-          setMessage(data.error || "Failed to connect store.");
+          const msg = data.error || "Failed to connect store.";
+          setMessage(data.detail ? `${msg}: ${data.detail}` : msg);
           return;
         }
         setStatus("success");
