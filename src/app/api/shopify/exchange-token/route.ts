@@ -62,7 +62,9 @@ export async function POST(request: NextRequest) {
         const errJson = JSON.parse(text) as { error?: string; error_description?: string };
         detail = errJson.error_description || errJson.error || text.slice(0, 200);
       } catch {
-        detail = text.slice(0, 200);
+        // Shopify often returns HTML; extract <title> or first meaningful line for user
+        const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+        detail = titleMatch ? titleMatch[1].trim() : text.replace(/\s+/g, " ").slice(0, 150);
       }
       return NextResponse.json(
         { error: "Failed to exchange code with Shopify", detail },
