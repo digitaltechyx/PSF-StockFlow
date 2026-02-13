@@ -32,7 +32,9 @@ export async function GET() {
  * Register this URL in Shopify admin: https://your-domain.com/api/shopify/webhooks
  */
 export async function POST(request: NextRequest) {
-  const rawBody = await request.text();
+  // Use raw bytes for HMAC so platform cannot alter body (fixes 401 on Vercel/some runtimes)
+  const rawBytes = await request.arrayBuffer();
+  const rawBody = new TextDecoder("utf-8").decode(rawBytes);
   const hmac = request.headers.get("x-shopify-hmac-sha256");
   const topic = request.headers.get("x-shopify-topic");
   const shop = request.headers.get("x-shopify-shop-domain")?.toLowerCase();
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing headers" }, { status: 401 });
   }
 
-  const computed = createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
+  const computed = createHmac("sha256", secret).update(Buffer.from(rawBytes)).digest("base64");
   if (computed !== hmac) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
