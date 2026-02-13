@@ -9,10 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
-import { Search, Users, Package, FileText, Shield, Receipt, ChevronsUpDown, Check, Bell } from "lucide-react";
+import { Search, Users, Package, Shield, Receipt, ChevronsUpDown, Check, Bell, Truck, PackageCheck } from "lucide-react";
 import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
 import { Skeleton } from "@/components/ui/skeleton";
-import { collection, collectionGroup, getCountFromServer, getDocs, query, Timestamp, where } from "firebase/firestore";
+import { collection, collectionGroup, getCountFromServer, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 
@@ -93,8 +93,7 @@ export default function AdminDashboardPage() {
     ).length;
   }, [users, adminUser]);
 
-  // Requests stats (all users)
-  const [todayRequestsCount, setTodayRequestsCount] = useState(0);
+  // Requests stats (all users) – pending only
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [requestsLoading, setRequestsLoading] = useState(true);
 
@@ -102,22 +101,6 @@ export default function AdminDashboardPage() {
     const run = async () => {
       try {
         setRequestsLoading(true);
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-        const startTs = Timestamp.fromDate(start);
-        const endTs = Timestamp.fromDate(end);
-
-        const toMs = (v: any): number => {
-          if (!v) return 0;
-          if (typeof v === "string") {
-            const t = new Date(v).getTime();
-            return Number.isNaN(t) ? 0 : t;
-          }
-          if (typeof v === "object" && typeof v.seconds === "number") return v.seconds * 1000;
-          if (v instanceof Date) return v.getTime();
-          return 0;
-        };
 
         const countStatuses = async (collectionName: string, statuses: string[]) => {
           const counts = await Promise.all(
@@ -136,60 +119,9 @@ export default function AdminDashboardPage() {
           return counts.reduce((a, b) => a + b, 0);
         };
 
-        // Today total requests (best-effort: uses timestamp fields)
-        const todayCounts = await Promise.all([
-          getCountFromServer(
-            query(collectionGroup(db, "shipmentRequests"), where("requestedAt", ">=", startTs), where("requestedAt", "<", endTs))
-          ).then((s) => s.data().count || 0).catch(() => 0),
-          getCountFromServer(
-            query(collectionGroup(db, "inventoryRequests"), where("requestedAt", ">=", startTs), where("requestedAt", "<", endTs))
-          ).then((s) => s.data().count || 0).catch(() => 0),
-          getCountFromServer(
-            query(collectionGroup(db, "productReturns"), where("createdAt", ">=", startTs), where("createdAt", "<", endTs))
-          ).then((s) => s.data().count || 0).catch(() => 0),
-        ]);
-        let todayTotal = todayCounts.reduce((a, b) => a + b, 0);
-
         const userIdsForFallback = (users || [])
           .map((u: any) => String(u?.uid || u?.id || ""))
           .filter((id) => id && id.trim() !== "" && id !== adminUser?.uid);
-
-        // Fallback if timestamp-based counts don't match legacy data types or collectionGroup is blocked
-        if (todayTotal === 0 && userIdsForFallback.length > 0) {
-          try {
-            const inToday = (ms: number) => ms >= start.getTime() && ms < end.getTime();
-            const perUserCounts = await Promise.all(
-              userIdsForFallback.map(async (uid) => {
-                const [shipSnap, invSnap, prSnap] = await Promise.all([
-                  getDocs(query(collection(db, `users/${uid}/shipmentRequests`))),
-                  getDocs(query(collection(db, `users/${uid}/inventoryRequests`))),
-                  getDocs(query(collection(db, `users/${uid}/productReturns`))),
-                ]);
-                const shipCount = shipSnap.docs.filter((d) => {
-                  const data = d.data() as any;
-                  const ms = toMs(data.requestedAt) || toMs(data.date) || 0;
-                  return inToday(ms);
-                }).length;
-                const invCount = invSnap.docs.filter((d) => {
-                  const data = d.data() as any;
-                  const ms = toMs(data.requestedAt) || toMs(data.addDate) || 0;
-                  return inToday(ms);
-                }).length;
-                const prCount = prSnap.docs.filter((d) => {
-                  const data = d.data() as any;
-                  const ms = toMs(data.createdAt) || toMs(data.updatedAt) || 0;
-                  return inToday(ms);
-                }).length;
-                return shipCount + invCount + prCount;
-              })
-            );
-            todayTotal = perUserCounts.reduce((a, b) => a + b, 0);
-          } catch {
-            // ignore fallback errors
-          }
-        }
-
-        setTodayRequestsCount(todayTotal);
 
         // Total pending requests (all types)
         const pendingCounts = await Promise.all([
@@ -220,7 +152,6 @@ export default function AdminDashboardPage() {
 
         setPendingRequestsCount(pendingTotal);
       } catch {
-        setTodayRequestsCount(0);
         setPendingRequestsCount(0);
       } finally {
         setRequestsLoading(false);
@@ -231,6 +162,81 @@ export default function AdminDashboardPage() {
     const interval = setInterval(run, 60000);
     return () => clearInterval(interval);
   }, [users, adminUser]);
+
+  // Orders shipped today & received units today (all users)
+  const [ordersShippedToday, setOrdersShippedToday] = useState(0);
+  const [receivedUnitsToday, setReceivedUnitsToday] = useState(0);
+  const [shippedAndReceivedLoading, setShippedAndReceivedLoading] = useState(true);
+
+  useEffect(() => {
+    const toMs = (v: unknown): number => {
+      if (!v) return 0;
+      if (typeof v === "string") {
+        const t = new Date(v).getTime();
+        return Number.isNaN(t) ? 0 : t;
+      }
+      if (typeof v === "object" && v !== null && "seconds" in v && typeof (v as { seconds: number }).seconds === "number") {
+        return (v as { seconds: number }).seconds * 1000;
+      }
+      if (v instanceof Date) return v.getTime();
+      return 0;
+    };
+
+    const run = async () => {
+      if (!users?.length || !adminUser?.uid) {
+        setOrdersShippedToday(0);
+        setReceivedUnitsToday(0);
+        setShippedAndReceivedLoading(false);
+        return;
+      }
+      setShippedAndReceivedLoading(true);
+      try {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
+        const inToday = (ms: number) => ms >= startOfToday && ms < endOfToday;
+
+        let shippedCount = 0;
+        let receivedQty = 0;
+
+        for (const u of users) {
+          const uid = u?.uid || u?.id;
+          if (!uid || typeof uid !== "string" || uid.trim() === "" || uid === adminUser.uid) continue;
+          try {
+            const [shippedSnap, inventorySnap] = await Promise.all([
+              getDocs(collection(db, `users/${uid}/shipped`)),
+              getDocs(collection(db, `users/${uid}/inventory`)),
+            ]);
+            shippedSnap.docs.forEach((d) => {
+              const data = d.data() as { date?: unknown };
+              const ms = toMs(data?.date);
+              if (inToday(ms)) shippedCount += 1;
+            });
+            inventorySnap.docs.forEach((d) => {
+              const data = d.data() as { dateAdded?: unknown; quantity?: number };
+              const ms = toMs(data?.dateAdded);
+              if (inToday(ms)) receivedQty += Number(data?.quantity) || 0;
+            });
+          } catch (err) {
+            console.warn("Admin dashboard: shipped/received stats for user", uid, err);
+          }
+        }
+
+        setOrdersShippedToday(shippedCount);
+        setReceivedUnitsToday(receivedQty);
+      } catch (err) {
+        console.error("Admin dashboard: shipped/received stats", err);
+        setOrdersShippedToday(0);
+        setReceivedUnitsToday(0);
+      } finally {
+        setShippedAndReceivedLoading(false);
+      }
+    };
+
+    run();
+    const interval = setInterval(run, 60000);
+    return () => clearInterval(interval);
+  }, [users, adminUser?.uid]);
 
   // Get pending invoices count and amount
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
@@ -344,25 +350,6 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50 to-purple-100/50 shadow-lg">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-purple-900">Today's Total Requests</CardTitle>
-            <div className="h-10 w-10 rounded-full bg-purple-500 flex items-center justify-center shadow-md">
-              <FileText className="h-5 w-5 text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {requestsLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <>
-                <div className="text-3xl font-bold text-purple-900">{todayRequestsCount}</div>
-                <p className="text-xs text-purple-700 mt-1">All requests created today</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
         <Card className="border-2 border-indigo-200/50 bg-gradient-to-br from-indigo-50 to-indigo-100/50 shadow-lg md:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-indigo-900">Total Pending Requests</CardTitle>
@@ -377,6 +364,44 @@ export default function AdminDashboardPage() {
               <>
                 <div className="text-3xl font-bold text-indigo-900">{pendingRequestsCount}</div>
                 <p className="text-xs text-indigo-700 mt-1">Across all request types</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-teal-200/50 bg-gradient-to-br from-teal-50 to-teal-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-teal-900">Orders Shipped Today</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-teal-500 flex items-center justify-center shadow-md">
+              <Truck className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {shippedAndReceivedLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-teal-900">{ordersShippedToday}</div>
+                <p className="text-xs text-teal-700 mt-1">Shipments recorded today</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-amber-200/50 bg-gradient-to-br from-amber-50 to-amber-100/50 shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-amber-900">Received Units Today</CardTitle>
+            <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shadow-md">
+              <PackageCheck className="h-5 w-5 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {shippedAndReceivedLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-amber-900">{receivedUnitsToday}</div>
+                <p className="text-xs text-amber-700 mt-1">Units added to inventory today</p>
               </>
             )}
           </CardContent>
