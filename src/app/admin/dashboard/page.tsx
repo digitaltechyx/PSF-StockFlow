@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/
 import { Search, Users, Package, Shield, Receipt, ChevronsUpDown, Check, Bell, Truck, PackageCheck } from "lucide-react";
 import { AdminInventoryManagement } from "@/components/admin/admin-inventory-management";
 import { Skeleton } from "@/components/ui/skeleton";
-import { collection, collectionGroup, getCountFromServer, getDocs, query, where } from "firebase/firestore";
+import { collection, collectionGroup, getCountFromServer, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 
@@ -163,13 +163,13 @@ export default function AdminDashboardPage() {
     return () => clearInterval(interval);
   }, [users, adminUser]);
 
-  // Orders shipped today & received units today (all users)
+  // Orders shipped today & received units today (all users) – real-time via Firestore listeners
   const [ordersShippedToday, setOrdersShippedToday] = useState(0);
   const [receivedUnitsToday, setReceivedUnitsToday] = useState(0);
   const [shippedAndReceivedLoading, setShippedAndReceivedLoading] = useState(true);
 
-  useEffect(() => {
-    const toMs = (v: unknown): number => {
+  const toMs = useMemo(() => {
+    return (v: unknown): number => {
       if (!v) return 0;
       if (typeof v === "string") {
         const t = new Date(v).getTime();
@@ -181,63 +181,77 @@ export default function AdminDashboardPage() {
       if (v instanceof Date) return v.getTime();
       return 0;
     };
+  }, []);
 
-    const run = async () => {
-      if (!users?.length || !adminUser?.uid) {
-        setOrdersShippedToday(0);
-        setReceivedUnitsToday(0);
-        setShippedAndReceivedLoading(false);
-        return;
-      }
-      setShippedAndReceivedLoading(true);
-      try {
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
-        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
-        const inToday = (ms: number) => ms >= startOfToday && ms < endOfToday;
+  useEffect(() => {
+    const adminUid = adminUser?.uid;
+    if (!adminUid) {
+      setOrdersShippedToday(0);
+      setReceivedUnitsToday(0);
+      setShippedAndReceivedLoading(false);
+      return;
+    }
 
-        let shippedCount = 0;
-        let receivedQty = 0;
-
-        for (const u of users) {
-          const uid = u?.uid || u?.id;
-          if (!uid || typeof uid !== "string" || uid.trim() === "" || uid === adminUser.uid) continue;
-          try {
-            const [shippedSnap, inventorySnap] = await Promise.all([
-              getDocs(collection(db, `users/${uid}/shipped`)),
-              getDocs(collection(db, `users/${uid}/inventory`)),
-            ]);
-            shippedSnap.docs.forEach((d) => {
-              const data = d.data() as { date?: unknown };
-              const ms = toMs(data?.date);
-              if (inToday(ms)) shippedCount += 1;
-            });
-            inventorySnap.docs.forEach((d) => {
-              const data = d.data() as { dateAdded?: unknown; receivingDate?: unknown; quantity?: number };
-              // Use current receiving date: receivingDate (actual receive date) or dateAdded
-              const receiveMs = toMs(data?.receivingDate) || toMs(data?.dateAdded);
-              if (inToday(receiveMs)) receivedQty += Number(data?.quantity) || 0;
-            });
-          } catch (err) {
-            console.warn("Admin dashboard: shipped/received stats for user", uid, err);
-          }
-        }
-
-        setOrdersShippedToday(shippedCount);
-        setReceivedUnitsToday(receivedQty);
-      } catch (err) {
-        console.error("Admin dashboard: shipped/received stats", err);
-        setOrdersShippedToday(0);
-        setReceivedUnitsToday(0);
-      } finally {
-        setShippedAndReceivedLoading(false);
-      }
+    let loadedShipped = false;
+    let loadedInventory = false;
+    const maybeDone = () => {
+      if (loadedShipped && loadedInventory) setShippedAndReceivedLoading(false);
     };
 
-    run();
-    const interval = setInterval(run, 60000);
-    return () => clearInterval(interval);
-  }, [users, adminUser?.uid]);
+    const now = () => new Date();
+    const getTodayBounds = () => {
+      const n = now();
+      const start = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, 0, 0, 0).getTime();
+      const end = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 0, 0).getTime();
+      return { start, end };
+    };
+    const inToday = (ms: number, { start, end }: { start: number; end: number }) => ms >= start && ms < end;
+
+    const unsubShipped = onSnapshot(collectionGroup(db, "shipped"), (snapshot) => {
+      const { start, end } = getTodayBounds();
+      let count = 0;
+      snapshot.docs.forEach((d) => {
+        const pathSegments = d.ref.path.split("/");
+        const userId = pathSegments[1];
+        if (userId === adminUid) return;
+        const data = d.data() as { date?: unknown };
+        const ms = toMs(data?.date);
+        if (inToday(ms, { start, end })) count += 1;
+      });
+      setOrdersShippedToday(count);
+      loadedShipped = true;
+      maybeDone();
+    }, (err) => {
+      console.warn("Admin dashboard: shipped snapshot", err);
+      loadedShipped = true;
+      maybeDone();
+    });
+
+    const unsubInventory = onSnapshot(collectionGroup(db, "inventory"), (snapshot) => {
+      const { start, end } = getTodayBounds();
+      let qty = 0;
+      snapshot.docs.forEach((d) => {
+        const pathSegments = d.ref.path.split("/");
+        const userId = pathSegments[1];
+        if (userId === adminUid) return;
+        const data = d.data() as { dateAdded?: unknown; receivingDate?: unknown; quantity?: number };
+        const receiveMs = toMs(data?.receivingDate) || toMs(data?.dateAdded);
+        if (inToday(receiveMs, { start, end })) qty += Number(data?.quantity) || 0;
+      });
+      setReceivedUnitsToday(qty);
+      loadedInventory = true;
+      maybeDone();
+    }, (err) => {
+      console.warn("Admin dashboard: inventory snapshot", err);
+      loadedInventory = true;
+      maybeDone();
+    });
+
+    return () => {
+      unsubShipped();
+      unsubInventory();
+    };
+  }, [adminUser?.uid, toMs]);
 
   // Get pending invoices count and amount
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);

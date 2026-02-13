@@ -1,0 +1,12 @@
+# Shopify App Store – compliance webhook configuration
+# See: https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
+#
+# Replace the URI below with your live app URL (e.g. https://dev.prepservicesfba.com or your production domain).
+# All mandatory compliance webhooks are sent to this single endpoint; the app verifies HMAC and returns 200.
+
+[webhooks]
+api_version = "2024-01"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://dev.prepservicesfba.com/api/shopify/webhooks"
