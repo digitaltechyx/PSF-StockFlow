@@ -27,9 +27,16 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const code = body.code as string | undefined;
   const shop = (body.shop as string | undefined)?.trim().toLowerCase();
+  const redirectUri = typeof body.redirect_uri === "string" ? body.redirect_uri.trim() : undefined;
   if (!code || !shop) {
     return NextResponse.json(
       { error: "Missing code or shop" },
+      { status: 400 }
+    );
+  }
+  if (!redirectUri) {
+    return NextResponse.json(
+      { error: "Missing redirect_uri" },
       { status: 400 }
     );
   }
@@ -52,6 +59,7 @@ export async function POST(request: NextRequest) {
         client_id: clientId,
         client_secret: clientSecret,
         code,
+        redirect_uri: redirectUri,
       }),
     });
     if (!res.ok) {

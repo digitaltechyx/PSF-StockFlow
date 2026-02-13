@@ -34,10 +34,11 @@ export default function ShopifyCallbackPage() {
     (async () => {
       try {
         const token = await user.getIdToken();
+        const redirectUri = `${window.location.origin}/dashboard/integrations/shopify/callback`;
         const res = await fetch("/api/shopify/exchange-token", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ code, shop }),
+          body: JSON.stringify({ code, shop, redirect_uri: redirectUri }),
         });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
