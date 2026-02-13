@@ -60,6 +60,12 @@ export async function POST(request: NextRequest) {
 
   const shopNorm = shop.includes(".myshopify.com") ? shop : `${shop}.myshopify.com`;
 
+  // Mandatory GDPR compliance webhooks (required for App Store). Ack with 200; we verify HMAC above.
+  if (topic === "customers/data_request" || topic === "customers/redact" || topic === "shop/redact") {
+    console.log("[Shopify webhooks] compliance webhook received", { topic, shop: shopNorm });
+    return NextResponse.json({ received: true });
+  }
+
   if (topic === "inventory_levels/update") {
     console.log("[Shopify webhooks] received inventory_levels/update", { shop: shopNorm });
     const raw = payload as Record<string, unknown>;

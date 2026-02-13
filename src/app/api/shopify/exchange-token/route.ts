@@ -102,7 +102,16 @@ export async function POST(request: NextRequest) {
         "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
       };
-      const topics = ["inventory_levels/update", "products/update", "products/delete", "orders/create", "orders/updated"];
+      const topics = [
+        "inventory_levels/update",
+        "products/update",
+        "products/delete",
+        "orders/create",
+        "orders/updated",
+        "customers/data_request",
+        "customers/redact",
+        "shop/redact",
+      ];
       for (const topic of topics) {
         const webhookRes = await fetch(
           `https://${normalizedShop}/admin/api/2024-01/webhooks.json`,

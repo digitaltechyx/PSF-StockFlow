@@ -213,9 +213,10 @@ export default function AdminDashboardPage() {
               if (inToday(ms)) shippedCount += 1;
             });
             inventorySnap.docs.forEach((d) => {
-              const data = d.data() as { dateAdded?: unknown; quantity?: number };
-              const ms = toMs(data?.dateAdded);
-              if (inToday(ms)) receivedQty += Number(data?.quantity) || 0;
+              const data = d.data() as { dateAdded?: unknown; receivingDate?: unknown; quantity?: number };
+              // Use current receiving date: receivingDate (actual receive date) or dateAdded
+              const receiveMs = toMs(data?.receivingDate) || toMs(data?.dateAdded);
+              if (inToday(receiveMs)) receivedQty += Number(data?.quantity) || 0;
             });
           } catch (err) {
             console.warn("Admin dashboard: shipped/received stats for user", uid, err);
