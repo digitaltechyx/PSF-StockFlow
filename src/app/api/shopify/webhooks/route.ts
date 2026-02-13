@@ -60,6 +60,19 @@ export async function POST(request: NextRequest) {
 
   const shopNorm = shop.includes(".myshopify.com") ? shop : `${shop}.myshopify.com`;
 
+  // app/uninstalled – fired when merchant uninstalls app; token already invalid, ack and optionally clean up.
+  if (topic === "app/uninstalled") {
+    console.log("[Shopify webhooks] app/uninstalled received", { shop: shopNorm });
+    try {
+      const db = adminDb();
+      const shopKey = shopNorm.replace(/\./g, "_");
+      await db.collection("shopifyShopToUser").doc(shopKey).delete();
+    } catch (e) {
+      console.warn("[Shopify webhooks] app/uninstalled cleanup", e);
+    }
+    return NextResponse.json({ received: true });
+  }
+
   // Mandatory GDPR compliance webhooks (required for App Store). Ack with 200; we verify HMAC above.
   if (topic === "customers/data_request" || topic === "customers/redact" || topic === "shop/redact") {
     console.log("[Shopify webhooks] compliance webhook received", { topic, shop: shopNorm });

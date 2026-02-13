@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
       };
       const topics = [
+        "app/uninstalled",
         "inventory_levels/update",
         "products/update",
         "products/delete",
