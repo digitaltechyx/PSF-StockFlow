@@ -96,8 +96,19 @@ export default function DocumentRequestsPage() {
     return Array.from(companies).sort((a, b) => a.localeCompare(b));
   }, [requestsWithUserData]);
 
+  // Unique client names (requesters) for client filter ("All clients" + list of names)
+  const clientNameOptions = useMemo(() => {
+    const names = new Set<string>();
+    requestsWithUserData.forEach((r) => {
+      const name = (r.userName || "").trim();
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [requestsWithUserData]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCompany, setSelectedCompany] = useState<string>("all");
+  const [selectedClient, setSelectedClient] = useState<string>("all");
 
   // Search matches: documentType, userName, userEmail, companyName, contact, email, notes
   const matchesSearch = useMemo(() => {
@@ -125,18 +136,25 @@ export default function DocumentRequestsPage() {
     if (selectedCompany !== "all") {
       list = list.filter((r) => (r.companyName || "").trim() === selectedCompany);
     }
+    if (selectedClient !== "all") {
+      list = list.filter((r) => (r.userName || "").trim() === selectedClient);
+    }
     return list.filter(matchesSearch);
-  }, [pendingRequests, selectedCompany, matchesSearch]);
+  }, [pendingRequests, selectedCompany, selectedClient, matchesSearch]);
 
   const filteredCompleted = useMemo(() => {
     let list = completedRequests;
     if (selectedCompany !== "all") {
       list = list.filter((r) => (r.companyName || "").trim() === selectedCompany);
     }
+    if (selectedClient !== "all") {
+      list = list.filter((r) => (r.userName || "").trim() === selectedClient);
+    }
     return list.filter(matchesSearch);
-  }, [completedRequests, selectedCompany, matchesSearch]);
+  }, [completedRequests, selectedCompany, selectedClient, matchesSearch]);
 
-  const hasActiveFilters = searchQuery.trim() !== "" || selectedCompany !== "all";
+  const hasActiveFilters =
+    searchQuery.trim() !== "" || selectedCompany !== "all" || selectedClient !== "all";
 
   const handleOpenUploadDialog = (request: DocumentRequest) => {
     setSelectedRequest(request);
@@ -362,6 +380,19 @@ export default function DocumentRequestsPage() {
             {companyOptions.map((company) => (
               <SelectItem key={company} value={company}>
                 {company}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={selectedClient} onValueChange={setSelectedClient}>
+          <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectValue placeholder="All clients" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All clients</SelectItem>
+            {clientNameOptions.map((name) => (
+              <SelectItem key={name} value={name}>
+                {name}
               </SelectItem>
             ))}
           </SelectContent>
