@@ -109,6 +109,7 @@ export default function DocumentRequestsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCompany, setSelectedCompany] = useState<string>("all");
   const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<string>("pending");
 
   // Search matches: documentType, userName, userEmail, companyName, contact, email, notes
   const matchesSearch = useMemo(() => {
@@ -286,7 +287,13 @@ export default function DocumentRequestsPage() {
 
       {/* Stat cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-2 border-orange-200/50 bg-gradient-to-br from-orange-50 to-orange-100/50 shadow-lg">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setActiveTab("pending")}
+          onKeyDown={(e) => e.key === "Enter" && setActiveTab("pending")}
+          className="border-2 border-orange-200/50 bg-gradient-to-br from-orange-50 to-orange-100/50 shadow-lg cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-orange-900">Pending</CardTitle>
             <div className="h-10 w-10 rounded-full bg-orange-500 flex items-center justify-center shadow-md">
@@ -304,7 +311,13 @@ export default function DocumentRequestsPage() {
             )}
           </CardContent>
         </Card>
-        <Card className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-lg">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setActiveTab("completed")}
+          onKeyDown={(e) => e.key === "Enter" && setActiveTab("completed")}
+          className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-lg cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-green-900">Completed</CardTitle>
             <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center shadow-md">
@@ -399,7 +412,7 @@ export default function DocumentRequestsPage() {
         </Select>
       </div>
 
-      <Tabs defaultValue="pending" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="pending">
             Pending ({pendingRequests.length})
