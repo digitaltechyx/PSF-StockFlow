@@ -2631,7 +2631,7 @@ export function QuoteManagement() {
                   <div className="md:hidden space-y-3">
                     {formData.items.map((item, index) => (
                       <div key={item.id} className="border border-amber-200/70 rounded-md p-3 space-y-3 bg-amber-50/30">
-                        <div className="space-y-1 pr-2">
+                        <div className="space-y-1 pr-2 min-w-0 overflow-hidden">
                           <label className="text-xs font-semibold text-amber-800">Item Description</label>
                           {isPrintMode ? (
                             <span className="text-sm block whitespace-pre-wrap break-words">{item.description || "—"}</span>
@@ -2641,7 +2641,8 @@ export function QuoteManagement() {
                               onChange={(event) => updateItem(index, "description", event.target.value)}
                               placeholder="Manual field"
                               rows={2}
-                              className="min-h-8 w-full resize-y border-amber-200/70"
+                              className="min-h-8 w-full max-w-full resize-y border-amber-200/70 break-words"
+                              style={{ overflowWrap: "break-word" }}
                             />
                           )}
                         </div>
@@ -2698,10 +2699,10 @@ export function QuoteManagement() {
                   </div>
                   {/* Desktop: table */}
                   <div className="hidden md:block border border-amber-200/70 rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm table-fixed">
                       <thead className="bg-amber-50 text-amber-900">
                         <tr className="text-left">
-                          <th className="px-3 py-2 font-semibold pr-4">Item Description</th>
+                          <th className="px-3 py-2 font-semibold pr-4 w-[50%]">Item Description</th>
                           <th className="px-3 py-2 font-semibold w-24">Quantity</th>
                           <th className="px-3 py-2 font-semibold w-32">Unit Price ($)</th>
                           <th className="px-3 py-2 font-semibold w-32 text-right">Total Price ($)</th>
@@ -2711,16 +2712,17 @@ export function QuoteManagement() {
                       <tbody>
                         {formData.items.map((item, index) => (
                           <tr key={item.id} className="border-t border-amber-100">
-                            <td className="px-3 py-2 pr-4 min-w-0">
+                            <td className="px-3 py-2 pr-4 min-w-0 w-[50%] overflow-hidden">
                               {isPrintMode ? (
-                                <span className="text-sm whitespace-pre-wrap break-words">{item.description || "—"}</span>
+                                <span className="text-sm whitespace-pre-wrap break-words block min-w-0">{item.description || "—"}</span>
                               ) : (
                                 <Textarea
                                   value={item.description}
                                   onChange={(event) => updateItem(index, "description", event.target.value)}
                                   placeholder="Manual field"
                                   rows={2}
-                                  className="min-h-8 w-full resize-y border-amber-200/70"
+                                  className="min-h-8 w-full max-w-full resize-y border-amber-200/70 break-words"
+                                  style={{ overflowWrap: "break-word" }}
                                 />
                               )}
                             </td>
