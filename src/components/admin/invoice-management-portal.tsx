@@ -2419,7 +2419,7 @@ Prep Services FBA Team`;
                 <div className="space-y-3">
                   {/* Desktop header - hidden on mobile where each row has its own labels */}
                   <div className="hidden md:grid grid-cols-12 gap-2 items-center border-b border-amber-200/70 pb-2">
-                    <div className="col-span-6">
+                    <div className="col-span-6 pr-2">
                       <h3 className="font-semibold text-amber-800">Item Description</h3>
                     </div>
                     <div className="col-span-2 text-center">
@@ -2435,7 +2435,7 @@ Prep Services FBA Team`;
                   </div>
                   {formData.items.map((item, index) => (
                     <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-2 items-center border-b border-amber-100/50 pb-3 md:pb-2 invoice-actions">
-                      <div className="md:col-span-6 space-y-1 min-w-0">
+                      <div className="md:col-span-6 space-y-1 min-w-0 pr-2 md:pr-3">
                         <label className="text-xs font-medium text-amber-800 md:hidden">Item Description</label>
                         {isPrintMode ? (
                           <p className="text-sm whitespace-pre-wrap break-words">{item.description || "—"}</p>

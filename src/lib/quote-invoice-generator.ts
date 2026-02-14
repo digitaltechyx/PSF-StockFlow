@@ -158,7 +158,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const descriptionWidth = 92; // mm for item description column
+  const descriptionWidth = 86; // mm — leave gap before Qty column (Qty starts at margin+92)
   data.items.forEach((item) => {
     if (y > 265) {
       doc.addPage();
