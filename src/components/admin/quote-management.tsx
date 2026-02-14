@@ -2631,16 +2631,17 @@ export function QuoteManagement() {
                   <div className="md:hidden space-y-3">
                     {formData.items.map((item, index) => (
                       <div key={item.id} className="border border-amber-200/70 rounded-md p-3 space-y-3 bg-amber-50/30">
-                        <div className="space-y-1">
+                        <div className="space-y-1 pr-2">
                           <label className="text-xs font-semibold text-amber-800">Item Description</label>
                           {isPrintMode ? (
-                            <span className="text-sm block">{item.description || "—"}</span>
+                            <span className="text-sm block whitespace-pre-wrap break-words">{item.description || "—"}</span>
                           ) : (
-                            <Input
+                            <Textarea
                               value={item.description}
                               onChange={(event) => updateItem(index, "description", event.target.value)}
                               placeholder="Manual field"
-                              className="h-8 w-full"
+                              rows={2}
+                              className="min-h-8 w-full resize-y border-amber-200/70"
                             />
                           )}
                         </div>
@@ -2700,7 +2701,7 @@ export function QuoteManagement() {
                     <table className="w-full text-sm">
                       <thead className="bg-amber-50 text-amber-900">
                         <tr className="text-left">
-                          <th className="px-3 py-2 font-semibold">Item Description</th>
+                          <th className="px-3 py-2 font-semibold pr-4">Item Description</th>
                           <th className="px-3 py-2 font-semibold w-24">Quantity</th>
                           <th className="px-3 py-2 font-semibold w-32">Unit Price ($)</th>
                           <th className="px-3 py-2 font-semibold w-32 text-right">Total Price ($)</th>
@@ -2710,15 +2711,16 @@ export function QuoteManagement() {
                       <tbody>
                         {formData.items.map((item, index) => (
                           <tr key={item.id} className="border-t border-amber-100">
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2 pr-4 min-w-0">
                               {isPrintMode ? (
-                                <span className="text-sm">{item.description || "—"}</span>
+                                <span className="text-sm whitespace-pre-wrap break-words">{item.description || "—"}</span>
                               ) : (
-                                <Input
+                                <Textarea
                                   value={item.description}
                                   onChange={(event) => updateItem(index, "description", event.target.value)}
                                   placeholder="Manual field"
-                                  className="h-8"
+                                  rows={2}
+                                  className="min-h-8 w-full resize-y border-amber-200/70"
                                 />
                               )}
                             </td>
