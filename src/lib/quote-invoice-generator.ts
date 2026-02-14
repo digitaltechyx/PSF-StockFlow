@@ -158,16 +158,29 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
+  const descriptionWidth = 92; // mm for item description column
   data.items.forEach((item) => {
     if (y > 265) {
       doc.addPage();
       y = margin;
     }
-    doc.text(item.description.substring(0, 50), margin, y);
+    const desc = item.description || "—";
+    const lines = doc.splitTextToSize(desc, descriptionWidth);
+    const firstLine = lines[0] ?? "—";
+    doc.text(firstLine, margin, y);
     doc.text(String(item.quantity), margin + 92, y);
     doc.text(`$${item.unitPrice.toFixed(2)}`, margin + 120, y);
     doc.text(`$${item.amount.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
     y += 5;
+    lines.slice(1).forEach((line: string) => {
+      if (y > 265) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(line, margin, y);
+      y += 5;
+    });
+    y += 2; // spacing before next item
   });
 
   y += 4;

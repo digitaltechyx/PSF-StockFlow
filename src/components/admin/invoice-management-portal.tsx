@@ -2435,16 +2435,17 @@ Prep Services FBA Team`;
                   </div>
                   {formData.items.map((item, index) => (
                     <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-2 items-center border-b border-amber-100/50 pb-3 md:pb-2 invoice-actions">
-                      <div className="md:col-span-6 space-y-1">
+                      <div className="md:col-span-6 space-y-1 min-w-0">
                         <label className="text-xs font-medium text-amber-800 md:hidden">Item Description</label>
                         {isPrintMode ? (
-                          <p className="text-sm">{item.description || "—"}</p>
+                          <p className="text-sm whitespace-pre-wrap break-words">{item.description || "—"}</p>
                         ) : (
-                          <Input
+                          <Textarea
                             value={item.description}
                             onChange={(event) => updateItem(item.id, "description", event.target.value)}
                             placeholder="Item description"
-                            className="h-9 border-amber-200/70 w-full"
+                            rows={2}
+                            className="min-h-9 border-amber-200/70 w-full resize-y"
                           />
                         )}
                       </div>
