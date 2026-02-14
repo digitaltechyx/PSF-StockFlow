@@ -86,8 +86,8 @@ export default function DocumentRequestsPage() {
     }).length;
   }, [completedRequests]);
 
-  // Unique companies for client filter (include empty for "All clients")
-  const clientOptions = useMemo(() => {
+  // Unique companies for company filter ("All companies" + list of company names)
+  const companyOptions = useMemo(() => {
     const companies = new Set<string>();
     requestsWithUserData.forEach((r) => {
       const name = (r.companyName || "").trim();
@@ -97,7 +97,7 @@ export default function DocumentRequestsPage() {
   }, [requestsWithUserData]);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [selectedCompany, setSelectedCompany] = useState<string>("all");
 
   // Search matches: documentType, userName, userEmail, companyName, contact, email, notes
   const matchesSearch = useMemo(() => {
@@ -122,21 +122,21 @@ export default function DocumentRequestsPage() {
 
   const filteredPending = useMemo(() => {
     let list = pendingRequests;
-    if (selectedClient !== "all") {
-      list = list.filter((r) => (r.companyName || "").trim() === selectedClient);
+    if (selectedCompany !== "all") {
+      list = list.filter((r) => (r.companyName || "").trim() === selectedCompany);
     }
     return list.filter(matchesSearch);
-  }, [pendingRequests, selectedClient, matchesSearch]);
+  }, [pendingRequests, selectedCompany, matchesSearch]);
 
   const filteredCompleted = useMemo(() => {
     let list = completedRequests;
-    if (selectedClient !== "all") {
-      list = list.filter((r) => (r.companyName || "").trim() === selectedClient);
+    if (selectedCompany !== "all") {
+      list = list.filter((r) => (r.companyName || "").trim() === selectedCompany);
     }
     return list.filter(matchesSearch);
-  }, [completedRequests, selectedClient, matchesSearch]);
+  }, [completedRequests, selectedCompany, matchesSearch]);
 
-  const hasActiveFilters = searchQuery.trim() !== "" || selectedClient !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || selectedCompany !== "all";
 
   const handleOpenUploadDialog = (request: DocumentRequest) => {
     setSelectedRequest(request);
@@ -353,13 +353,13 @@ export default function DocumentRequestsPage() {
             className="pl-9"
           />
         </div>
-        <Select value={selectedClient} onValueChange={setSelectedClient}>
+        <Select value={selectedCompany} onValueChange={setSelectedCompany}>
           <SelectTrigger className="w-full sm:w-[220px]">
-            <SelectValue placeholder="All clients" />
+            <SelectValue placeholder="All companies" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All clients</SelectItem>
-            {clientOptions.map((company) => (
+            <SelectItem value="all">All companies</SelectItem>
+            {companyOptions.map((company) => (
               <SelectItem key={company} value={company}>
                 {company}
               </SelectItem>
