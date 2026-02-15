@@ -2911,7 +2911,11 @@ export function QuoteManagement() {
                     </div>
                     <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
                   </div>
-                ) : (
+                ) : null}
+                {isPrintMode && (
+                  <div className="min-h-[280px]" aria-hidden />
+                )}
+                {!isPrintMode && (
                   <>
                     <div className="grid gap-4 md:grid-cols-2 text-sm">
                       <div className="space-y-2">
