@@ -999,20 +999,24 @@ export function QuoteManagement() {
       });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
+      const marginPt = 40; /* ~14mm print margin */
+      const contentWidth = pageWidth - 2 * marginPt;
+      const contentHeight = pageHeight - 2 * marginPt;
+      const imgWidth = contentWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let y = 0;
+      let y = marginPt;
 
-      if (imgHeight <= pageHeight) {
-        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      if (imgHeight <= contentHeight) {
+        pdf.addImage(imgData, "PNG", marginPt, marginPt, imgWidth, imgHeight);
       } else {
         let remainingHeight = imgHeight;
         while (remainingHeight > 0) {
-          pdf.addImage(imgData, "PNG", 0, y, imgWidth, imgHeight);
-          remainingHeight -= pageHeight;
-          y -= pageHeight;
+          pdf.addImage(imgData, "PNG", marginPt, y, imgWidth, imgHeight);
+          remainingHeight -= contentHeight;
+          y -= contentHeight;
           if (remainingHeight > 0) {
             pdf.addPage();
+            y = marginPt;
           }
         }
       }
@@ -1462,20 +1466,24 @@ export function QuoteManagement() {
       });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
+      const marginPt = 40;
+      const contentWidth = pageWidth - 2 * marginPt;
+      const contentHeight = pageHeight - 2 * marginPt;
+      const imgWidth = contentWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let y = 0;
+      let y = marginPt;
 
-      if (imgHeight <= pageHeight) {
-        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      if (imgHeight <= contentHeight) {
+        pdf.addImage(imgData, "PNG", marginPt, marginPt, imgWidth, imgHeight);
       } else {
         let remainingHeight = imgHeight;
         while (remainingHeight > 0) {
-          pdf.addImage(imgData, "PNG", 0, y, imgWidth, imgHeight);
-          remainingHeight -= pageHeight;
-          y -= pageHeight;
+          pdf.addImage(imgData, "PNG", marginPt, y, imgWidth, imgHeight);
+          remainingHeight -= contentHeight;
+          y -= contentHeight;
           if (remainingHeight > 0) {
             pdf.addPage();
+            y = marginPt;
           }
         }
       }
@@ -2457,6 +2465,11 @@ export function QuoteManagement() {
                   isPrintMode && "quote-print-mode"
                 )}
               >
+                {isPrintMode && (
+                  <div className="border-b border-amber-300 pb-3 mb-2">
+                    <p className="text-xs font-semibold text-amber-800">Prep Services FBA — Sales Quotation</p>
+                  </div>
+                )}
                 <div className="space-y-4">
                   <h2 className="text-center text-2xl font-bold tracking-wide text-amber-800">SALES QUOTATION</h2>
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -2944,6 +2957,11 @@ export function QuoteManagement() {
                 <p className="text-center text-sm text-amber-900">
                   We appreciate the opportunity to do business with you.
                 </p>
+                {isPrintMode && (
+                  <div className="border-t border-amber-300 pt-3 mt-4">
+                    <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3 quote-print-actions">
