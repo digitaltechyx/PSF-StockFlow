@@ -1009,22 +1009,32 @@ export function QuoteManagement() {
         const contentImgData = contentCanvas.toDataURL("image/png");
         const footerImgData = footerCanvas.toDataURL("image/png");
         const contentImgHeight = (contentCanvas.height * contentWidth) / contentCanvas.width;
+        const footerImgHeight = (footerCanvas.height * contentWidth) / footerCanvas.width;
+        const footerGap = 20;
         let y = marginPt;
+        let contentBottomY = marginPt;
 
         if (contentImgHeight <= contentHeight) {
           pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentWidth, contentImgHeight);
+          contentBottomY = marginPt + contentImgHeight;
         } else {
           let remainingHeight = contentImgHeight;
           while (remainingHeight > 0) {
             pdf.addImage(contentImgData, "PNG", marginPt, y, contentWidth, contentImgHeight);
             remainingHeight -= contentHeight;
+            contentBottomY = y + contentImgHeight;
             y -= contentHeight;
             if (remainingHeight > 0) pdf.addPage();
           }
         }
-        pdf.addPage();
-        const footerImgHeight = (footerCanvas.height * contentWidth) / footerCanvas.width;
-        pdf.addImage(footerImgData, "PNG", marginPt, marginPt, contentWidth, footerImgHeight);
+
+        const spaceLeft = pageHeight - marginPt - contentBottomY;
+        if (spaceLeft >= footerImgHeight + footerGap) {
+          pdf.addImage(footerImgData, "PNG", marginPt, contentBottomY + footerGap, contentWidth, footerImgHeight);
+        } else {
+          pdf.addPage();
+          pdf.addImage(footerImgData, "PNG", marginPt, marginPt, contentWidth, footerImgHeight);
+        }
       } else if (quoteTemplateRef.current) {
         const canvas = await html2canvas(quoteTemplateRef.current, {
           backgroundColor: "#ffffff",
@@ -1500,26 +1510,33 @@ export function QuoteManagement() {
       const marginPt = 40;
       const contentWidth = pageWidth - 2 * marginPt;
       const contentHeight = pageHeight - 2 * marginPt;
-      const contentImgWidth = contentWidth;
-      const contentImgHeight = (contentCanvas.height * contentImgWidth) / contentCanvas.width;
+      const contentImgHeight = (contentCanvas.height * contentWidth) / contentCanvas.width;
+      const footerImgHeight = (footerCanvas.height * contentWidth) / contentCanvas.width;
+      const footerGap = 20;
       let y = marginPt;
+      let contentBottomY = marginPt;
 
       if (contentImgHeight <= contentHeight) {
-        pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentImgWidth, contentImgHeight);
+        pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentWidth, contentImgHeight);
+        contentBottomY = marginPt + contentImgHeight;
       } else {
         let remainingHeight = contentImgHeight;
         while (remainingHeight > 0) {
-          pdf.addImage(contentImgData, "PNG", marginPt, y, contentImgWidth, contentImgHeight);
+          pdf.addImage(contentImgData, "PNG", marginPt, y, contentWidth, contentImgHeight);
           remainingHeight -= contentHeight;
+          contentBottomY = y + contentImgHeight;
           y -= contentHeight;
           if (remainingHeight > 0) pdf.addPage();
         }
       }
 
-      pdf.addPage();
-      const footerImgWidth = contentWidth;
-      const footerImgHeight = (footerCanvas.height * footerImgWidth) / footerCanvas.width;
-      pdf.addImage(footerImgData, "PNG", marginPt, marginPt, footerImgWidth, footerImgHeight);
+      const spaceLeft = pageHeight - marginPt - contentBottomY;
+      if (spaceLeft >= footerImgHeight + footerGap) {
+        pdf.addImage(footerImgData, "PNG", marginPt, contentBottomY + footerGap, contentWidth, footerImgHeight);
+      } else {
+        pdf.addPage();
+        pdf.addImage(footerImgData, "PNG", marginPt, marginPt, contentWidth, footerImgHeight);
+      }
 
       pdf.save(`${formData.reference || "quotation"}.pdf`);
     } catch (error) {
