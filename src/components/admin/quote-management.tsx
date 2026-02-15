@@ -2952,9 +2952,11 @@ export function QuoteManagement() {
                     )}
                   </div>
                 </div>
-                <p className="text-center text-sm text-amber-900">
-                  We appreciate the opportunity to do business with you.
-                </p>
+                {!isPrintMode && (
+                  <p className="text-center text-sm text-amber-900">
+                    We appreciate the opportunity to do business with you.
+                  </p>
+                )}
                 {isPrintMode && (
                   <div className="border-t border-amber-300 pt-3 mt-4">
                     <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
