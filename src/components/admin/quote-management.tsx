@@ -984,49 +984,70 @@ export function QuoteManagement() {
   };
 
   const generateQuotePdfFile = async (reference: string) => {
-    if (!quoteContentRef.current || !quoteFooterRef.current) return null;
     setIsPrintMode(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      const contentCanvas = await html2canvas(quoteContentRef.current, {
-        backgroundColor: "#ffffff",
-        scale: 2,
-        useCORS: true,
-      });
-      const footerCanvas = await html2canvas(quoteFooterRef.current, {
-        backgroundColor: "#ffffff",
-        scale: 2,
-        useCORS: true,
-      });
-      const contentImgData = contentCanvas.toDataURL("image/png");
-      const footerImgData = footerCanvas.toDataURL("image/png");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const hasContentAndFooter = quoteContentRef.current && quoteFooterRef.current;
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const marginPt = 40;
       const contentWidth = pageWidth - 2 * marginPt;
       const contentHeight = pageHeight - 2 * marginPt;
-      const contentImgWidth = contentWidth;
-      const contentImgHeight = (contentCanvas.height * contentImgWidth) / contentCanvas.width;
-      let y = marginPt;
 
-      if (contentImgHeight <= contentHeight) {
-        pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentImgWidth, contentImgHeight);
-      } else {
-        let remainingHeight = contentImgHeight;
-        while (remainingHeight > 0) {
-          pdf.addImage(contentImgData, "PNG", marginPt, y, contentImgWidth, contentImgHeight);
-          remainingHeight -= contentHeight;
-          y -= contentHeight;
-          if (remainingHeight > 0) pdf.addPage();
+      if (hasContentAndFooter) {
+        const contentCanvas = await html2canvas(quoteContentRef.current!, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+        });
+        const footerCanvas = await html2canvas(quoteFooterRef.current!, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+        });
+        const contentImgData = contentCanvas.toDataURL("image/png");
+        const footerImgData = footerCanvas.toDataURL("image/png");
+        const contentImgHeight = (contentCanvas.height * contentWidth) / contentCanvas.width;
+        let y = marginPt;
+
+        if (contentImgHeight <= contentHeight) {
+          pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentWidth, contentImgHeight);
+        } else {
+          let remainingHeight = contentImgHeight;
+          while (remainingHeight > 0) {
+            pdf.addImage(contentImgData, "PNG", marginPt, y, contentWidth, contentImgHeight);
+            remainingHeight -= contentHeight;
+            y -= contentHeight;
+            if (remainingHeight > 0) pdf.addPage();
+          }
         }
+        pdf.addPage();
+        const footerImgHeight = (footerCanvas.height * contentWidth) / footerCanvas.width;
+        pdf.addImage(footerImgData, "PNG", marginPt, marginPt, contentWidth, footerImgHeight);
+      } else if (quoteTemplateRef.current) {
+        const canvas = await html2canvas(quoteTemplateRef.current, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+        });
+        const imgData = canvas.toDataURL("image/png");
+        const imgHeight = (canvas.height * contentWidth) / canvas.width;
+        let y = marginPt;
+        if (imgHeight <= contentHeight) {
+          pdf.addImage(imgData, "PNG", marginPt, marginPt, contentWidth, imgHeight);
+        } else {
+          let remainingHeight = imgHeight;
+          while (remainingHeight > 0) {
+            pdf.addImage(imgData, "PNG", marginPt, y, contentWidth, imgHeight);
+            remainingHeight -= contentHeight;
+            y -= contentHeight;
+            if (remainingHeight > 0) pdf.addPage();
+          }
+        }
+      } else {
+        return null;
       }
-
-      pdf.addPage();
-      const footerImgWidth = contentWidth;
-      const footerImgHeight = (footerCanvas.height * footerImgWidth) / footerCanvas.width;
-      const footerY = marginPt;
-      pdf.addImage(footerImgData, "PNG", marginPt, footerY, footerImgWidth, footerImgHeight);
 
       const pdfBlob = pdf.output("blob");
       return new File([pdfBlob], `${reference || "quotation"}.pdf`, { type: "application/pdf" });
