@@ -2460,7 +2460,8 @@ export function QuoteManagement() {
                 ref={quoteTemplateRef}
                 className={cn(
                   "bg-white border-2 border-amber-700/70 rounded-md p-6 shadow-sm max-w-[794px] mx-auto space-y-6",
-                  isPrintMode && "quote-print-mode"
+                  isPrintMode && "quote-print-mode",
+                  isPrintMode && "pb-24"
                 )}
               >
                 {isPrintMode && (
@@ -2890,18 +2891,31 @@ export function QuoteManagement() {
                   )}
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 text-sm">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Prepared By</Label>
-                    {isPrintMode ? (
+                {isPrintMode ? (
+                  <div className="border-t border-amber-300 pt-4 mt-2 pb-2">
+                    <div className="grid gap-4 md:grid-cols-2 text-sm mb-3">
                       <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Prepared By</p>
                         <p className="text-sm font-medium">{formData.preparedBy || "—"}</p>
                         {formData.preparedDate && (
                           <p className="text-xs text-muted-foreground">{formatDateForDisplay(formData.preparedDate)}</p>
                         )}
                       </div>
-                    ) : (
-                      <>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Approved By</p>
+                        <p className="text-sm font-medium">{formData.approvedBy || "—"}</p>
+                        {formData.approvedDate && (
+                          <p className="text-xs text-muted-foreground">{formatDateForDisplay(formData.approvedDate)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2 text-sm">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Prepared By</Label>
                         <Input
                           value={formData.preparedBy}
                           onChange={(event) =>
@@ -2918,20 +2932,9 @@ export function QuoteManagement() {
                           }
                           className="h-9"
                         />
-                      </>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Approved By</Label>
-                    {isPrintMode ? (
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">{formData.approvedBy || "—"}</p>
-                        {formData.approvedDate && (
-                          <p className="text-xs text-muted-foreground">{formatDateForDisplay(formData.approvedDate)}</p>
-                        )}
                       </div>
-                    ) : (
-                      <>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Approved By</Label>
                         <Input
                           value={formData.approvedBy}
                           onChange={(event) =>
@@ -2948,19 +2951,12 @@ export function QuoteManagement() {
                           }
                           className="h-9"
                         />
-                      </>
-                    )}
-                  </div>
-                </div>
-                {!isPrintMode && (
-                  <p className="text-center text-sm text-amber-900">
-                    We appreciate the opportunity to do business with you.
-                  </p>
-                )}
-                {isPrintMode && (
-                  <div className="border-t border-amber-300 pt-3 mt-4">
-                    <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
-                  </div>
+                      </div>
+                    </div>
+                    <p className="text-center text-sm text-amber-900">
+                      We appreciate the opportunity to do business with you.
+                    </p>
+                  </>
                 )}
               </div>
 
