@@ -2428,7 +2428,7 @@ export function QuoteManagement() {
                 @media print {
                   @page {
                     size: A4;
-                    margin: 15mm;
+                    margin: 18mm 15mm 25mm 15mm; /* top right bottom left — footer margin so Prepared By / closing line not clipped */
                   }
                   body {
                     print-color-adjust: exact;
@@ -2438,10 +2438,15 @@ export function QuoteManagement() {
                     max-width: 100% !important;
                     box-shadow: none !important;
                     border: 1px solid #d4a574 !important;
+                    padding-top: 4mm !important;
+                    padding-bottom: 12mm !important;
                   }
                   .quote-print-mode * {
                     print-color-adjust: exact;
                     -webkit-print-color-adjust: exact;
+                  }
+                  .quote-print-actions {
+                    display: none !important;
                   }
                 }
               `}</style>
@@ -2941,7 +2946,7 @@ export function QuoteManagement() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 quote-print-actions">
                 <Button 
                   variant="outline" 
                   onClick={handleSaveDraft} 

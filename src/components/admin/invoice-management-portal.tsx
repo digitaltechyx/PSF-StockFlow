@@ -2211,7 +2211,7 @@ Prep Services FBA Team`;
                 @media print {
                   @page {
                     size: A4;
-                    margin: 15mm;
+                    margin: 18mm 15mm 25mm 15mm; /* top right bottom left — footer margin so content not clipped */
                   }
                   body {
                     print-color-adjust: exact;
@@ -2221,10 +2221,15 @@ Prep Services FBA Team`;
                     max-width: 100% !important;
                     box-shadow: none !important;
                     border: 1px solid #d4a574 !important;
+                    padding-top: 4mm !important;
+                    padding-bottom: 12mm !important;
                   }
                   .invoice-print-mode * {
                     print-color-adjust: exact;
                     -webkit-print-color-adjust: exact;
+                  }
+                  .invoice-print-actions {
+                    display: none !important;
                   }
                 }
               `}</style>
@@ -2602,7 +2607,7 @@ Prep Services FBA Team`;
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 justify-center">
+              <div className="flex flex-wrap gap-2 justify-center invoice-print-actions">
                 <Button onClick={() => saveInvoice("draft")} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
                   Save as Draft
