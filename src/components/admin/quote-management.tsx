@@ -2951,7 +2951,7 @@ export function QuoteManagement() {
                         )}
                       </div>
                     </div>
-                    <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
+                    <p className="text-xs text-center text-amber-700">We appreciate the opportunity to do business with you.</p>
                   </div>
                 ) : null}
                 {!isPrintMode && (
