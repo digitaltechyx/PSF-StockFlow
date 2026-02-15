@@ -2207,6 +2207,26 @@ Prep Services FBA Team`;
                 .invoice-print-mode .invoice-actions {
                   display: none !important;
                 }
+
+                @media print {
+                  @page {
+                    size: A4;
+                    margin: 15mm;
+                  }
+                  body {
+                    print-color-adjust: exact;
+                    -webkit-print-color-adjust: exact;
+                  }
+                  .invoice-print-mode {
+                    max-width: 100% !important;
+                    box-shadow: none !important;
+                    border: 1px solid #d4a574 !important;
+                  }
+                  .invoice-print-mode * {
+                    print-color-adjust: exact;
+                    -webkit-print-color-adjust: exact;
+                  }
+                }
               `}</style>
               <div
                 ref={invoiceTemplateRef}

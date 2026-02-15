@@ -55,7 +55,10 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
 
   const doc = new jsPDF("p", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
+  const bottomMargin = 20;
+  const contentMaxY = pageHeight - bottomMargin; // keep content above footer area
   let y = margin;
 
   const logo = await loadLogo("/quote-logo.png");
@@ -160,7 +163,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   doc.setFontSize(9);
   const descriptionWidth = 86; // mm — leave gap before Qty column (Qty starts at margin+92)
   data.items.forEach((item) => {
-    if (y > 265) {
+    if (y > contentMaxY) {
       doc.addPage();
       y = margin;
     }
@@ -173,7 +176,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     doc.text(`$${item.amount.toFixed(2)}`, pageWidth - margin, y, { align: "right" });
     y += 5;
     lines.slice(1).forEach((line: string) => {
-      if (y > 265) {
+      if (y > contentMaxY) {
         doc.addPage();
         y = margin;
       }
@@ -209,7 +212,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
   // Add Terms & Conditions if provided (as bullet points)
   if (data.terms) {
     y += 10;
-    if (y > 265) {
+    if (y > contentMaxY) {
       doc.addPage();
       y = margin;
     }
@@ -226,7 +229,7 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
       const bulletLine = bullet + line.replace(/^\d+\.\s*/, ""); // strip leading "1. " etc. if present
       const wrapped = doc.splitTextToSize(bulletLine, termWidth);
       wrapped.forEach((textLine: string) => {
-        if (y > 275) {
+        if (y > contentMaxY) {
           doc.addPage();
           y = margin;
         }
