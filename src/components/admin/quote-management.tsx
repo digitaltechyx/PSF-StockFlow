@@ -2908,7 +2908,7 @@ export function QuoteManagement() {
                   </div>
                 </div>
 
-                <div className="border border-amber-200/70 rounded-md p-4 space-y-2">
+                <div className="border border-amber-200/70 rounded-md p-4 space-y-2 mt-6">
                   <p className="text-xs uppercase text-amber-700 font-semibold">Terms &amp; Conditions</p>
                   {isPrintMode ? (
                     <ul className="text-xs leading-5 space-y-1 list-disc list-inside text-amber-900">

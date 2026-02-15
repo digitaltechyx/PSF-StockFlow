@@ -2592,7 +2592,7 @@ Prep Services FBA Team`;
                   </div>
                 </div>
 
-                <div className="border-t border-amber-200/70 pt-4">
+                <div className="border-t border-amber-200/70 pt-4 mt-6">
                   <p className="text-xs uppercase text-amber-700 font-semibold mb-2">Terms & Conditions</p>
                   {isPrintMode ? (
                     <div className="text-xs text-amber-900 whitespace-pre-line">{formData.terms || "—"}</div>
