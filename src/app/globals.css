@@ -699,3 +699,33 @@ body *::-webkit-scrollbar,
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #64748b !important;
 }
+
+/* Print: header/footer margins for quote and invoice (Print / Save as PDF) */
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 15mm 25mm 15mm;
+  }
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .quote-print-mode,
+  .invoice-print-mode {
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: 1px solid #d4a574 !important;
+    padding-top: 4mm !important;
+    padding-bottom: 12mm !important;
+    page-break-after: avoid;
+  }
+  .quote-print-mode *,
+  .invoice-print-mode * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .quote-print-actions,
+  .invoice-print-actions {
+    display: none !important;
+  }
+}
