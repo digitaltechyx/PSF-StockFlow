@@ -1016,7 +1016,6 @@ export function QuoteManagement() {
           y -= contentHeight;
           if (remainingHeight > 0) {
             pdf.addPage();
-            y = marginPt;
           }
         }
       }
@@ -1483,7 +1482,6 @@ export function QuoteManagement() {
           y -= contentHeight;
           if (remainingHeight > 0) {
             pdf.addPage();
-            y = marginPt;
           }
         }
       }
