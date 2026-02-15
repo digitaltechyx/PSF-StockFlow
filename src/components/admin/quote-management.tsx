@@ -288,6 +288,8 @@ export function QuoteManagement() {
     return btoa(binary);
   };
   const quoteTemplateRef = useRef<HTMLDivElement | null>(null);
+  const quoteContentRef = useRef<HTMLDivElement | null>(null);
+  const quoteFooterRef = useRef<HTMLDivElement | null>(null);
   const quotesQuery = useMemo(
     () => query(collection(db, "quotes"), orderBy("createdAt", "desc")),
     []
@@ -982,43 +984,50 @@ export function QuoteManagement() {
   };
 
   const generateQuotePdfFile = async (reference: string) => {
-    if (!quoteTemplateRef.current) return null;
+    if (!quoteContentRef.current || !quoteFooterRef.current) return null;
     setIsPrintMode(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const canvas = await html2canvas(quoteTemplateRef.current, {
+      const contentCanvas = await html2canvas(quoteContentRef.current, {
         backgroundColor: "#ffffff",
         scale: 2,
         useCORS: true,
       });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const footerCanvas = await html2canvas(quoteFooterRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
       });
+      const contentImgData = contentCanvas.toDataURL("image/png");
+      const footerImgData = footerCanvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const marginPt = 40; /* ~14mm print margin */
+      const marginPt = 40;
       const contentWidth = pageWidth - 2 * marginPt;
       const contentHeight = pageHeight - 2 * marginPt;
-      const imgWidth = contentWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const contentImgWidth = contentWidth;
+      const contentImgHeight = (contentCanvas.height * contentImgWidth) / contentCanvas.width;
       let y = marginPt;
 
-      if (imgHeight <= contentHeight) {
-        pdf.addImage(imgData, "PNG", marginPt, marginPt, imgWidth, imgHeight);
+      if (contentImgHeight <= contentHeight) {
+        pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentImgWidth, contentImgHeight);
       } else {
-        let remainingHeight = imgHeight;
+        let remainingHeight = contentImgHeight;
         while (remainingHeight > 0) {
-          pdf.addImage(imgData, "PNG", marginPt, y, imgWidth, imgHeight);
+          pdf.addImage(contentImgData, "PNG", marginPt, y, contentImgWidth, contentImgHeight);
           remainingHeight -= contentHeight;
           y -= contentHeight;
-          if (remainingHeight > 0) {
-            pdf.addPage();
-          }
+          if (remainingHeight > 0) pdf.addPage();
         }
       }
+
+      pdf.addPage();
+      const footerImgWidth = contentWidth;
+      const footerImgHeight = (footerCanvas.height * footerImgWidth) / footerCanvas.width;
+      const footerY = marginPt;
+      pdf.addImage(footerImgData, "PNG", marginPt, footerY, footerImgWidth, footerImgHeight);
+
       const pdfBlob = pdf.output("blob");
       return new File([pdfBlob], `${reference || "quotation"}.pdf`, { type: "application/pdf" });
     } finally {
@@ -1448,43 +1457,49 @@ export function QuoteManagement() {
   };
 
   const handleDownloadPdf = async () => {
-    if (!quoteTemplateRef.current) return;
+    if (!quoteContentRef.current || !quoteFooterRef.current) return;
     setIsPrintMode(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const canvas = await html2canvas(quoteTemplateRef.current, {
+      const contentCanvas = await html2canvas(quoteContentRef.current, {
         backgroundColor: "#ffffff",
         scale: 2,
         useCORS: true,
       });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const footerCanvas = await html2canvas(quoteFooterRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
       });
+      const contentImgData = contentCanvas.toDataURL("image/png");
+      const footerImgData = footerCanvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const marginPt = 40;
       const contentWidth = pageWidth - 2 * marginPt;
       const contentHeight = pageHeight - 2 * marginPt;
-      const imgWidth = contentWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const contentImgWidth = contentWidth;
+      const contentImgHeight = (contentCanvas.height * contentImgWidth) / contentCanvas.width;
       let y = marginPt;
 
-      if (imgHeight <= contentHeight) {
-        pdf.addImage(imgData, "PNG", marginPt, marginPt, imgWidth, imgHeight);
+      if (contentImgHeight <= contentHeight) {
+        pdf.addImage(contentImgData, "PNG", marginPt, marginPt, contentImgWidth, contentImgHeight);
       } else {
-        let remainingHeight = imgHeight;
+        let remainingHeight = contentImgHeight;
         while (remainingHeight > 0) {
-          pdf.addImage(imgData, "PNG", marginPt, y, imgWidth, imgHeight);
+          pdf.addImage(contentImgData, "PNG", marginPt, y, contentImgWidth, contentImgHeight);
           remainingHeight -= contentHeight;
           y -= contentHeight;
-          if (remainingHeight > 0) {
-            pdf.addPage();
-          }
+          if (remainingHeight > 0) pdf.addPage();
         }
       }
+
+      pdf.addPage();
+      const footerImgWidth = contentWidth;
+      const footerImgHeight = (footerCanvas.height * footerImgWidth) / footerCanvas.width;
+      pdf.addImage(footerImgData, "PNG", marginPt, marginPt, footerImgWidth, footerImgHeight);
+
       pdf.save(`${formData.reference || "quotation"}.pdf`);
     } catch (error) {
       console.error("Failed to generate PDF:", error);
@@ -2464,6 +2479,7 @@ export function QuoteManagement() {
                   isPrintMode && "pb-24"
                 )}
               >
+                <div ref={quoteContentRef}>
                 {isPrintMode && (
                   <div className="border-b border-amber-300 pb-3 mb-2">
                     <p className="text-xs font-semibold text-amber-800">Prep Services FBA — Sales Quotation</p>
@@ -2891,8 +2907,13 @@ export function QuoteManagement() {
                   )}
                 </div>
 
+                {isPrintMode && (
+                  <div className="min-h-[120px]" aria-hidden />
+                )}
+                </div>
+
                 {isPrintMode ? (
-                  <div className="border-t border-amber-300 pt-4 mt-2 pb-2">
+                  <div ref={quoteFooterRef} className="border-t border-amber-300 pt-4 mt-2 pb-2">
                     <div className="grid gap-4 md:grid-cols-2 text-sm mb-3">
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Prepared By</p>
@@ -2912,9 +2933,6 @@ export function QuoteManagement() {
                     <p className="text-xs text-center text-amber-700">Thank you for your business.</p>
                   </div>
                 ) : null}
-                {isPrintMode && (
-                  <div className="min-h-[280px]" aria-hidden />
-                )}
                 {!isPrintMode && (
                   <>
                     <div className="grid gap-4 md:grid-cols-2 text-sm">
