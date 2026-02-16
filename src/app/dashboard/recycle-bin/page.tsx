@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { RotateCcw, Search, X, Calendar, Plus, Loader2 } from "lucide-react";
+import { RotateCcw, Search, X, Calendar, Plus, Loader2, Clock, CheckCircle, XCircle, FileStack } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
 
@@ -22,6 +22,7 @@ export default function RecycleBinPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [recycleDateFilter, setRecycleDateFilter] = useState<string>("all");
+  const [recycleStatusFilter, setRecycleStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [recycleSearch, setRecycleSearch] = useState("");
   const [recyclePage, setRecyclePage] = useState(1);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
@@ -87,6 +88,11 @@ export default function RecycleBinPage() {
     }
   };
 
+  const pendingCount = disposeRequests.filter((r) => r.status === "pending").length;
+  const approvedCount = disposeRequests.filter((r) => r.status === "approved").length;
+  const rejectedCount = disposeRequests.filter((r) => r.status === "rejected").length;
+  const totalCount = disposeRequests.length;
+
   const filteredDisposeRequests = disposeRequests.filter((req) => {
     const searchLower = recycleSearch.toLowerCase();
     const matchesSearch =
@@ -95,7 +101,9 @@ export default function RecycleBinPage() {
       (req.reason && req.reason.toLowerCase().includes(searchLower));
     const reqDateMs = getRequestDate(req);
     const matchesDate = !reqDateMs ? true : matchesDateFilter({ seconds: reqDateMs / 1000 }, recycleDateFilter);
-    return matchesSearch && matchesDate;
+    const matchesStatus =
+      recycleStatusFilter === "all" || req.status === recycleStatusFilter;
+    return matchesSearch && matchesDate && matchesStatus;
   });
 
   const sortedRequests = [...filteredDisposeRequests].sort((a, b) => (getRequestDate(b) ?? 0) - (getRequestDate(a) ?? 0));
@@ -232,6 +240,106 @@ export default function RecycleBinPage() {
           </div>
         </CardHeader>
         <CardContent className="p-6">
+          {/* Stat cards */}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => { setRecycleStatusFilter("pending"); setRecyclePage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && (setRecycleStatusFilter("pending"), setRecyclePage(1))}
+              className="border-2 border-amber-200/50 bg-gradient-to-br from-amber-50 to-orange-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-amber-900">Pending</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shadow-md">
+                  <Clock className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {requestsLoading ? (
+                  <div className="h-8 w-12 bg-muted animate-pulse rounded" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-amber-900">{pendingCount}</div>
+                    <p className="text-xs text-amber-700 mt-1">Awaiting review</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => { setRecycleStatusFilter("approved"); setRecyclePage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && (setRecycleStatusFilter("approved"), setRecyclePage(1))}
+              className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-green-900">Approved</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center shadow-md">
+                  <CheckCircle className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {requestsLoading ? (
+                  <div className="h-8 w-12 bg-muted animate-pulse rounded" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-green-900">{approvedCount}</div>
+                    <p className="text-xs text-green-700 mt-1">Disposed</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => { setRecycleStatusFilter("rejected"); setRecyclePage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && (setRecycleStatusFilter("rejected"), setRecyclePage(1))}
+              className="border-2 border-red-200/50 bg-gradient-to-br from-red-50 to-red-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-red-900">Rejected</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-red-500 flex items-center justify-center shadow-md">
+                  <XCircle className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {requestsLoading ? (
+                  <div className="h-8 w-12 bg-muted animate-pulse rounded" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-red-900">{rejectedCount}</div>
+                    <p className="text-xs text-red-700 mt-1">Not approved</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => { setRecycleStatusFilter("all"); setRecyclePage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && (setRecycleStatusFilter("all"), setRecyclePage(1))}
+              className="border-2 border-slate-200/50 bg-gradient-to-br from-slate-50 to-slate-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-slate-900">Total</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-slate-500 flex items-center justify-center shadow-md">
+                  <FileStack className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {requestsLoading ? (
+                  <div className="h-8 w-12 bg-muted animate-pulse rounded" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-slate-900">{totalCount}</div>
+                    <p className="text-xs text-slate-700 mt-1">All requests</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-4 mb-6 pb-6 border-b">
             <div className="flex-1">

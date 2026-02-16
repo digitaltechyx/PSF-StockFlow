@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, Eye, Loader2, RotateCcw, Plus } from "lucide-react";
+import { Check, X, Eye, Loader2, RotateCcw, Plus, Clock, CheckCircle, XCircle, FileStack } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function formatDate(date: DisposeRequest["requestedAt"]) {
@@ -79,6 +79,11 @@ export function DisposeRequestsManagement({
     const match = requests.find((r: DisposeRequest) => r.id === initialRequestId);
     if (match) setSelectedRequest(match);
   }, [initialRequestId, requests]);
+
+  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  const approvedCount = requests.filter((r) => r.status === "approved").length;
+  const rejectedCount = requests.filter((r) => r.status === "rejected").length;
+  const totalCount = requests.length;
 
   const filteredRequests = useMemo(() => {
     let list = statusFilter === "all" ? requests : requests.filter((r) => r.status === statusFilter);
@@ -291,6 +296,106 @@ export function DisposeRequestsManagement({
           <CardDescription>Approve to remove quantity from inventory (moved to disposed); reject with optional feedback.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Stat cards */}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => setStatusFilter("pending")}
+              onKeyDown={(e) => e.key === "Enter" && setStatusFilter("pending")}
+              className="border-2 border-amber-200/50 bg-gradient-to-br from-amber-50 to-orange-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-amber-900">Pending</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shadow-md">
+                  <Clock className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-amber-900">{pendingCount}</div>
+                    <p className="text-xs text-amber-700 mt-1">Awaiting review</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => setStatusFilter("approved")}
+              onKeyDown={(e) => e.key === "Enter" && setStatusFilter("approved")}
+              className="border-2 border-green-200/50 bg-gradient-to-br from-green-50 to-green-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-green-900">Approved</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center shadow-md">
+                  <CheckCircle className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-green-900">{approvedCount}</div>
+                    <p className="text-xs text-green-700 mt-1">Disposed</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => setStatusFilter("rejected")}
+              onKeyDown={(e) => e.key === "Enter" && setStatusFilter("rejected")}
+              className="border-2 border-red-200/50 bg-gradient-to-br from-red-50 to-red-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-red-900">Rejected</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-red-500 flex items-center justify-center shadow-md">
+                  <XCircle className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-red-900">{rejectedCount}</div>
+                    <p className="text-xs text-red-700 mt-1">Not approved</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => setStatusFilter("all")}
+              onKeyDown={(e) => e.key === "Enter" && setStatusFilter("all")}
+              className="border-2 border-slate-200/50 bg-gradient-to-br from-slate-50 to-slate-100/50 shadow-md cursor-pointer transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-slate-900">Total</CardTitle>
+                <div className="h-10 w-10 rounded-full bg-slate-500 flex items-center justify-center shadow-md">
+                  <FileStack className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-slate-900">{totalCount}</div>
+                    <p className="text-xs text-slate-700 mt-1">All requests</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs text-muted-foreground">Status</Label>
