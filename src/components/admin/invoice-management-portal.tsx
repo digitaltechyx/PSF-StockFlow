@@ -66,7 +66,7 @@ type ExternalInvoiceStatus =
 
 type PaymentMethod = "Zelle" | "ACH" | "Wire" | "Other";
 
-type InvoiceEmailLogType = "invoice_sent" | "overdue" | "second_reminder" | "payment_confirmation" | "resend";
+type InvoiceEmailLogType = "invoice_sent" | "reminder_24h" | "overdue" | "second_reminder" | "payment_confirmation" | "resend";
 interface InvoiceEmailLogEntry {
   id: string;
   to: string;
@@ -881,6 +881,100 @@ Prep Services FBA Team`;
     }
   }, [user, logInvoiceEmail]);
 
+  const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
+  const getSentAtMs = (invoice: ExternalInvoice): number | null => {
+    const s = invoice.sentAt;
+    if (!s) return null;
+    try {
+      let date: Date;
+      if (typeof (s as any)?.toDate === "function") date = (s as any).toDate();
+      else if (typeof s === "string") date = new Date(s);
+      else if (typeof (s as any)?.seconds === "number") date = new Date((s as any).seconds * 1000);
+      else date = new Date(s as any);
+      return Number.isFinite(date.getTime()) ? date.getTime() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const send24HourReminder = useCallback(
+    async (invoice: ExternalInvoice) => {
+      if (!user || !invoice.clientEmail) {
+        console.warn(`Cannot send 24h reminder for invoice ${invoice.invoiceNumber}: missing user or client email`);
+        return;
+      }
+      try {
+        const idToken = await user.getIdToken();
+        const headers: HeadersInit = { Authorization: `Bearer ${idToken}` };
+        const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+        const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+        if (vercelBypass) headers["x-vercel-protection-bypass"] = vercelBypass;
+
+        const dueDateStr = invoice.dueDate
+          ? (() => {
+              try {
+                const d = new Date(invoice.dueDate);
+                return Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : invoice.dueDate;
+              } catch {
+                return invoice.dueDate;
+              }
+            })()
+          : "the due date";
+
+        const reminder24hMessage = `Hi,
+
+We sent you an invoice (${invoice.invoiceNumber}) 24 hours ago. This is a friendly reminder to complete payment by ${dueDateStr} to avoid a $19 late fee.
+
+If you've already paid, please disregard this message. If you have any questions, we're here to help.
+
+Best regards,
+Prep Services FBA Team`;
+
+        const subject = `Reminder: Invoice ${invoice.invoiceNumber} – payment due`;
+
+        if (externalEmailApi) {
+          const res = await fetch(externalEmailApi, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: invoice.clientEmail.trim(),
+              subject,
+              message: reminder24hMessage,
+              attachments: [],
+            }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+        } else {
+          const payload = new FormData();
+          payload.append("to", invoice.clientEmail.trim());
+          payload.append("subject", subject);
+          payload.append("message", reminder24hMessage);
+          const apiUrl = vercelBypass
+            ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+            : "/api/email/send";
+          const res = await fetch(apiUrl, { method: "POST", headers, body: payload });
+          if (!res.ok) throw new Error(await res.text());
+        }
+
+        await updateDoc(doc(db, "external_invoices", invoice.id), {
+          reminderSentAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        await logInvoiceEmail({
+          to: invoice.clientEmail.trim(),
+          subject,
+          type: "reminder_24h",
+          invoiceNumber: invoice.invoiceNumber,
+          clientName: invoice.clientName,
+        });
+        console.log(`24h reminder sent for invoice ${invoice.invoiceNumber}`);
+      } catch (error) {
+        console.error(`Failed to send 24h reminder for invoice ${invoice.invoiceNumber}:`, error);
+      }
+    },
+    [user, logInvoiceEmail]
+  );
+
   const sendPaymentConfirmationEmail = useCallback(
     async (
       invoice: ExternalInvoice,
@@ -1046,13 +1140,32 @@ Prep Services FBA Team`;
   }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
 
   // Automatically apply late fee when invoice becomes overdue and send email.
-  // Throttled to run at most once per 15 minutes to avoid sending hundreds of duplicate
-  // emails when the effect re-runs on every Firestore snapshot (invoices change).
+  // SAFEGUARDS so 566-duplicate-email bug cannot happen again:
+  // 1. Throttle: run at most once per 15 minutes (effect re-runs on every Firestore snapshot).
+  // 2. Running lock: skip if a run is already in progress (overdueWorkflowRunningRef).
+  // 3. Fully paid: isFullyPaidInvoice() excludes paid/cancelled/disputed and amountPaid >= total.
+  // 4. Sent flags: reminderSentAt, lateFeeEmailSentAt and secondOverdueReminderSentAt ensure at most 1 of each per invoice.
   useEffect(() => {
     if (!invoices.length || loading || !user) return;
     const now = Date.now();
     if (overdueWorkflowRunningRef.current) return;
     if (now - lastOverdueWorkflowRunRef.current < OVERDUE_WORKFLOW_THROTTLE_MS) return;
+
+    const send24HourReminders = async () => {
+      const needReminder = invoices.filter(
+        (invoice) =>
+          !isFullyPaidInvoice(invoice) &&
+          (invoice.status === "sent" || invoice.status === "partially_paid") &&
+          !invoice.reminderSentAt &&
+          (() => {
+            const sentMs = getSentAtMs(invoice);
+            return sentMs != null && now - sentMs >= REMINDER_24H_MS;
+          })()
+      );
+      for (const invoice of needReminder) {
+        await send24HourReminder(invoice);
+      }
+    };
 
     const applyLateFeeToOverdue = async () => {
       const overdueWithoutLateFee = invoices.filter(
@@ -1125,13 +1238,14 @@ Prep Services FBA Team`;
     lastOverdueWorkflowRunRef.current = now;
     (async () => {
       try {
+        await send24HourReminders();
         await applyLateFeeToOverdue();
         await sendSecondOverdueReminders();
       } finally {
         overdueWorkflowRunningRef.current = false;
       }
     })();
-  }, [invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder]);
+  }, [invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder, send24HourReminder]);
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
     try {
@@ -3455,13 +3569,15 @@ Prep Services FBA Team`;
                               <Badge variant="secondary" className="text-xs">
                                 {log.type === "invoice_sent"
                                   ? "Invoice sent"
-                                  : log.type === "overdue"
-                                    ? "Overdue"
-                                    : log.type === "second_reminder"
-                                      ? "Final reminder"
-                                      : log.type === "payment_confirmation"
-                                        ? "Payment confirmation"
-                                        : "Resend"}
+                                  : log.type === "reminder_24h"
+                                    ? "24h reminder"
+                                    : log.type === "overdue"
+                                      ? "Overdue"
+                                      : log.type === "second_reminder"
+                                        ? "Final reminder"
+                                        : log.type === "payment_confirmation"
+                                          ? "Payment confirmation"
+                                          : "Resend"}
                               </Badge>
                             </td>
                             <td className="p-2 max-w-[200px] truncate" title={log.subject}>
