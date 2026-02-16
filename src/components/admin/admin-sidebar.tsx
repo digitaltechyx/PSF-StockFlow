@@ -30,6 +30,7 @@ import {
   Receipt,
   ShoppingBag,
   RotateCcw,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
@@ -57,6 +58,8 @@ export function AdminSidebar() {
   const [pendingDocumentRequestsCount, setPendingDocumentRequestsCount] = useState<number>(0);
   // Pending dispose requests badge
   const [disposePendingCount, setDisposePendingCount] = useState<number>(0);
+  // Pending product returns badge
+  const [productReturnsPendingCount, setProductReturnsPendingCount] = useState<number>(0);
   useEffect(() => {
     // Don't start Firestore listeners until auth/profile is ready.
     // Starting collectionGroup listeners unauthenticated triggers permission-denied "uncaught" snapshot errors.
@@ -101,6 +104,7 @@ export function AdminSidebar() {
         if (!cancelled) {
           setPendingRequestsCount(shipmentPending + inventoryPending + productReturnPending + disposePending);
           setDisposePendingCount(disposePending);
+          setProductReturnsPendingCount(productReturnPending);
           console.log("[AdminSidebar] Document pending count (polling):", documentPending);
           setPendingDocumentRequestsCount(documentPending);
         }
@@ -109,6 +113,7 @@ export function AdminSidebar() {
           setPendingRequestsCount(0);
           setPendingDocumentRequestsCount(0);
           setDisposePendingCount(0);
+          setProductReturnsPendingCount(0);
         }
       }
     };
@@ -145,6 +150,7 @@ export function AdminSidebar() {
         setPendingRequestsCount(shipmentCount + inventoryCount + returnsCount + disposeCount);
         setPendingDocumentRequestsCount(documentCount);
         setDisposePendingCount(disposeCount);
+        setProductReturnsPendingCount(returnsCount);
       }
     };
 
@@ -272,6 +278,14 @@ export function AdminSidebar() {
       icon: FolderOpen,
       color: "text-indigo-600",
       badge: pendingDocumentRequestsCount > 0 ? pendingDocumentRequestsCount : null,
+      requiredFeature: "admin_dashboard" as const,
+    },
+    {
+      title: "Product Returns",
+      url: "/admin/dashboard/product-returns",
+      icon: Package,
+      color: "text-teal-600",
+      badge: productReturnsPendingCount > 0 ? productReturnsPendingCount : null,
       requiredFeature: "admin_dashboard" as const,
     },
     {
