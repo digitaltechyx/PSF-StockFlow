@@ -2605,6 +2605,10 @@ Prep Services FBA Team`;
                     />
                   )}
                 </div>
+
+                <p className="text-center text-amber-700 text-sm mt-6 pt-4 border-t border-amber-200/50">
+                  We appreciate the opportunity to do business with you.
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-2 justify-center invoice-print-actions">

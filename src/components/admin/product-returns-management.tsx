@@ -416,7 +416,7 @@ export function ProductReturnsManagement({
             {
               quantity: quantity,
               productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
-              sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+              sku: selectedReturn.sku || selectedReturn.newProductSku || '',
               shipDate: format(today, 'dd/MM/yyyy'),
               packaging: 'N/A',
               shipTo: shipTo || selectedReturn.additionalServices?.shippingAddress?.address || '',
@@ -430,10 +430,10 @@ export function ProductReturnsManagement({
             date: format(today, 'dd/MM/yyyy'),
             orderNumber,
             soldTo: {
-              name: selectedUser.name || 'Unknown User',
-              email: selectedUser.email || '',
-              phone: selectedUser.phone || '',
-              address: selectedUser.address || '',
+              name: selectedUser.name ?? 'Unknown User',
+              email: selectedUser.email ?? '',
+              phone: selectedUser.phone ?? '',
+              address: selectedUser.address ?? '',
             },
             fbm: 'Product Return Shipment',
             items: invoiceItems,
@@ -500,7 +500,7 @@ export function ProductReturnsManagement({
           items: [{
             quantity: quantity,
             productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
-            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || '',
             shipDate: format(today, 'dd/MM/yyyy'),
             packaging: 'N/A',
             shipTo: shipTo || selectedReturn.additionalServices?.shippingAddress?.address || '',
@@ -712,7 +712,7 @@ export function ProductReturnsManagement({
             {
               quantity: selectedReturn.receivedQuantity,
               productName: `${productName} (Return Handling)`,
-              sku: sku || undefined,
+              sku: sku || '',
               shipDate: format(today, 'dd/MM/yyyy'),
               packaging: 'N/A',
               shipTo: shipToAddress,
@@ -751,7 +751,7 @@ export function ProductReturnsManagement({
             invoiceItems.push({
               quantity: remainingQuantity,
               productName: `${productName} (Return Shipment)`,
-              sku: sku || undefined,
+              sku: sku || '',
               shipDate: format(today, 'dd/MM/yyyy'),
               packaging: 'N/A',
               shipTo: shipToAddress,
@@ -765,10 +765,10 @@ export function ProductReturnsManagement({
             date: format(today, 'dd/MM/yyyy'),
             orderNumber,
             soldTo: {
-              name: selectedUser.name || 'Unknown User',
-              email: selectedUser.email || '',
-              phone: selectedUser.phone || '',
-              address: selectedUser.address || '',
+              name: selectedUser.name ?? 'Unknown User',
+              email: selectedUser.email ?? '',
+              phone: selectedUser.phone ?? '',
+              address: selectedUser.address ?? '',
             },
             fbm: 'Product Return',
             items: invoiceItems,
@@ -839,7 +839,7 @@ export function ProductReturnsManagement({
           {
             quantity: selectedReturn.receivedQuantity,
             productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Handling)`,
-            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || '',
             shipDate: format(today, 'dd/MM/yyyy'),
             packaging: 'N/A',
             shipTo: shipToAddress,
@@ -878,7 +878,7 @@ export function ProductReturnsManagement({
           invoiceItems.push({
             quantity: remainingToShipOnClose,
             productName: `${selectedReturn.productName || selectedReturn.newProductName || "N/A"} (Return Shipment)`,
-            sku: selectedReturn.sku || selectedReturn.newProductSku || undefined,
+            sku: selectedReturn.sku || selectedReturn.newProductSku || '',
             shipDate: format(today, 'dd/MM/yyyy'),
             packaging: 'N/A',
             shipTo: shipToAddress,
