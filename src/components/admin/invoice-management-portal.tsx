@@ -271,6 +271,9 @@ export function InvoiceManagementPortal() {
 
   const invoiceTemplateRef = useRef<HTMLDivElement | null>(null);
   const [isPrintMode, setIsPrintMode] = useState(false);
+  const lastOverdueWorkflowRunRef = useRef<number>(0);
+  const overdueWorkflowRunningRef = useRef<boolean>(false);
+  const OVERDUE_WORKFLOW_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes – prevent duplicate emails
 
   const toBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);
@@ -1042,10 +1045,15 @@ Prep Services FBA Team`;
     }
   }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
 
-  // Automatically apply late fee when invoice becomes overdue and send email
+  // Automatically apply late fee when invoice becomes overdue and send email.
+  // Throttled to run at most once per 15 minutes to avoid sending hundreds of duplicate
+  // emails when the effect re-runs on every Firestore snapshot (invoices change).
   useEffect(() => {
     if (!invoices.length || loading || !user) return;
-    
+    const now = Date.now();
+    if (overdueWorkflowRunningRef.current) return;
+    if (now - lastOverdueWorkflowRunRef.current < OVERDUE_WORKFLOW_THROTTLE_MS) return;
+
     const applyLateFeeToOverdue = async () => {
       const overdueWithoutLateFee = invoices.filter(
         (invoice) =>
@@ -1113,8 +1121,16 @@ Prep Services FBA Team`;
       }
     };
 
-    applyLateFeeToOverdue();
-    sendSecondOverdueReminders();
+    overdueWorkflowRunningRef.current = true;
+    lastOverdueWorkflowRunRef.current = now;
+    (async () => {
+      try {
+        await applyLateFeeToOverdue();
+        await sendSecondOverdueReminders();
+      } finally {
+        overdueWorkflowRunningRef.current = false;
+      }
+    })();
   }, [invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder]);
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
