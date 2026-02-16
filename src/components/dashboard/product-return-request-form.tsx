@@ -289,63 +289,66 @@ export function ProductReturnRequestForm({
             }
           }
         })}
-        className="space-y-6"
+        className="space-y-6 max-w-2xl"
       >
-        <FormField
-          control={form.control}
-          name="type"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Return Type</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  value={field.value}
-                  className="flex flex-row space-x-6"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="existing" id="existing" />
-                    <Label htmlFor="existing">Existing Product Return</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="new" id="new" />
-                    <Label htmlFor="new">New Inventory Product Return</Label>
-                  </div>
-                </RadioGroup>
-              </FormControl>
-              <FormDescription>
-                Select whether you're returning an existing product from inventory or a new product
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="returnType"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>How are products coming? *</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
+        <div className="rounded-xl border border-border/50 bg-muted/20 p-5 space-y-4">
+          <FormField
+            control={form.control}
+            name="type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-base font-medium">Return Type</FormLabel>
                 <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select how products are coming" />
-                  </SelectTrigger>
+                  <RadioGroup
+                    onValueChange={field.onChange}
+                    value={field.value}
+                    className="flex flex-row gap-6 pt-2"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="existing" id="existing" className="border-2" />
+                      <Label htmlFor="existing" className="font-normal cursor-pointer">Existing Product Return</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="new" id="new" className="border-2" />
+                      <Label htmlFor="new" className="font-normal cursor-pointer">New Inventory Product Return</Label>
+                    </div>
+                  </RadioGroup>
                 </FormControl>
-                <SelectContent>
-                  <SelectItem value="combine">Combine - All products coming together</SelectItem>
-                  <SelectItem value="partial">Partial - Products coming in separate batches</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                <strong>Combine:</strong> All products will arrive together in one shipment. <strong>Partial:</strong> Products will arrive in multiple separate batches over time.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+                <FormDescription className="text-muted-foreground">
+                  Select whether you're returning an existing product from inventory or a new product
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
+          <FormField
+            control={form.control}
+            name="returnType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-base font-medium">How are products coming? *</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="rounded-lg h-11">
+                      <SelectValue placeholder="Select how products are coming" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="combine">Combine - All products coming together</SelectItem>
+                    <SelectItem value="partial">Partial - Products coming in separate batches</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription className="text-muted-foreground">
+                  <strong>Combine:</strong> All products will arrive together in one shipment. <strong>Partial:</strong> Products will arrive in multiple separate batches over time.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="rounded-xl border border-border/50 bg-muted/20 p-5 space-y-4">
         {returnType === "existing" ? (
           <>
             <FormField
@@ -353,10 +356,10 @@ export function ProductReturnRequestForm({
               name="productId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Select Product</FormLabel>
+                  <FormLabel className="text-base font-medium">Select Product</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="rounded-lg h-11">
                         <SelectValue placeholder="Select a product from inventory" />
                       </SelectTrigger>
                     </FormControl>
@@ -386,13 +389,13 @@ export function ProductReturnRequestForm({
                   control={form.control}
                   name="productName"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Product Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} readOnly />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                <FormItem>
+                  <FormLabel className="text-base font-medium">Product Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} readOnly className="rounded-lg h-11 bg-muted/50" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
                   )}
                 />
 
@@ -400,13 +403,13 @@ export function ProductReturnRequestForm({
                   control={form.control}
                   name="sku"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>SKU</FormLabel>
-                      <FormControl>
-                        <Input {...field} readOnly value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                <FormItem>
+                  <FormLabel className="text-base font-medium">SKU</FormLabel>
+                  <FormControl>
+                    <Input {...field} readOnly value={field.value || ""} className="rounded-lg h-11 bg-muted/50" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
                   )}
                 />
               </>
@@ -419,9 +422,9 @@ export function ProductReturnRequestForm({
               name="newProductName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product Name</FormLabel>
+                  <FormLabel className="text-base font-medium">Product Name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Enter product name" />
+                    <Input {...field} placeholder="Enter product name" className="rounded-lg h-11" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -433,9 +436,9 @@ export function ProductReturnRequestForm({
               name="newProductSku"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>SKU (Optional)</FormLabel>
+                  <FormLabel className="text-base font-medium">SKU (Optional)</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Enter SKU" />
+                    <Input {...field} placeholder="Enter SKU" className="rounded-lg h-11" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -449,11 +452,11 @@ export function ProductReturnRequestForm({
           name="requestedQuantity"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Requested Quantity</FormLabel>
+              <FormLabel className="text-base font-medium">Requested Quantity</FormLabel>
               <FormControl>
-                <Input type="number" {...field} placeholder="Enter quantity" />
+                <Input type="number" {...field} placeholder="Enter quantity" className="rounded-lg h-11" />
               </FormControl>
-              <FormDescription>
+              <FormDescription className="text-muted-foreground">
                 Total number of products you want to return
               </FormDescription>
               <FormMessage />
@@ -466,20 +469,22 @@ export function ProductReturnRequestForm({
           name="userRemarks"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Remarks (Optional)</FormLabel>
+              <FormLabel className="text-base font-medium">Remarks (Optional)</FormLabel>
               <FormControl>
                 <Textarea
                   {...field}
                   placeholder="Add any additional notes or instructions"
                   rows={3}
+                  className="rounded-lg resize-y"
                 />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
+        </div>
 
-        <div className="space-y-4 border-t pt-4">
+        <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-5">
           <h3 className="text-lg font-semibold">Additional Services (Optional)</h3>
           <p className="text-sm text-muted-foreground">
             Select which services you need. Admin will add quantities and calculate pricing during approval.
@@ -645,7 +650,7 @@ export function ProductReturnRequestForm({
           )}
         </div>
 
-        <Button type="submit" disabled={isSubmitting} className="w-full">
+        <Button type="submit" disabled={isSubmitting} className="w-full rounded-lg h-11 bg-orange-600 hover:bg-orange-700 font-medium">
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Submit Return Request
         </Button>

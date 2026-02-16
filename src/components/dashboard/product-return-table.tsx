@@ -39,26 +39,35 @@ function formatDate(date: ProductReturn["createdAt"]) {
 }
 
 function getStatusBadge(status: ProductReturn["status"]) {
+  const base = "flex items-center gap-1.5 w-fit rounded-md text-xs font-medium";
   switch (status) {
     case "pending":
-      return <Badge variant="outline" className="flex items-center gap-1 w-fit"><Clock className="h-3 w-3" />Pending</Badge>;
+      return <Badge variant="outline" className={`${base} border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-300`}><Clock className="h-3 w-3" />Pending</Badge>;
     case "approved":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit"><CheckCircle className="h-3 w-3" />Approved</Badge>;
+      return <Badge variant="default" className={`${base} bg-blue-500 hover:bg-blue-600`}><CheckCircle className="h-3 w-3" />Approved</Badge>;
     case "in_progress":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-blue-500"><Package className="h-3 w-3" />In Progress</Badge>;
+      return <Badge variant="default" className={`${base} bg-blue-500 hover:bg-blue-600`}><Package className="h-3 w-3" />In Progress</Badge>;
     case "closed":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-green-500"><CheckCircle className="h-3 w-3" />Closed</Badge>;
+      return <Badge variant="default" className={`${base} bg-green-600 hover:bg-green-700`}><CheckCircle className="h-3 w-3" />Closed</Badge>;
     case "cancelled":
-      return <Badge variant="destructive" className="flex items-center gap-1 w-fit"><XCircle className="h-3 w-3" />Cancelled</Badge>;
+      return <Badge variant="destructive" className={base}><XCircle className="h-3 w-3" />Cancelled</Badge>;
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline" className={base}>{status}</Badge>;
   }
 }
 
-export function ProductReturnTable() {
+export interface ProductReturnTableProps {
+  /** When provided, filter is controlled by parent (e.g. from stat card on page). */
+  statusFilter?: string;
+  onStatusFilterChange?: (value: string) => void;
+}
+
+export function ProductReturnTable({ statusFilter: statusFilterProp, onStatusFilterChange }: ProductReturnTableProps = {}) {
   const { userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [internalStatusFilter, setInternalStatusFilter] = useState("all");
+  const statusFilter = statusFilterProp ?? internalStatusFilter;
+  const setStatusFilter = onStatusFilterChange ?? setInternalStatusFilter;
   const [selectedReturn, setSelectedReturn] = useState<ProductReturn | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
@@ -107,29 +116,29 @@ export function ProductReturnTable() {
     setIsDetailsOpen(true);
   };
 
-  const pendingCount = returns.filter((r) => r.status === "pending").length;
-  const inProgressCount = returns.filter((r) => r.status === "in_progress").length;
-  const closedCount = returns.filter((r) => r.status === "closed").length;
-
   if (loading) {
-    return <div className="text-center py-8">Loading...</div>;
+    return (
+      <div className="rounded-xl border-2 border-border/50 bg-muted/20 p-8 text-center">
+        <p className="text-muted-foreground font-medium">Loading returns...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by product name or SKU..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 rounded-lg h-10"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px] rounded-lg h-10 border-border/80">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
@@ -143,41 +152,29 @@ export function ProductReturnTable() {
         </Select>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Pending</div>
-          <div className="text-2xl font-bold">{pendingCount}</div>
-        </div>
-        <div className="border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">In Progress</div>
-          <div className="text-2xl font-bold">{inProgressCount}</div>
-        </div>
-        <div className="border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Closed</div>
-          <div className="text-2xl font-bold">{closedCount}</div>
-        </div>
-      </div>
-
       {/* Table */}
-      <div className="border rounded-lg">
+      <div className="rounded-xl border-2 border-border/50 overflow-hidden bg-card">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Product</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Quantity</TableHead>
-              <TableHead>Progress</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Actions</TableHead>
+            <TableRow className="hover:bg-transparent border-b bg-muted/40">
+              <TableHead className="font-semibold">Product</TableHead>
+              <TableHead className="font-semibold">Type</TableHead>
+              <TableHead className="font-semibold">Quantity</TableHead>
+              <TableHead className="font-semibold">Progress</TableHead>
+              <TableHead className="font-semibold">Status</TableHead>
+              <TableHead className="font-semibold">Created</TableHead>
+              <TableHead className="font-semibold text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredReturns.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  No return requests found
+                <TableCell colSpan={7} className="text-center py-12">
+                  <Package className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
+                  <p className="text-muted-foreground font-medium">No return requests found</p>
+                  <p className="text-sm text-muted-foreground/80 mt-1">
+                    {statusFilter !== "all" ? "Try changing the status filter." : "Create a new request to get started."}
+                  </p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -189,42 +186,43 @@ export function ProductReturnTable() {
                 const hasShipping = returnItem.additionalServices?.shipToAddress;
 
                 return (
-                  <TableRow key={returnItem.id}>
+                  <TableRow key={returnItem.id} className="transition-colors hover:bg-muted/50">
                     <TableCell className="font-medium">{productName}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
+                      <Badge variant="outline" className="rounded-md text-xs font-medium">
                         {returnItem.type === "existing" ? "Existing" : "New"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="tabular-nums">
                       {returnItem.receivedQuantity} / {returnItem.requestedQuantity}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-muted rounded-full h-2">
+                      <div className="flex items-center gap-2 min-w-[90px]">
+                        <div className="flex-1 bg-muted rounded-full h-2.5 overflow-hidden">
                           <div
-                            className="bg-primary h-2 rounded-full transition-all"
+                            className="bg-orange-500 h-2.5 rounded-full transition-all duration-300"
                             style={{ width: `${Math.min(progress, 100)}%` }}
                           />
                         </div>
-                        <span className="text-sm text-muted-foreground w-12 text-right">
+                        <span className="text-sm text-muted-foreground w-10 text-right tabular-nums">
                           {progress}%
                         </span>
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(returnItem.status)}</TableCell>
-                    <TableCell>{formatDate(returnItem.createdAt)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
+                    <TableCell className="text-muted-foreground text-sm">{formatDate(returnItem.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-8 w-8 p-0 rounded-md"
                           onClick={() => handleViewDetails(returnItem)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
                         {hasShipping && returnItem.status === "closed" && (
-                          <Badge variant="outline" className="flex items-center gap-1">
+                          <Badge variant="outline" className="flex items-center gap-1 rounded-md text-xs">
                             <Truck className="h-3 w-3" />
                             Shipped
                           </Badge>
