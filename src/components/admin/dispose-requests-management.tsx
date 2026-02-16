@@ -5,7 +5,7 @@ import type { DisposeRequest, UserProfile, InventoryItem } from "@/types";
 import { useCollection } from "@/hooks/use-collection";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, collection, deleteDoc, runTransaction, Timestamp } from "firebase/firestore";
+import { doc, updateDoc, collection, addDoc, runTransaction, Timestamp, serverTimestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import {
   Card,
@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, Eye, Loader2, RotateCcw } from "lucide-react";
+import { Check, X, Eye, Loader2, RotateCcw, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function formatDate(date: DisposeRequest["requestedAt"]) {
@@ -61,6 +61,11 @@ export function DisposeRequestsManagement({
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [rejectFeedback, setRejectFeedback] = useState("");
+  const [addDisposeDialogOpen, setAddDisposeDialogOpen] = useState(false);
+  const [behalfProductId, setBehalfProductId] = useState("");
+  const [behalfQuantity, setBehalfQuantity] = useState("");
+  const [behalfReason, setBehalfReason] = useState("");
+  const [behalfSubmitting, setBehalfSubmitting] = useState(false);
 
   const userId = selectedUser?.uid;
   const isValidUserId = userId && typeof userId === "string" && userId.trim() !== "";
@@ -212,6 +217,59 @@ export function DisposeRequestsManagement({
     }
   };
 
+  const inStockInventory = useMemo(() => inventory.filter((item) => item.quantity > 0), [inventory]);
+  const behalfProduct = inStockInventory.find((p) => p.id === behalfProductId);
+  const behalfMaxQty = behalfProduct?.quantity ?? 0;
+
+  const handleSubmitDisposeOnBehalf = async () => {
+    if (!userId || !behalfProduct) return;
+    const qty = parseInt(behalfQuantity, 10);
+    if (!Number.isFinite(qty) || qty < 1 || qty > behalfMaxQty) {
+      toast({
+        variant: "destructive",
+        title: "Invalid quantity",
+        description: `Enter a quantity between 1 and ${behalfMaxQty}.`,
+      });
+      return;
+    }
+    if (!behalfReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Reason required",
+        description: "Please enter a reason for this dispose request.",
+      });
+      return;
+    }
+    setBehalfSubmitting(true);
+    try {
+      const ref = collection(db, `users/${userId}/disposeRequests`);
+      await addDoc(ref, {
+        productId: behalfProduct.id,
+        productName: behalfProduct.productName,
+        quantity: qty,
+        reason: behalfReason.trim(),
+        status: "pending",
+        requestedAt: serverTimestamp(),
+      });
+      toast({
+        title: "Dispose request created",
+        description: `Request for ${qty} unit(s) of "${behalfProduct.productName}" has been added for ${selectedUser?.name || "user"}.`,
+      });
+      setAddDisposeDialogOpen(false);
+      setBehalfProductId("");
+      setBehalfQuantity("");
+      setBehalfReason("");
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Failed to create request",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setBehalfSubmitting(false);
+    }
+  };
+
   if (!isValidUserId) {
     return (
       <Card>
@@ -233,19 +291,25 @@ export function DisposeRequestsManagement({
           <CardDescription>Approve to remove quantity from inventory (moved to disposed); reject with optional feedback.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs text-muted-foreground">Status</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setAddDisposeDialogOpen(true)} className="shrink-0">
+              <Plus className="h-4 w-4 mr-1" />
+              Request dispose for user
+            </Button>
           </div>
 
           {loading ? (
@@ -334,6 +398,78 @@ export function DisposeRequestsManagement({
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addDisposeDialogOpen} onOpenChange={setAddDisposeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request dispose for {selectedUser?.name}</DialogTitle>
+            <DialogDescription>
+              Create a dispose request on behalf of this user. It will appear in their Disposed Inventory and in Notifications for processing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Product</Label>
+              <Select
+                value={behalfProductId}
+                onValueChange={(v) => {
+                  setBehalfProductId(v);
+                  setBehalfQuantity("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inStockInventory.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.productName} (qty: {p.quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {inStockInventory.length === 0 && (
+                <p className="text-xs text-muted-foreground">No in-stock products for this user.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                min={1}
+                max={behalfMaxQty}
+                value={behalfQuantity}
+                onChange={(e) => setBehalfQuantity(e.target.value)}
+                placeholder={behalfMaxQty ? `1–${behalfMaxQty}` : "0"}
+              />
+              {behalfMaxQty > 0 && (
+                <p className="text-xs text-muted-foreground">Max: {behalfMaxQty} units</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea
+                value={behalfReason}
+                onChange={(e) => setBehalfReason(e.target.value)}
+                placeholder="Why is this quantity being disposed?"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setAddDisposeDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitDisposeOnBehalf}
+                disabled={!behalfProductId || !behalfQuantity || !behalfReason.trim() || behalfSubmitting || inStockInventory.length === 0}
+              >
+                {behalfSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Submit request
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
