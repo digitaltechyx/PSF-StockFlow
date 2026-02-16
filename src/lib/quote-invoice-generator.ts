@@ -240,5 +240,17 @@ export async function generateQuoteInvoicePdfBlob(data: QuoteInvoiceData): Promi
     });
   }
 
+  // Appreciation line at bottom of invoice
+  y += 10;
+  if (y > contentMaxY) {
+    doc.addPage();
+    y = margin;
+  }
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(180, 83, 9); // amber-700
+  doc.text("We appreciate the opportunity to do business with you.", pageWidth / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+
   return doc.output("blob");
 }
