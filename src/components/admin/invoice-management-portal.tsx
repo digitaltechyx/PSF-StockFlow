@@ -66,6 +66,18 @@ type ExternalInvoiceStatus =
 
 type PaymentMethod = "Zelle" | "ACH" | "Wire" | "Other";
 
+type InvoiceEmailLogType = "invoice_sent" | "overdue" | "second_reminder" | "payment_confirmation" | "resend";
+interface InvoiceEmailLogEntry {
+  id: string;
+  to: string;
+  subject?: string;
+  type: InvoiceEmailLogType;
+  invoiceNumber?: string;
+  clientName?: string;
+  sentAt: any;
+  sentBy?: string;
+}
+
 interface ExternalInvoiceItem {
   id: string;
   description: string;
@@ -213,9 +225,7 @@ const toNumber = (value: string | number) => {
 };
 
 const isOverdueInvoice = (invoice: ExternalInvoice) => {
-  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "disputed") {
-    return false;
-  }
+  if (isFullyPaidInvoice(invoice)) return false;
   const due = new Date(invoice.dueDate);
   const today = new Date();
   due.setHours(0, 0, 0, 0);
@@ -245,6 +255,14 @@ const getGrandTotalWithLateFee = (invoice: ExternalInvoice): number => {
   const effectiveTotal = getEffectiveTotal(invoice);
   const lateFee = Number(invoice.lateFee ?? 0);
   return Number((effectiveTotal + lateFee).toFixed(2));
+};
+
+/** True when invoice is fully paid — workflow (overdue, late fee, reminders) must not run. */
+const isFullyPaidInvoice = (invoice: ExternalInvoice): boolean => {
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "disputed") return true;
+  const total = getGrandTotalWithLateFee(invoice);
+  const paid = Number(invoice.amountPaid ?? 0);
+  return paid >= total;
 };
 
 export function InvoiceManagementPortal() {
@@ -280,6 +298,15 @@ export function InvoiceManagementPortal() {
     [deleteLogs]
   );
 
+  const emailLogsQuery = useMemo(
+    () => query(collection(db, "external_invoice_email_logs"), orderBy("sentAt", "desc")),
+    []
+  );
+  const { data: emailLogs } = useCollection<InvoiceEmailLogEntry>(
+    "external_invoice_email_logs",
+    emailLogsQuery
+  );
+
   const [activeTab, setActiveTab] = useState("new");
   const [formData, setFormData] = useState(createEmptyInvoiceForm());
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -287,6 +314,7 @@ export function InvoiceManagementPortal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [emailLogSearch, setEmailLogSearch] = useState("");
 
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailForm, setEmailForm] = useState({
@@ -445,6 +473,34 @@ export function InvoiceManagementPortal() {
   const overdueInvoices = filteredInvoices.filter((invoice) => isOverdueInvoice(invoice));
   const disputedInvoices = filteredInvoices.filter((invoice) => invoice.status === "disputed");
   const cancelledInvoices = filteredInvoices.filter((invoice) => invoice.status === "cancelled");
+
+  const filteredEmailLogs = useMemo(() => {
+    const list = emailLogs ?? [];
+    const q = emailLogSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (log) =>
+        (log.to ?? "").toLowerCase().includes(q) ||
+        (log.clientName ?? "").toLowerCase().includes(q) ||
+        (log.invoiceNumber ?? "").toLowerCase().includes(q) ||
+        (log.subject ?? "").toLowerCase().includes(q)
+    );
+  }, [emailLogs, emailLogSearch]);
+
+  const emailLogsByRecipient = useMemo(() => {
+    const map = new Map<string, { count: number; logs: InvoiceEmailLogEntry[] }>();
+    filteredEmailLogs.forEach((log) => {
+      const to = log.to || "—";
+      const existing = map.get(to);
+      if (existing) {
+        existing.count += 1;
+        existing.logs.push(log);
+      } else {
+        map.set(to, { count: 1, logs: [log] });
+      }
+    });
+    return Array.from(map.entries()).map(([to, data]) => ({ to, ...data }));
+  }, [filteredEmailLogs]);
 
   const filteredDeleteLogs = useMemo(() => {
     let list = nonRestoredDeleteLogs;
@@ -623,6 +679,24 @@ export function InvoiceManagementPortal() {
   };
   };
 
+  const logInvoiceEmail = useCallback(
+    async (payload: {
+      to: string;
+      subject?: string;
+      type: InvoiceEmailLogType;
+      invoiceNumber?: string;
+      clientName?: string;
+    }) => {
+      if (!user) return;
+      await addDoc(collection(db, "external_invoice_email_logs"), {
+        ...payload,
+        sentAt: serverTimestamp(),
+        sentBy: user.email ?? user.uid ?? "",
+      });
+    },
+    [user]
+  );
+
   const sendOverdueEmail = useCallback(async (invoice: ExternalInvoice) => {
     if (!user || !invoice.clientEmail) {
       console.warn(`Cannot send overdue email for invoice ${invoice.invoiceNumber}: missing user or client email`);
@@ -708,11 +782,18 @@ Prep Services FBA Team`;
         updatedAt: serverTimestamp(),
       });
 
+      await logInvoiceEmail({
+        to: invoice.clientEmail.trim(),
+        subject: `Late Fee Added - Invoice ${invoice.invoiceNumber}`,
+        type: "overdue",
+        invoiceNumber: invoice.invoiceNumber,
+        clientName: invoice.clientName,
+      });
       console.log(`Overdue email sent for invoice ${invoice.invoiceNumber}`);
     } catch (error) {
       console.error(`Failed to send overdue email for invoice ${invoice.invoiceNumber}:`, error);
     }
-  }, [user, toBase64, buildInvoicePdfData]);
+  }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
 
   const sendSecondOverdueReminder = useCallback(async (invoice: ExternalInvoice) => {
     if (!user || !invoice.clientEmail) {
@@ -784,11 +865,18 @@ Prep Services FBA Team`;
         updatedAt: serverTimestamp(),
       });
 
+      await logInvoiceEmail({
+        to: invoice.clientEmail.trim(),
+        subject: `Final Reminder: Unpaid Invoice ${invoice.invoiceNumber}`,
+        type: "second_reminder",
+        invoiceNumber: invoice.invoiceNumber,
+        clientName: invoice.clientName,
+      });
       console.log(`Second overdue reminder sent for invoice ${invoice.invoiceNumber}`);
     } catch (error) {
       console.error(`Failed to send second overdue reminder for invoice ${invoice.invoiceNumber}:`, error);
     }
-  }, [user]);
+  }, [user, logInvoiceEmail]);
 
   const sendPaymentConfirmationEmail = useCallback(
     async (
@@ -846,13 +934,20 @@ Prep Services FBA Team`;
           const res = await fetch(apiUrl, { method: "POST", headers, body: payload });
           if (!res.ok) throw new Error(await res.text());
         }
+        await logInvoiceEmail({
+          to,
+          subject,
+          type: "payment_confirmation",
+          invoiceNumber: invNum,
+          clientName: invoice.clientName,
+        });
         console.log(`Payment confirmation email sent for invoice ${invNum} (${newStatus})`);
       } catch (err) {
         console.error(`Failed to send payment confirmation email for invoice ${invNum}:`, err);
         throw err;
       }
     },
-    [user]
+    [user, logInvoiceEmail]
   );
 
   const LATE_FEE_REMOVED_MESSAGE = `Hi,
@@ -925,6 +1020,13 @@ Prep Services FBA Team`;
           throw new Error(errText || `Email API returned ${response.status}`);
         }
       }
+      await logInvoiceEmail({
+        to: invoice.clientEmail.trim(),
+        subject: `Updated Invoice - ${invoice.invoiceNumber}`,
+        type: "resend",
+        invoiceNumber: invoice.invoiceNumber,
+        clientName: invoice.clientName,
+      });
       toast({ title: "Invoice resent with updated totals." });
       setDiscountDialogOpen(false);
       setDiscountInvoice(null);
@@ -938,7 +1040,7 @@ Prep Services FBA Team`;
     } finally {
       setIsSendingResend(false);
     }
-  }, [user, toBase64, buildInvoicePdfData]);
+  }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
 
   // Automatically apply late fee when invoice becomes overdue and send email
   useEffect(() => {
@@ -946,8 +1048,9 @@ Prep Services FBA Team`;
     
     const applyLateFeeToOverdue = async () => {
       const overdueWithoutLateFee = invoices.filter(
-        (invoice) => 
-          isOverdueInvoice(invoice) && 
+        (invoice) =>
+          !isFullyPaidInvoice(invoice) &&
+          isOverdueInvoice(invoice) &&
           (!invoice.lateFee || invoice.lateFee === 0) &&
           !invoice.lateFeeEmailSentAt // Only send email if not already sent
       );
@@ -994,9 +1097,10 @@ Prep Services FBA Team`;
     };
 
     const sendSecondOverdueReminders = async () => {
-      // Second time overdue: already has late fee + first email sent, but second reminder not sent
+      // Second time overdue: already has late fee + first email sent, but second reminder not sent (exclude fully paid)
       const overdueSecondTime = invoices.filter(
         (invoice) =>
+          !isFullyPaidInvoice(invoice) &&
           isOverdueInvoice(invoice) &&
           invoice.lateFee != null &&
           invoice.lateFee > 0 &&
@@ -1364,6 +1468,13 @@ Prep Services FBA Team`;
         updatedAt: serverTimestamp(),
       });
 
+      await logInvoiceEmail({
+        to: emailForm.to.trim(),
+        subject: emailForm.subject.trim(),
+        type: "invoice_sent",
+        invoiceNumber: activeEmailInvoice.invoiceNumber,
+        clientName: activeEmailInvoice.clientName,
+      });
       toast({ title: "Invoice send." });
       setEmailDialogOpen(false);
       setActiveEmailInvoice(null);
@@ -2171,6 +2282,13 @@ Prep Services FBA Team`;
             >
               <Receipt className="shrink-0" />
               Receipts
+            </TabsTrigger>
+            <TabsTrigger
+              value="email_log"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Mail className="shrink-0" />
+              Email Log
             </TabsTrigger>
           </TabsList>
         </div>
@@ -3257,6 +3375,102 @@ Prep Services FBA Team`;
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">No payment history yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="email_log" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5" />
+                Email Log
+              </CardTitle>
+              <CardDescription>
+                All emails sent from the invoice portal — by recipient and date.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by email, client name, or invoice..."
+                    value={emailLogSearch}
+                    onChange={(e) => setEmailLogSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+              {loading && !emailLogs?.length ? (
+                <p className="text-sm text-muted-foreground">Loading email log…</p>
+              ) : filteredEmailLogs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No email logs yet.</p>
+              ) : (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Total emails sent</span>
+                      <div className="text-xl font-semibold">{filteredEmailLogs.length}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Recipients</span>
+                      <div className="text-xl font-semibold">{emailLogsByRecipient.length}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left p-2 font-medium">To</th>
+                          <th className="text-left p-2 font-medium">Client</th>
+                          <th className="text-left p-2 font-medium">Type</th>
+                          <th className="text-left p-2 font-medium">Invoice / Subject</th>
+                          <th className="text-left p-2 font-medium">Sent</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredEmailLogs.map((log) => (
+                          <tr key={log.id} className="border-b last:border-0 hover:bg-muted/30">
+                            <td className="p-2">{log.to || "—"}</td>
+                            <td className="p-2">{log.clientName || "—"}</td>
+                            <td className="p-2">
+                              <Badge variant="secondary" className="text-xs">
+                                {log.type === "invoice_sent"
+                                  ? "Invoice sent"
+                                  : log.type === "overdue"
+                                    ? "Overdue"
+                                    : log.type === "second_reminder"
+                                      ? "Final reminder"
+                                      : log.type === "payment_confirmation"
+                                        ? "Payment confirmation"
+                                        : "Resend"}
+                              </Badge>
+                            </td>
+                            <td className="p-2 max-w-[200px] truncate" title={log.subject}>
+                              {log.invoiceNumber || log.subject || "—"}
+                            </td>
+                            <td className="p-2 text-muted-foreground">{formatDate(log.sentAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Emails per recipient</p>
+                    <ul className="space-y-1.5 text-sm">
+                      {emailLogsByRecipient
+                        .sort((a, b) => b.count - a.count)
+                        .map(({ to, count }) => (
+                          <li key={to} className="flex justify-between items-center">
+                            <span className="truncate">{to}</span>
+                            <Badge variant="outline">{count}</Badge>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
