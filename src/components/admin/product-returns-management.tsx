@@ -56,6 +56,7 @@ import {
   XCircle,
   CheckCircle,
   Clock,
+  FileStack,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -76,19 +77,20 @@ function formatDate(date: ProductReturn["createdAt"]) {
 }
 
 function getStatusBadge(status: ProductReturn["status"]) {
+  const base = "flex items-center gap-1.5 w-fit rounded-md text-xs font-medium";
   switch (status) {
     case "pending":
-      return <Badge variant="outline" className="flex items-center gap-1 w-fit"><Clock className="h-3 w-3" />Pending</Badge>;
+      return <Badge variant="outline" className={`${base} border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-300`}><Clock className="h-3 w-3" />Pending</Badge>;
     case "approved":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit"><CheckCircle className="h-3 w-3" />Approved</Badge>;
+      return <Badge variant="default" className={`${base} bg-blue-500 hover:bg-blue-600`}><CheckCircle className="h-3 w-3" />Approved</Badge>;
     case "in_progress":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-blue-500"><Package className="h-3 w-3" />In Progress</Badge>;
+      return <Badge variant="default" className={`${base} bg-blue-500 hover:bg-blue-600`}><Package className="h-3 w-3" />In Progress</Badge>;
     case "closed":
-      return <Badge variant="default" className="flex items-center gap-1 w-fit bg-green-500"><CheckCircle className="h-3 w-3" />Closed</Badge>;
+      return <Badge variant="default" className={`${base} bg-green-600 hover:bg-green-700`}><CheckCircle className="h-3 w-3" />Closed</Badge>;
     case "cancelled":
-      return <Badge variant="destructive" className="flex items-center gap-1 w-fit"><XCircle className="h-3 w-3" />Cancelled</Badge>;
+      return <Badge variant="destructive" className={base}><XCircle className="h-3 w-3" />Cancelled</Badge>;
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline" className={base}>{status}</Badge>;
   }
 }
 
@@ -199,6 +201,7 @@ export function ProductReturnsManagement({
   const pendingCount = returns.filter((r) => r.status === "pending").length;
   const inProgressCount = returns.filter((r) => r.status === "in_progress").length;
   const closedCount = returns.filter((r) => r.status === "closed").length;
+  const totalCount = returns.length;
 
   const handleApprove = async (returnItem: ProductReturn) => {
     if (!selectedUser || !adminProfile) return;
@@ -978,203 +981,295 @@ export function ProductReturnsManagement({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+    <div className="space-y-5">
+      {/* Stat cards */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusFilter("pending")}
+          onKeyDown={(e) => e.key === "Enter" && setStatusFilter("pending")}
+          className="border-2 border-amber-200/60 bg-gradient-to-br from-amber-50 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/20 shadow-md cursor-pointer transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 rounded-xl overflow-hidden"
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-amber-900 dark:text-amber-100">Pending</CardTitle>
+            <div className="h-9 w-9 rounded-lg bg-amber-500 flex items-center justify-center shadow-sm">
+              <Clock className="h-4 w-4 text-white" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{pendingCount}</div>
+            {loading ? (
+              <Skeleton className="h-8 w-12 rounded" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">{pendingCount}</div>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">Awaiting review</p>
+              </>
+            )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusFilter("in_progress")}
+          onKeyDown={(e) => e.key === "Enter" && setStatusFilter("in_progress")}
+          className="border-2 border-blue-200/60 bg-gradient-to-br from-blue-50 to-sky-50/50 dark:from-blue-950/20 dark:to-sky-950/20 shadow-md cursor-pointer transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 rounded-xl overflow-hidden"
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-blue-900 dark:text-blue-100">In Progress</CardTitle>
+            <div className="h-9 w-9 rounded-lg bg-blue-500 flex items-center justify-center shadow-sm">
+              <Package className="h-4 w-4 text-white" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
+            {loading ? (
+              <Skeleton className="h-8 w-12 rounded" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{inProgressCount}</div>
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">Receiving / processing</p>
+              </>
+            )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Closed</CardTitle>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusFilter("closed")}
+          onKeyDown={(e) => e.key === "Enter" && setStatusFilter("closed")}
+          className="border-2 border-green-200/60 bg-gradient-to-br from-green-50 to-emerald-50/50 dark:from-green-950/20 dark:to-emerald-950/20 shadow-md cursor-pointer transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 rounded-xl overflow-hidden"
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-green-900 dark:text-green-100">Closed</CardTitle>
+            <div className="h-9 w-9 rounded-lg bg-green-500 flex items-center justify-center shadow-sm">
+              <CheckCircle className="h-4 w-4 text-white" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{closedCount}</div>
+            {loading ? (
+              <Skeleton className="h-8 w-12 rounded" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-green-900 dark:text-green-100">{closedCount}</div>
+                <p className="text-xs text-green-700 dark:text-green-300 mt-0.5">Completed</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusFilter("all")}
+          onKeyDown={(e) => e.key === "Enter" && setStatusFilter("all")}
+          className="border-2 border-slate-200/60 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-900/30 dark:to-slate-800/30 shadow-md cursor-pointer transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 rounded-xl overflow-hidden"
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-900 dark:text-slate-100">Total</CardTitle>
+            <div className="h-9 w-9 rounded-lg bg-slate-500 flex items-center justify-center shadow-sm">
+              <FileStack className="h-4 w-4 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-12 rounded" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{totalCount}</div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">All returns</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Filter */}
-      <div className="flex items-center gap-4">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Filter + Submit */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground">Status</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px] rounded-lg h-10 border-border/80">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          size="sm"
+          className="rounded-lg bg-teal-600 hover:bg-teal-700 text-white shadow-sm font-medium"
+          onClick={() => setAddReturnDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Submit return for user
+        </Button>
       </div>
 
       {/* Returns Table */}
-      <Card>
-        <CardHeader>
+      <Card className="rounded-xl border-2 border-border/50 shadow-sm overflow-hidden">
+        <CardHeader className="bg-muted/30 border-b pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <CardTitle>Product Returns</CardTitle>
-              <CardDescription>
-                Manage product return requests from {selectedUser.name}
+              <CardTitle className="text-lg font-semibold tracking-tight">Returns from {selectedUser.name}</CardTitle>
+              <CardDescription className="mt-1">
+                View and process product return requests
               </CardDescription>
             </div>
-            <Button
-              size="sm"
-              className="w-full sm:w-auto shrink-0"
-              onClick={() => setAddReturnDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Submit return for user
-            </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {error && (
-            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <div className="mx-6 mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-xl">
               <p className="text-sm text-destructive font-medium">Error loading returns:</p>
               <p className="text-xs text-destructive/80 mt-1">{error.message}</p>
             </div>
           )}
           {loading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
+            <div className="p-6 space-y-3">
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
             </div>
           ) : filteredReturns.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No product return requests found.</p>
+            <div className="text-center py-12 px-6">
+              <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+              <p className="text-muted-foreground font-medium">No product return requests found</p>
+              <p className="text-sm text-muted-foreground/80 mt-1">
+                {statusFilter !== "all" ? "Try changing the status filter." : "Submit a return for this user to get started."}
+              </p>
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Progress</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedReturns.map((returnItem) => {
-                    const progress = returnItem.requestedQuantity > 0
-                      ? Math.round((returnItem.receivedQuantity / returnItem.requestedQuantity) * 100)
-                      : 0;
-                    const productName = returnItem.productName || returnItem.newProductName || "N/A";
-                    const canUpdate = returnItem.status === "approved" || returnItem.status === "in_progress";
-                    const canClose = canUpdate && returnItem.receivedQuantity > 0;
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent border-b bg-muted/40">
+                      <TableHead className="font-semibold">Product</TableHead>
+                      <TableHead className="font-semibold">Type</TableHead>
+                      <TableHead className="font-semibold">Quantity</TableHead>
+                      <TableHead className="font-semibold">Progress</TableHead>
+                      <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">Created</TableHead>
+                      <TableHead className="font-semibold text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedReturns.map((returnItem) => {
+                      const progress = returnItem.requestedQuantity > 0
+                        ? Math.round((returnItem.receivedQuantity / returnItem.requestedQuantity) * 100)
+                        : 0;
+                      const productName = returnItem.productName || returnItem.newProductName || "N/A";
+                      const canUpdate = returnItem.status === "approved" || returnItem.status === "in_progress";
+                      const canClose = canUpdate && returnItem.receivedQuantity > 0;
 
-                    return (
-                      <TableRow key={returnItem.id}>
-                        <TableCell className="font-medium">{productName}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant="outline">
-                              {returnItem.type === "existing" ? "Existing" : "New"}
-                            </Badge>
-                            {returnItem.type === "existing" && returnItem.returnType && (
-                              <Badge variant="secondary" className="text-xs">
-                                {returnItem.returnType === "combine" ? "Combine" : "Partial"}
+                      return (
+                        <TableRow
+                          key={returnItem.id}
+                          className="transition-colors hover:bg-muted/50"
+                        >
+                          <TableCell className="font-medium">{productName}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              <Badge variant="outline" className="rounded-md text-xs font-medium">
+                                {returnItem.type === "existing" ? "Existing" : "New"}
                               </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {returnItem.receivedQuantity} / {returnItem.requestedQuantity}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-muted rounded-full h-2">
-                              <div
-                                className="bg-primary h-2 rounded-full transition-all"
-                                style={{ width: `${Math.min(progress, 100)}%` }}
-                              />
+                              {returnItem.type === "existing" && returnItem.returnType && (
+                                <Badge variant="secondary" className="rounded-md text-xs">
+                                  {returnItem.returnType === "combine" ? "Combine" : "Partial"}
+                                </Badge>
+                              )}
                             </div>
-                            <span className="text-sm text-muted-foreground w-12 text-right">
-                              {progress}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(returnItem.status)}</TableCell>
-                        <TableCell>{formatDate(returnItem.createdAt)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewDetails(returnItem)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {canUpdate && (
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {returnItem.receivedQuantity} / {returnItem.requestedQuantity}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <div className="flex-1 bg-muted rounded-full h-2.5 overflow-hidden">
+                                <div
+                                  className="bg-teal-500 h-2.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${Math.min(progress, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-sm text-muted-foreground w-10 text-right tabular-nums">
+                                {progress}%
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(returnItem.status)}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{formatDate(returnItem.createdAt)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
-                                onClick={() => handleOpenUpdateQuantity(returnItem)}
+                                className="h-8 w-8 p-0 rounded-md"
+                                onClick={() => handleViewDetails(returnItem)}
                               >
-                                <Plus className="h-4 w-4 mr-1" />
-                                Add Qty
+                                <Eye className="h-4 w-4" />
                               </Button>
-                            )}
-                            {canClose && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleOpenCloseDialog(returnItem)}
-                              >
-                                <CheckCircle className="h-4 w-4 mr-1" />
-                                Close
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              
-              {/* Pagination Controls */}
+                              {canUpdate && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 rounded-md text-xs"
+                                  onClick={() => handleOpenUpdateQuantity(returnItem)}
+                                >
+                                  <Plus className="h-3.5 w-3.5 mr-1" />
+                                  Add Qty
+                                </Button>
+                              )}
+                              {canClose && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="h-8 rounded-md text-xs bg-teal-600 hover:bg-teal-700"
+                                  onClick={() => handleOpenCloseDialog(returnItem)}
+                                >
+                                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                  Close
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t bg-muted/20">
                   <div className="text-sm text-muted-foreground">
-                    Showing {startIndex + 1} to {Math.min(endIndex, filteredReturns.length)} of {filteredReturns.length} returns
+                    Showing <span className="font-medium text-foreground">{startIndex + 1}</span> to{" "}
+                    <span className="font-medium text-foreground">{Math.min(endIndex, filteredReturns.length)}</span> of{" "}
+                    <span className="font-medium text-foreground">{filteredReturns.length}</span> returns
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
+                      className="rounded-lg"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
                     >
                       Previous
                     </Button>
-                    <span className="text-sm">
+                    <span className="text-sm px-2 tabular-nums">
                       Page {currentPage} of {totalPages}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
+                      className="rounded-lg"
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
                     >
