@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +18,11 @@ function stripUndefined<T>(value: T): T {
   return value;
 }
 
-/** GET: Test that the webhook URL is reachable (e.g. open in browser). Shopify sends POST only. */
+/** GET: Confirm webhook URL is reachable. Shopify sends POST only. Required for App Store automated checks. */
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: "Shopify webhook endpoint. POST only (inventory_levels/update, products/update, products/delete, orders/create, orders/updated).",
+    message: "Shopify webhook endpoint. Mandatory compliance webhooks (customers/data_request, customers/redact, shop/redact) are supported. All POST requests are verified with X-Shopify-Hmac-Sha256 before processing. Returns 401 if HMAC invalid, 200 on success.",
   });
 }
 
@@ -48,8 +48,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing headers" }, { status: 401 });
   }
 
+  // App Store requirement: verify webhooks with HMAC (X-Shopify-Hmac-Sha256 = base64(SHA256-HMAC(raw body, client secret))).
   const computed = createHmac("sha256", secret).update(Buffer.from(rawBytes)).digest("base64");
-  if (computed !== hmac) {
+  const computedBuf = Buffer.from(computed, "utf8");
+  const hmacBuf = Buffer.from(hmac, "utf8");
+  if (computedBuf.length !== hmacBuf.length || !timingSafeEqual(computedBuf, hmacBuf)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
