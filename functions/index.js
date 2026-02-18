@@ -147,29 +147,157 @@ exports.sendQuoteEmail = functions.https.onRequest(async (req, res) => {
   });
 });
 
-// ---- Invoice reminder: send reminder email 24 hours after invoice was sent ----
-const INVOICE_REMINDER_MESSAGE = `Hi,
+// ---- Server-side invoice automation (works even if no browser is open) ----
+const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
+const LATE_FEE_AMOUNT = 19;
+const PROCESSING_LOCK_MS = 30 * 60 * 1000;
 
-Just a friendly reminder regarding your pending invoice. As per our standard terms, payment is required before work begins, and services may be temporarily paused if an invoice remains unpaid.
+const REMINDER_24H_MESSAGE = (invoiceNumber, dueDateStr) => `Hi,
 
-If you've already taken care of this, please feel free to ignore this message. Otherwise, we'd appreciate your support in completing the payment at your convenience. If you have any questions or concerns, we're always happy to help.
+We sent you an invoice (${invoiceNumber}) 24 hours ago. This is a friendly reminder to complete payment by ${dueDateStr} to avoid a $19 late fee.
 
-Thank you for your cooperation.
+If you've already paid, please disregard this message. If you have any questions, we're here to help.
 
 Best regards,
 Prep Services FBA Team`;
 
-const REMINDER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours after invoice was sent
+const OVERDUE_LATE_FEE_MESSAGE = `Hi,
 
-function getSentAtDate(sentAt) {
-  if (!sentAt) return null;
-  if (sentAt.toDate && typeof sentAt.toDate === "function") return sentAt.toDate();
-  if (typeof sentAt === "string" || typeof sentAt === "number") return new Date(sentAt);
+We'd like to inform you that a late fee of $19 has been added to your invoice, as payment was not received by the due date, in accordance with our billing terms.
+
+If payment has already been made, please disregard this message. Otherwise, we kindly request you to complete the payment at your earliest convenience so services can continue without interruption.
+
+If you have any questions or believe this was applied in error, feel free to reach out—we're happy to assist.
+
+Thank you for your understanding.
+
+Best regards,
+Prep Services FBA Team`;
+
+const FINAL_REMINDER_MESSAGE = `Hi,
+
+Our records show that your invoice is still unpaid, even after the late fee was applied. As per our terms, services—including receiving, prep, storage, and shipments—may be temporarily paused until payment is completed.
+
+We'd really appreciate it if you could settle the outstanding balance as soon as possible to avoid any disruption. If you've already made the payment, please disregard this message.
+
+And of course, if you have any questions or concerns, we're always here to help.
+
+Thank you for your attention.
+
+Best regards,
+Prep Services FBA Team`;
+
+function asDate(value) {
+  if (!value) return null;
+  if (value.toDate && typeof value.toDate === "function") return value.toDate();
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  if (typeof value === "object" && typeof value.seconds === "number") {
+    const d = new Date(value.seconds * 1000);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
   return null;
 }
 
-// Run every 1 hour so reminders go out after the 24-hour mark
-exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async (context) => {
+function parseDateOnlyLocal(value) {
+  if (!value || typeof value !== "string") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function formatDateInputLocal(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getDiscountAmount(invoice) {
+  if (!invoice || !invoice.discountType || invoice.discountValue == null) return 0;
+  const total = Number(invoice.total || 0);
+  const lateFee = Number(invoice.lateFee || 0);
+  const baseTotal = lateFee > 0 ? total + lateFee : total;
+  if (invoice.discountType === "percentage") {
+    return Number((baseTotal * (Number(invoice.discountValue) / 100)).toFixed(2));
+  }
+  return Math.min(Number(invoice.discountValue || 0), baseTotal);
+}
+
+function getGrandTotalWithLateFee(invoice) {
+  const total = Number(invoice.total || 0);
+  const discount = getDiscountAmount(invoice);
+  const lateFee = Number(invoice.lateFee || 0);
+  return Number((total - discount + lateFee).toFixed(2));
+}
+
+function isFullyPaidInvoice(invoice) {
+  if (!invoice) return true;
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "disputed") return true;
+  const paid = Number(invoice.amountPaid || 0);
+  const grandTotal = getGrandTotalWithLateFee(invoice);
+  return paid >= grandTotal;
+}
+
+function isOverdueInvoice(invoice) {
+  if (!invoice || isFullyPaidInvoice(invoice)) return false;
+  if (!(invoice.status === "sent" || invoice.status === "partially_paid")) return false;
+  const due = parseDateOnlyLocal(invoice.dueDate);
+  if (!due) return false;
+  const today = new Date();
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
+async function writeEmailLog(db, payload) {
+  await db.collection("external_invoice_email_logs").add({
+    to: payload.to || "",
+    subject: payload.subject || "",
+    type: payload.type || "",
+    invoiceNumber: payload.invoiceNumber || "",
+    clientName: payload.clientName || "",
+    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentBy: "system:invoice_automation",
+  });
+}
+
+async function sendPlainEmail(transporter, smtpFromName, smtpFrom, to, subject, message) {
+  await transporter.sendMail({
+    from: smtpFromName ? `${smtpFromName} <${smtpFrom}>` : smtpFrom,
+    to,
+    subject,
+    text: message || "",
+  });
+}
+
+async function tryAcquireInvoiceLock(db, docRef, lockField, sentField) {
+  const now = Date.now();
+  const lockUntil = new Date(now + PROCESSING_LOCK_MS);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    if (data[sentField]) return null;
+    const lockedUntilDate = asDate(data[lockField]);
+    if (lockedUntilDate && lockedUntilDate.getTime() > now) return null;
+    tx.update(docRef, { [lockField]: lockUntil });
+    return { id: snap.id, ...data };
+  });
+}
+
+async function clearInvoiceLock(docRef, lockField) {
+  await docRef.update({
+    [lockField]: admin.firestore.FieldValue.delete(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+// Run every 1 hour so automation works without browser sessions.
+exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async () => {
   const db = admin.firestore();
   const now = Date.now();
 
@@ -208,35 +336,139 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
   sentSnap.docs.forEach((doc) => candidates.push({ id: doc.id, ...doc.data() }));
   const partiallyPaidSnap = await db.collection("external_invoices").where("status", "==", "partially_paid").get();
   partiallyPaidSnap.docs.forEach((doc) => candidates.push({ id: doc.id, ...doc.data() }));
+  const dedupedById = new Map();
+  for (const inv of candidates) dedupedById.set(inv.id, inv);
+  const invoices = Array.from(dedupedById.values()).filter((inv) => !isFullyPaidInvoice(inv));
 
-  const toRemind = candidates.filter((inv) => {
-    if (inv.reminderSentAt) return false;
-    const sentAt = getSentAtDate(inv.sentAt);
-    if (!sentAt || isNaN(sentAt.getTime())) return false;
-    return now - sentAt.getTime() >= REMINDER_AGE_MS;
-  });
+  // 1) 24h reminder (once)
+  for (const inv of invoices) {
+    const sentAt = asDate(inv.sentAt);
+    if (inv.reminderSentAt) continue;
+    if (!sentAt || !Number.isFinite(sentAt.getTime()) || now - sentAt.getTime() < REMINDER_24H_MS) continue;
+    const to = String(inv.clientEmail || "").trim();
+    if (!to) continue;
+    const docRef = db.collection("external_invoices").doc(inv.id);
 
-  for (const inv of toRemind) {
-    const to = (inv.clientEmail || "").trim();
-    if (!to) {
-      console.warn("Invoice reminder skipped (no email):", inv.id, inv.invoiceNumber);
-      continue;
-    }
-    const subject = `Reminder: Pending Invoice ${inv.invoiceNumber || inv.id}`;
     try {
-      await transporter.sendMail({
-        from: smtpFromName ? `${smtpFromName} <${smtpFrom}>` : smtpFrom,
-        to,
-        subject,
-        text: INVOICE_REMINDER_MESSAGE,
-      });
-      await db.collection("external_invoices").doc(inv.id).update({
+      const lockedInv = await tryAcquireInvoiceLock(db, docRef, "reminderProcessingUntil", "reminderSentAt");
+      if (!lockedInv) continue;
+      const dueDate = parseDateOnlyLocal(lockedInv.dueDate) || new Date();
+      const dueDateStr = dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const subject = `Reminder: Invoice ${lockedInv.invoiceNumber || lockedInv.id} - payment due`;
+      const message = REMINDER_24H_MESSAGE(lockedInv.invoiceNumber || lockedInv.id, dueDateStr);
+      await sendPlainEmail(transporter, smtpFromName, smtpFrom, to, subject, message);
+      await docRef.update({
         reminderSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        reminderProcessingUntil: admin.firestore.FieldValue.delete(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      console.log("Invoice reminder sent:", inv.id, inv.invoiceNumber, to);
+      await writeEmailLog(db, {
+        to,
+        subject,
+        type: "reminder_24h",
+        invoiceNumber: lockedInv.invoiceNumber || "",
+        clientName: lockedInv.clientName || "",
+      });
+      console.log("24h reminder sent:", lockedInv.id, lockedInv.invoiceNumber, to);
     } catch (err) {
-      console.error("Invoice reminder send failed:", inv.id, err);
+      console.error("24h reminder send failed:", inv.id, err);
+      try {
+        await clearInvoiceLock(docRef, "reminderProcessingUntil");
+      } catch (_) {}
+    }
+  }
+
+  // Refresh invoice snapshots after reminder updates.
+  const sentSnap2 = await db.collection("external_invoices").where("status", "==", "sent").get();
+  const partiallyPaidSnap2 = await db.collection("external_invoices").where("status", "==", "partially_paid").get();
+  const currentById = new Map();
+  sentSnap2.docs.forEach((doc) => currentById.set(doc.id, { id: doc.id, ...doc.data() }));
+  partiallyPaidSnap2.docs.forEach((doc) => currentById.set(doc.id, { id: doc.id, ...doc.data() }));
+  const currentInvoices = Array.from(currentById.values()).filter((inv) => !isFullyPaidInvoice(inv));
+
+  // 2) First overdue: apply late fee + overdue email (once)
+  for (const inv of currentInvoices) {
+    if (!isOverdueInvoice(inv)) continue;
+    if ((Number(inv.lateFee || 0) > 0) || inv.lateFeeEmailSentAt) continue;
+    const to = String(inv.clientEmail || "").trim();
+    if (!to) continue;
+    const docRef = db.collection("external_invoices").doc(inv.id);
+    try {
+      const lockedInv = await tryAcquireInvoiceLock(db, docRef, "overdueProcessingUntil", "lateFeeEmailSentAt");
+      if (!lockedInv) continue;
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const invoiceDateStr = formatDateInputLocal(today);
+      const dueDateStr = formatDateInputLocal(tomorrow);
+      const updatedInv = { ...lockedInv, lateFee: LATE_FEE_AMOUNT, invoiceDate: invoiceDateStr, dueDate: dueDateStr };
+      const amountPaid = Number(lockedInv.amountPaid || 0);
+      const newOutstanding = Math.max(0, Number((getGrandTotalWithLateFee(updatedInv) - amountPaid).toFixed(2)));
+      const subject = `Late Fee Added - Invoice ${lockedInv.invoiceNumber || lockedInv.id}`;
+      await sendPlainEmail(transporter, smtpFromName, smtpFrom, to, subject, OVERDUE_LATE_FEE_MESSAGE);
+      await docRef.update({
+        lateFee: LATE_FEE_AMOUNT,
+        invoiceDate: invoiceDateStr,
+        dueDate: dueDateStr,
+        outstandingBalance: newOutstanding,
+        lateFeeEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        overdueProcessingUntil: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await writeEmailLog(db, {
+        to,
+        subject,
+        type: "overdue",
+        invoiceNumber: lockedInv.invoiceNumber || "",
+        clientName: lockedInv.clientName || "",
+      });
+      console.log("Overdue late-fee email sent:", lockedInv.id, lockedInv.invoiceNumber, to);
+    } catch (err) {
+      console.error("Overdue late-fee email failed:", inv.id, err);
+      try {
+        await clearInvoiceLock(docRef, "overdueProcessingUntil");
+      } catch (_) {}
+    }
+  }
+
+  // Refresh invoice snapshots after overdue updates.
+  const sentSnap3 = await db.collection("external_invoices").where("status", "==", "sent").get();
+  const partiallyPaidSnap3 = await db.collection("external_invoices").where("status", "==", "partially_paid").get();
+  const currentById2 = new Map();
+  sentSnap3.docs.forEach((doc) => currentById2.set(doc.id, { id: doc.id, ...doc.data() }));
+  partiallyPaidSnap3.docs.forEach((doc) => currentById2.set(doc.id, { id: doc.id, ...doc.data() }));
+  const currentInvoices2 = Array.from(currentById2.values()).filter((inv) => !isFullyPaidInvoice(inv));
+
+  // 3) Second overdue: final reminder (once, even if late fee was later removed)
+  for (const inv of currentInvoices2) {
+    if (!isOverdueInvoice(inv)) continue;
+    if (!inv.lateFeeEmailSentAt || inv.secondOverdueReminderSentAt) continue;
+    const to = String(inv.clientEmail || "").trim();
+    if (!to) continue;
+    const docRef = db.collection("external_invoices").doc(inv.id);
+    try {
+      const lockedInv = await tryAcquireInvoiceLock(db, docRef, "finalReminderProcessingUntil", "secondOverdueReminderSentAt");
+      if (!lockedInv) continue;
+      const subject = `Final Reminder: Unpaid Invoice ${lockedInv.invoiceNumber || lockedInv.id}`;
+      await sendPlainEmail(transporter, smtpFromName, smtpFrom, to, subject, FINAL_REMINDER_MESSAGE);
+      await docRef.update({
+        secondOverdueReminderSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        finalReminderProcessingUntil: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await writeEmailLog(db, {
+        to,
+        subject,
+        type: "second_reminder",
+        invoiceNumber: lockedInv.invoiceNumber || "",
+        clientName: lockedInv.clientName || "",
+      });
+      console.log("Final reminder sent:", lockedInv.id, lockedInv.invoiceNumber, to);
+    } catch (err) {
+      console.error("Final reminder send failed:", inv.id, err);
+      try {
+        await clearInvoiceLock(docRef, "finalReminderProcessingUntil");
+      } catch (_) {}
     }
   }
 

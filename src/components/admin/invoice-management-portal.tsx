@@ -302,6 +302,7 @@ export function InvoiceManagementPortal() {
   const emailLogBackfillRunningRef = useRef<boolean>(false);
   const emailLogBackfilledKeysRef = useRef<Set<string>>(new Set());
   const OVERDUE_WORKFLOW_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes – prevent duplicate emails
+  const enableClientInvoiceAutomation = process.env.NEXT_PUBLIC_ENABLE_CLIENT_INVOICE_AUTOMATION === "true";
 
   const toBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);
@@ -1321,6 +1322,9 @@ Prep Services FBA Team`;
   // 3. Fully paid: isFullyPaidInvoice() excludes paid/cancelled/disputed and amountPaid >= total.
   // 4. Sent flags: reminderSentAt, lateFeeEmailSentAt and secondOverdueReminderSentAt ensure at most 1 of each per invoice.
   useEffect(() => {
+    // Server-side cron in Firebase Functions owns invoice automation by default.
+    // Keep this client workflow opt-in only for local debugging.
+    if (!enableClientInvoiceAutomation) return;
     if (!invoices.length || loading || !user) return;
     const now = Date.now();
     if (overdueWorkflowRunningRef.current) return;
@@ -1419,7 +1423,7 @@ Prep Services FBA Team`;
         overdueWorkflowRunningRef.current = false;
       }
     })();
-  }, [invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder, send24HourReminder]);
+  }, [enableClientInvoiceAutomation, invoices, loading, user, sendOverdueEmail, sendSecondOverdueReminder, send24HourReminder]);
 
   const downloadInvoicePdf = async (invoice: ExternalInvoice) => {
     try {
