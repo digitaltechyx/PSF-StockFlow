@@ -1393,13 +1393,12 @@ Prep Services FBA Team`;
     };
 
     const sendSecondOverdueReminders = async () => {
-      // Second time overdue: already has late fee + first email sent, but second reminder not sent (exclude fully paid)
+      // Second time overdue: first overdue email already sent, but final reminder not sent yet.
+      // This should still work even if admin later removed/changed late fee.
       const overdueSecondTime = invoices.filter(
         (invoice) =>
           !isFullyPaidInvoice(invoice) &&
           isOverdueInvoice(invoice) &&
-          invoice.lateFee != null &&
-          invoice.lateFee > 0 &&
           invoice.lateFeeEmailSentAt &&
           !invoice.secondOverdueReminderSentAt
       );
