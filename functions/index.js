@@ -300,6 +300,21 @@ async function clearInvoiceLock(docRef, lockField) {
 exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async () => {
   const db = admin.firestore();
   const now = Date.now();
+  const runMetrics = {
+    scannedInvoices: 0,
+    reminder24hEligible: 0,
+    reminder24hNoEmail: 0,
+    reminder24hSent: 0,
+    reminder24hFailed: 0,
+    overdueEligible: 0,
+    overdueNoEmail: 0,
+    overdueSent: 0,
+    overdueFailed: 0,
+    finalEligible: 0,
+    finalNoEmail: 0,
+    finalSent: 0,
+    finalFailed: 0,
+  };
 
   const smtpConfig = (functions.config() && functions.config().smtp) || {};
   const smtpHost = smtpConfig.host || process.env.SMTP_HOST;
@@ -339,14 +354,19 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
   const dedupedById = new Map();
   for (const inv of candidates) dedupedById.set(inv.id, inv);
   const invoices = Array.from(dedupedById.values()).filter((inv) => !isFullyPaidInvoice(inv));
+  runMetrics.scannedInvoices = invoices.length;
 
   // 1) 24h reminder (once)
   for (const inv of invoices) {
     const sentAt = asDate(inv.sentAt);
     if (inv.reminderSentAt) continue;
     if (!sentAt || !Number.isFinite(sentAt.getTime()) || now - sentAt.getTime() < REMINDER_24H_MS) continue;
+    runMetrics.reminder24hEligible += 1;
     const to = String(inv.clientEmail || "").trim();
-    if (!to) continue;
+    if (!to) {
+      runMetrics.reminder24hNoEmail += 1;
+      continue;
+    }
     const docRef = db.collection("external_invoices").doc(inv.id);
 
     try {
@@ -369,8 +389,10 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
         invoiceNumber: lockedInv.invoiceNumber || "",
         clientName: lockedInv.clientName || "",
       });
+      runMetrics.reminder24hSent += 1;
       console.log("24h reminder sent:", lockedInv.id, lockedInv.invoiceNumber, to);
     } catch (err) {
+      runMetrics.reminder24hFailed += 1;
       console.error("24h reminder send failed:", inv.id, err);
       try {
         await clearInvoiceLock(docRef, "reminderProcessingUntil");
@@ -390,8 +412,12 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
   for (const inv of currentInvoices) {
     if (!isOverdueInvoice(inv)) continue;
     if ((Number(inv.lateFee || 0) > 0) || inv.lateFeeEmailSentAt) continue;
+    runMetrics.overdueEligible += 1;
     const to = String(inv.clientEmail || "").trim();
-    if (!to) continue;
+    if (!to) {
+      runMetrics.overdueNoEmail += 1;
+      continue;
+    }
     const docRef = db.collection("external_invoices").doc(inv.id);
     try {
       const lockedInv = await tryAcquireInvoiceLock(db, docRef, "overdueProcessingUntil", "lateFeeEmailSentAt");
@@ -422,8 +448,10 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
         invoiceNumber: lockedInv.invoiceNumber || "",
         clientName: lockedInv.clientName || "",
       });
+      runMetrics.overdueSent += 1;
       console.log("Overdue late-fee email sent:", lockedInv.id, lockedInv.invoiceNumber, to);
     } catch (err) {
+      runMetrics.overdueFailed += 1;
       console.error("Overdue late-fee email failed:", inv.id, err);
       try {
         await clearInvoiceLock(docRef, "overdueProcessingUntil");
@@ -443,8 +471,12 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
   for (const inv of currentInvoices2) {
     if (!isOverdueInvoice(inv)) continue;
     if (!inv.lateFeeEmailSentAt || inv.secondOverdueReminderSentAt) continue;
+    runMetrics.finalEligible += 1;
     const to = String(inv.clientEmail || "").trim();
-    if (!to) continue;
+    if (!to) {
+      runMetrics.finalNoEmail += 1;
+      continue;
+    }
     const docRef = db.collection("external_invoices").doc(inv.id);
     try {
       const lockedInv = await tryAcquireInvoiceLock(db, docRef, "finalReminderProcessingUntil", "secondOverdueReminderSentAt");
@@ -463,14 +495,18 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
         invoiceNumber: lockedInv.invoiceNumber || "",
         clientName: lockedInv.clientName || "",
       });
+      runMetrics.finalSent += 1;
       console.log("Final reminder sent:", lockedInv.id, lockedInv.invoiceNumber, to);
     } catch (err) {
+      runMetrics.finalFailed += 1;
       console.error("Final reminder send failed:", inv.id, err);
       try {
         await clearInvoiceLock(docRef, "finalReminderProcessingUntil");
       } catch (_) {}
     }
   }
+
+  console.log("[Invoice automation metrics]", JSON.stringify(runMetrics));
 
   return null;
 });
