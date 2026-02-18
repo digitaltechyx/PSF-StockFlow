@@ -8,6 +8,28 @@ do the following.
 
 ---
 
+## Review requirements – does PSF StockFlow meet them?
+
+| Requirement | Status | Notes |
+|-------------|--------|--------|
+| **Authenticate immediately after install** | Met | OAuth in callback; code exchanged for token in `exchange-token`; user redirected to app UI. |
+| **Redirect to the app UI after installation** | Met | Callback redirects to `/dashboard/integrations` after success. |
+| **Use Shopify APIs** | Met | Orders, products, inventory, fulfillments, webhooks; compliance + HMAC in `webhooks/route.ts`. |
+| **Use a valid TLS/SSL certificate** | Verify | Ensure `https://dev.prepservicesfba.com` has valid cert in production. |
+| **Build apps without even minor errors** | Addressed | Compliance + HMAC fixed; fix any remaining errors before submit. |
+| **Synchronize data accurately** | Verify | Confirm order/inventory sync behavior in production. |
+| **Duplicate only authorized product information** | Met | Scopes limited to read/write products, inventory, orders, etc. |
+| **Request read_all_orders only if necessary** | Met | App uses `read_orders`, not `read_all_orders`. |
+| **Use session tokens for authentication** | N/A | Firebase + Bearer; `embedded = false`, so session tokens not required. |
+| **Include functional test credentials** | **Action** | Provide test store/login in Partner Dashboard for reviewers. |
+| **Connector: End recipient acknowledgement form** | **Action** | Complete and upload if Partners requires it. |
+| **Connector: Must not connect to third party marketplace** | Met | Connects to PSF backend only. |
+| **Connector: Indicate integrations and data transfers** | **Action** | In listing: what you connect to, what data is synced, where it goes. |
+| **App Store listing: Test credentials, demo screencast, pricing, icon, tags** | **Action** | Add in Dashboard: test credentials, demo video, pricing, icon, tags. |
+| **Use Shopify Managed Pricing or Billing API** | N/A | No in-app Shopify billing; N/A if free or you charge outside Shopify. |
+
+---
+
 ## 1. Mandatory compliance webhooks
 
 Shopify must know your app’s webhook URL for the three **mandatory** topics:

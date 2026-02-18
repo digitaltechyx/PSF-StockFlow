@@ -66,7 +66,14 @@ type ExternalInvoiceStatus =
 
 type PaymentMethod = "Zelle" | "ACH" | "Wire" | "Other";
 
-type InvoiceEmailLogType = "invoice_sent" | "reminder_24h" | "overdue" | "second_reminder" | "payment_confirmation" | "resend";
+type InvoiceEmailLogType =
+  | "invoice_sent"
+  | "reminder_24h"
+  | "overdue"
+  | "second_reminder"
+  | "payment_confirmation"
+  | "resend"
+  | "discount_update";
 interface InvoiceEmailLogEntry {
   id: string;
   to: string;
@@ -178,6 +185,24 @@ const createInvoiceNumber = () => {
   return `INV-${year}${month}-${randomNum}`;
 };
 
+const formatDateInputLocal = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const parseDateOnlyLocal = (value?: string): Date | null => {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+  return Number.isFinite(date.getTime()) ? date : null;
+};
+
 const createEmptyInvoiceForm = (): Omit<ExternalInvoice, "id"> => {
   const today = new Date();
   const due = new Date(today);
@@ -185,8 +210,8 @@ const createEmptyInvoiceForm = (): Omit<ExternalInvoice, "id"> => {
   return {
     status: "draft",
     invoiceNumber: createInvoiceNumber(),
-    invoiceDate: today.toISOString().slice(0, 10),
-    dueDate: due.toISOString().slice(0, 10),
+    invoiceDate: formatDateInputLocal(today),
+    dueDate: formatDateInputLocal(due),
     clientName: "",
     clientEmail: "",
     clientPhone: "",
@@ -226,7 +251,8 @@ const toNumber = (value: string | number) => {
 
 const isOverdueInvoice = (invoice: ExternalInvoice) => {
   if (isFullyPaidInvoice(invoice)) return false;
-  const due = new Date(invoice.dueDate);
+  const due = parseDateOnlyLocal(invoice.dueDate);
+  if (!due) return false;
   const today = new Date();
   due.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
@@ -273,6 +299,8 @@ export function InvoiceManagementPortal() {
   const [isPrintMode, setIsPrintMode] = useState(false);
   const lastOverdueWorkflowRunRef = useRef<number>(0);
   const overdueWorkflowRunningRef = useRef<boolean>(false);
+  const emailLogBackfillRunningRef = useRef<boolean>(false);
+  const emailLogBackfilledKeysRef = useRef<Set<string>>(new Set());
   const OVERDUE_WORKFLOW_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes – prevent duplicate emails
 
   const toBase64 = (buffer: ArrayBuffer) => {
@@ -691,14 +719,134 @@ export function InvoiceManagementPortal() {
       clientName?: string;
     }) => {
       if (!user) return;
-      await addDoc(collection(db, "external_invoice_email_logs"), {
-        ...payload,
-        sentAt: serverTimestamp(),
-        sentBy: user.email ?? user.uid ?? "",
-      });
+      const idToken = await user.getIdToken();
+      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+      const headers: HeadersInit = {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      };
+      if (vercelBypass) {
+        headers["x-vercel-protection-bypass"] = vercelBypass;
+      }
+
+      try {
+        const res = await fetch("/api/email/log", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+      } catch (error) {
+        // Fallback to direct client write if server-side log route fails.
+        console.error("Primary email log route failed, using direct client log write:", error);
+        await addDoc(collection(db, "external_invoice_email_logs"), {
+          ...payload,
+          sentAt: serverTimestamp(),
+          sentBy: user.email ?? user.uid ?? "",
+        });
+      }
     },
     [user]
   );
+
+  useEffect(() => {
+    if (loading || !user || !invoices.length) return;
+    if (emailLogBackfillRunningRef.current) return;
+
+    const existingLogKeys = new Set(
+      (emailLogs || []).map((log) => `${log.type}|${(log.invoiceNumber || "").trim()}|${(log.to || "").trim().toLowerCase()}`)
+    );
+
+    const inferredAutoLogs: Array<{
+      key: string;
+      to: string;
+      subject: string;
+      type: InvoiceEmailLogType;
+      invoiceNumber: string;
+      clientName?: string;
+    }> = [];
+
+    for (const invoice of invoices) {
+      const to = (invoice.clientEmail || "").trim();
+      const invoiceNumber = (invoice.invoiceNumber || "").trim();
+      if (!to || !invoiceNumber) continue;
+
+      const reminder24hKey = `reminder_24h|${invoiceNumber}|${to.toLowerCase()}`;
+      if (
+        invoice.reminderSentAt &&
+        !existingLogKeys.has(reminder24hKey) &&
+        !emailLogBackfilledKeysRef.current.has(reminder24hKey)
+      ) {
+        inferredAutoLogs.push({
+          key: reminder24hKey,
+          to,
+          subject: `Reminder: Invoice ${invoiceNumber} – payment due`,
+          type: "reminder_24h",
+          invoiceNumber,
+          clientName: invoice.clientName,
+        });
+      }
+
+      const overdueKey = `overdue|${invoiceNumber}|${to.toLowerCase()}`;
+      if (
+        invoice.lateFeeEmailSentAt &&
+        !existingLogKeys.has(overdueKey) &&
+        !emailLogBackfilledKeysRef.current.has(overdueKey)
+      ) {
+        inferredAutoLogs.push({
+          key: overdueKey,
+          to,
+          subject: `Late Fee Added - Invoice ${invoiceNumber}`,
+          type: "overdue",
+          invoiceNumber,
+          clientName: invoice.clientName,
+        });
+      }
+
+      const secondReminderKey = `second_reminder|${invoiceNumber}|${to.toLowerCase()}`;
+      if (
+        invoice.secondOverdueReminderSentAt &&
+        !existingLogKeys.has(secondReminderKey) &&
+        !emailLogBackfilledKeysRef.current.has(secondReminderKey)
+      ) {
+        inferredAutoLogs.push({
+          key: secondReminderKey,
+          to,
+          subject: `Final Reminder: Unpaid Invoice ${invoiceNumber}`,
+          type: "second_reminder",
+          invoiceNumber,
+          clientName: invoice.clientName,
+        });
+      }
+    }
+
+    if (!inferredAutoLogs.length) return;
+
+    emailLogBackfillRunningRef.current = true;
+    (async () => {
+      try {
+        for (const payload of inferredAutoLogs) {
+          emailLogBackfilledKeysRef.current.add(payload.key);
+          try {
+            await logInvoiceEmail({
+              to: payload.to,
+              subject: payload.subject,
+              type: payload.type,
+              invoiceNumber: payload.invoiceNumber,
+              clientName: payload.clientName,
+            });
+          } catch (error) {
+            emailLogBackfilledKeysRef.current.delete(payload.key);
+            console.error("Failed to backfill missing email log entry:", payload, error);
+          }
+        }
+      } finally {
+        emailLogBackfillRunningRef.current = false;
+      }
+    })();
+  }, [emailLogs, invoices, loading, logInvoiceEmail, user]);
 
   const sendOverdueEmail = useCallback(async (invoice: ExternalInvoice) => {
     if (!user || !invoice.clientEmail) {
@@ -913,8 +1061,10 @@ Prep Services FBA Team`;
         const dueDateStr = invoice.dueDate
           ? (() => {
               try {
-                const d = new Date(invoice.dueDate);
-                return Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : invoice.dueDate;
+                const d = parseDateOnlyLocal(invoice.dueDate) ?? new Date(invoice.dueDate);
+                return Number.isFinite(d.getTime())
+                  ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : invoice.dueDate;
               } catch {
                 return invoice.dueDate;
               }
@@ -1060,6 +1210,84 @@ Thank you for your cooperation.
 Best regards,
 Prep Services FBA Team`;
 
+  const sendInvoiceUpdateEmail = useCallback(async (
+    invoice: ExternalInvoice,
+    options: {
+      reason: "discount_applied" | "late_fee_removed" | "late_fee_changed";
+      logType: "discount_update" | "resend";
+    }
+  ) => {
+    if (!user || !invoice.clientEmail) {
+      throw new Error("Missing user or client email.");
+    }
+
+    const invoiceBlob = await generateQuoteInvoicePdfBlob(buildInvoicePdfData(invoice));
+    const invoiceFile = new File([invoiceBlob], `Invoice-${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
+    const idToken = await user.getIdToken();
+    const headers: HeadersInit = { Authorization: `Bearer ${idToken}` };
+    const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+    if (vercelBypass) headers["x-vercel-protection-bypass"] = vercelBypass;
+    const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+
+    const subject = `Updated Invoice - ${invoice.invoiceNumber}`;
+    const discountAmount = getDiscountAmount(invoice);
+    const revisedTotal = getGrandTotalWithLateFee(invoice);
+    const revisedOutstanding = Number(invoice.outstandingBalance ?? revisedTotal);
+    const message =
+      options.reason === "late_fee_removed"
+        ? LATE_FEE_REMOVED_MESSAGE
+        : options.reason === "late_fee_changed"
+          ? `Hi,\n\nWe'd like to let you know that the late fee on your invoice has been updated. Please see the attached invoice for the new balance.\n\nIf you have any questions, feel free to reach out.\n\nBest regards,\nPrep Services FBA Team`
+          : `Hi,\n\nWe've applied a discount${discountAmount > 0 ? ` of $${discountAmount.toFixed(2)}` : ""} to your invoice. Please see the attached revised invoice.\n\nUpdated invoice total: $${revisedTotal.toFixed(2)}\nUpdated outstanding balance: $${revisedOutstanding.toFixed(2)}\n\nIf you have any questions, feel free to reach out.\n\nBest regards,\nPrep Services FBA Team`;
+
+    if (externalEmailApi) {
+      const attachmentsPayload = await Promise.all(
+        [invoiceFile].map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataBase64: toBase64(await file.arrayBuffer()),
+        }))
+      );
+      const response = await fetch(externalEmailApi, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: invoice.clientEmail.trim(),
+          subject,
+          message,
+          attachments: attachmentsPayload,
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `Email API returned ${response.status}`);
+      }
+    } else {
+      const payload = new FormData();
+      payload.append("to", invoice.clientEmail.trim());
+      payload.append("subject", subject);
+      payload.append("message", message);
+      payload.append("attachments", invoiceFile);
+      const apiUrl = vercelBypass
+        ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+        : "/api/email/send";
+      const response = await fetch(apiUrl, { method: "POST", headers, body: payload });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `Email API returned ${response.status}`);
+      }
+    }
+
+    await logInvoiceEmail({
+      to: invoice.clientEmail.trim(),
+      subject,
+      type: options.logType,
+      invoiceNumber: invoice.invoiceNumber,
+      clientName: invoice.clientName,
+    });
+  }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
+
   const sendResendAfterLateFeeUpdate = useCallback(async (invoice: ExternalInvoice, wasRemoved: boolean) => {
     if (!user || !invoice.clientEmail) {
       toast({ variant: "destructive", title: "Missing user or client email." });
@@ -1067,62 +1295,9 @@ Prep Services FBA Team`;
     }
     setIsSendingResend(true);
     try {
-      const invoiceBlob = await generateQuoteInvoicePdfBlob(buildInvoicePdfData(invoice));
-      const invoiceFile = new File([invoiceBlob], `Invoice-${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
-      const idToken = await user.getIdToken();
-      const headers: HeadersInit = { Authorization: `Bearer ${idToken}` };
-      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
-      if (vercelBypass) headers["x-vercel-protection-bypass"] = vercelBypass;
-      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
-      const message = wasRemoved
-        ? LATE_FEE_REMOVED_MESSAGE
-        : `Hi,\n\nWe'd like to let you know that the late fee on your invoice has been updated. Please see the attached invoice for the new balance.\n\nIf you have any questions, feel free to reach out.\n\nBest regards,\nPrep Services FBA Team`;
-      const subject = `Updated Invoice - ${invoice.invoiceNumber}`;
-
-      if (externalEmailApi) {
-        const attachmentsPayload = await Promise.all(
-          [invoiceFile].map(async (file) => ({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataBase64: toBase64(await file.arrayBuffer()),
-          }))
-        );
-        const response = await fetch(externalEmailApi, {
-          method: "POST",
-          headers: { ...headers, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: invoice.clientEmail.trim(),
-            subject,
-            message,
-            attachments: attachmentsPayload,
-          }),
-        });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || `Email API returned ${response.status}`);
-        }
-      } else {
-        const payload = new FormData();
-        payload.append("to", invoice.clientEmail.trim());
-        payload.append("subject", subject);
-        payload.append("message", message);
-        payload.append("attachments", invoiceFile);
-        const apiUrl = vercelBypass
-          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
-          : "/api/email/send";
-        const response = await fetch(apiUrl, { method: "POST", headers, body: payload });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || `Email API returned ${response.status}`);
-        }
-      }
-      await logInvoiceEmail({
-        to: invoice.clientEmail.trim(),
-        subject: `Updated Invoice - ${invoice.invoiceNumber}`,
-        type: "resend",
-        invoiceNumber: invoice.invoiceNumber,
-        clientName: invoice.clientName,
+      await sendInvoiceUpdateEmail(invoice, {
+        reason: wasRemoved ? "late_fee_removed" : "late_fee_changed",
+        logType: "resend",
       });
       toast({ title: "Invoice resent with updated totals." });
       setDiscountDialogOpen(false);
@@ -1137,7 +1312,7 @@ Prep Services FBA Team`;
     } finally {
       setIsSendingResend(false);
     }
-  }, [user, toBase64, buildInvoicePdfData, logInvoiceEmail]);
+  }, [user, sendInvoiceUpdateEmail]);
 
   // Automatically apply late fee when invoice becomes overdue and send email.
   // SAFEGUARDS so 566-duplicate-email bug cannot happen again:
@@ -1184,8 +1359,8 @@ Prep Services FBA Team`;
           const today = new Date();
           const tomorrow = new Date(today);
           tomorrow.setDate(tomorrow.getDate() + 1);
-          const invoiceDateStr = today.toISOString().slice(0, 10);
-          const dueDateStr = tomorrow.toISOString().slice(0, 10);
+          const invoiceDateStr = formatDateInputLocal(today);
+          const dueDateStr = formatDateInputLocal(tomorrow);
 
           // Create updated invoice object with late fee and new dates for PDF generation
           const updatedInvoice: ExternalInvoice = {
@@ -1817,7 +1992,7 @@ Prep Services FBA Team`;
     try {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const yesterdayStr = formatDateInputLocal(yesterday);
       
       await updateDoc(doc(db, "external_invoices", testOverdueInvoiceId), {
         dueDate: yesterdayStr,
@@ -1889,25 +2064,69 @@ Prep Services FBA Team`;
     setSaving(true);
     try {
       await updateDoc(doc(db, "external_invoices", discountInvoice.id), payload as any);
+      const updatedInvoice: ExternalInvoice = {
+        ...discountInvoice,
+        lateFee: newLateFee,
+        outstandingBalance: outstanding,
+        ...(payload.discountType != null && { discountType: payload.discountType as "percentage" | "amount" }),
+        ...(payload.discountValue != null && { discountValue: payload.discountValue as number }),
+      };
+
+      const updateReason: "discount_applied" | "late_fee_removed" | "late_fee_changed" =
+        isLateFeeUpdate
+          ? newLateFee === 0
+            ? "late_fee_removed"
+            : "late_fee_changed"
+          : "discount_applied";
+
+      let updateEmailSent = true;
+      try {
+        await sendInvoiceUpdateEmail(updatedInvoice, {
+          reason: updateReason,
+          logType: "discount_update",
+        });
+      } catch (emailError) {
+        updateEmailSent = false;
+        console.error("Failed to send discount/late-fee update email:", emailError);
+      }
 
       if (isLateFeeUpdate) {
-        const updatedInvoice: ExternalInvoice = {
-          ...discountInvoice,
-          lateFee: newLateFee,
-          outstandingBalance: outstanding,
-          ...(payload.discountType != null && { discountType: payload.discountType as "percentage" | "amount" }),
-          ...(payload.discountValue != null && { discountValue: payload.discountValue as number }),
-        };
         setDiscountInvoice(updatedInvoice);
-        setDiscountShowResendButton(true);
+        setDiscountShowResendButton(!updateEmailSent);
         setLateFeeWasRemoved(newLateFee === 0);
-        toast({ title: "Late fee and totals updated." });
+        if (updateEmailSent) {
+          toast({ title: "Late fee and totals updated. Updated invoice email sent." });
+          setDiscountDialogOpen(false);
+          setDiscountInvoice(null);
+          setDiscountShowResendButton(false);
+          setLateFeeAction("keep");
+          setLateFeeCustomAmount("");
+          setDiscountType("percentage");
+          setDiscountValue("");
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Late fee updated, but email failed.",
+            description: "Please click Resend invoice.",
+          });
+        }
       } else {
-        toast({ title: "Discount applied." });
-        setDiscountDialogOpen(false);
-        setDiscountInvoice(null);
-        setDiscountType("percentage");
-        setDiscountValue("");
+        setDiscountInvoice(updatedInvoice);
+        setDiscountShowResendButton(!updateEmailSent);
+        setLateFeeWasRemoved(newLateFee === 0);
+        if (updateEmailSent) {
+          toast({ title: "Discount applied and updated invoice email sent." });
+          setDiscountDialogOpen(false);
+          setDiscountInvoice(null);
+          setDiscountType("percentage");
+          setDiscountValue("");
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Discount applied, but email failed.",
+            description: "Please click Resend invoice.",
+          });
+        }
       }
     } catch (error) {
       console.error("Failed to apply discount:", error);
@@ -3575,6 +3794,8 @@ Prep Services FBA Team`;
                                       ? "Overdue"
                                       : log.type === "second_reminder"
                                         ? "Final reminder"
+                                        : log.type === "discount_update"
+                                          ? "Discount update"
                                         : log.type === "payment_confirmation"
                                           ? "Payment confirmation"
                                           : "Resend"}
