@@ -409,8 +409,8 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
                     }
                     className="text-[10px] px-2 py-1"
                   >
-                    {item.status === "Pending" ? "â³ Pending Approval" : 
-                     item.status === "Rejected" ? "âŒ Rejected" : item.status}
+                    {item.status === "Pending" ? "Pending Approval" :
+                     item.status === "Rejected" ? "Rejected" : item.status}
                   </Badge>
                 </div>
               </div>
@@ -500,8 +500,8 @@ export function InventoryTable({ data }: { data: InventoryItem[] }) {
                         }
                         className="text-xs px-2 py-1"
                       >
-                        {item.status === "Pending" ? "â³ Pending Approval" : 
-                         item.status === "Rejected" ? "âŒ Rejected" : item.status}
+                        {item.status === "Pending" ? "Pending Approval" :
+                         item.status === "Rejected" ? "Rejected" : item.status}
                       </Badge>
                     </TableCell>
                   </TableRow>
