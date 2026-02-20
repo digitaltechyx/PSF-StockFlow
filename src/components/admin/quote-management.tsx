@@ -92,6 +92,8 @@ interface QuoteEmailLog {
   attachments: { name: string; size: number }[];
   sentAt: any;
   sentBy?: string;
+  followUpStep?: 1 | 2 | 3;
+  autoFollowUp?: boolean;
 }
 
 interface QuoteDecisionDetails {
@@ -145,8 +147,24 @@ interface Quote {
   invoiceSentAt?: any;
 }
 
-const FOLLOW_UP_LIMIT = 9;
+type FollowUpLogRow = {
+  id: string;
+  quoteId: string;
+  quoteReference: string;
+  clientName: string;
+  clientEmail: string;
+  followUpStep: 1 | 2 | 3 | null;
+  sentAt: any;
+  sentBy?: string;
+  subject: string;
+  message: string;
+  autoFollowUp?: boolean;
+};
+
+const FOLLOW_UP_LIMIT = 3;
 const TAX_RATE = 0.06625;
+const TZ_NEW_JERSEY = "America/New_York";
+const FOLLOW_UP_THROTTLE_MS = 10 * 60 * 1000;
 
 const COMPANY_INFO = {
   name: "Prep Services FBA",
@@ -234,6 +252,28 @@ const formatDate = (value?: any) => {
   return date.toLocaleDateString();
 };
 
+const formatDateTime = (value?: any) => {
+  if (!value) return "—";
+  const date =
+    value?.toDate?.() ||
+    (typeof value?.seconds === "number" ? new Date(value.seconds * 1000) : null) ||
+    (typeof value === "string" ? new Date(value) : null) ||
+    (value instanceof Date ? value : null);
+  if (!date || Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
+};
+
+const getDateMs = (value?: any): number => {
+  if (!value) return 0;
+  const date =
+    value?.toDate?.() ||
+    (typeof value?.seconds === "number" ? new Date(value.seconds * 1000) : null) ||
+    (typeof value === "string" ? new Date(value) : null) ||
+    (value instanceof Date ? value : null);
+  if (!date || Number.isNaN(date.getTime())) return 0;
+  return date.getTime();
+};
+
 const formatDateForDisplay = (dateString?: string) => {
   if (!dateString) return "";
   try {
@@ -245,18 +285,51 @@ const formatDateForDisplay = (dateString?: string) => {
   }
 };
 
-// Helper function to check if a quote is expired
+const getTodayDateInputInNJ = (): string => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ_NEW_JERSEY,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!year || !month || !day) return new Date().toISOString().slice(0, 10);
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysToDateInput = (value: string, days: number): string | null => {
+  const base = parseDateOnlyLocal(value);
+  if (!base) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return formatDateInputLocal(next);
+};
+
+const getAutoFollowUpPlan = (quoteDate?: string, validUntil?: string) => {
+  if (!quoteDate || !validUntil) return [] as Array<{ step: 1 | 2 | 3; sendDate: string }>;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(quoteDate) || !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) return [] as Array<{ step: 1 | 2 | 3; sendDate: string }>;
+
+  const offsets: Array<{ step: 1 | 2 | 3; offset: number }> = [
+    { step: 1, offset: -2 },
+    { step: 2, offset: -1 },
+    { step: 3, offset: 0 },
+  ];
+
+  return offsets
+    .map(({ step, offset }) => {
+      const sendDate = addDaysToDateInput(validUntil, offset);
+      return sendDate ? { step, sendDate } : null;
+    })
+    .filter((entry): entry is { step: 1 | 2 | 3; sendDate: string } => Boolean(entry) && entry.sendDate >= quoteDate);
+};
+
+// Helper function to check if a quote is expired (New Jersey date boundary)
 const isQuoteExpired = (validUntil?: string): boolean => {
-  if (!validUntil) return false;
-  try {
-    const validDate = new Date(validUntil);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    validDate.setHours(0, 0, 0, 0);
-    return validDate < today;
-  } catch {
-    return false;
-  }
+  if (!validUntil || !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) return false;
+  return validUntil < getTodayDateInputInNJ();
 };
 
 const formatTermsAsBullets = (terms?: string) => {
@@ -337,9 +410,7 @@ export function QuoteManagement() {
   const [addressBookSearch, setAddressBookSearch] = useState("");
   const [downloadType, setDownloadType] = useState<"all" | "draft" | "sent" | "accepted" | "rejected">("all");
   
-  // Expired status filter state for each tab
-  const [sentStatusFilter, setSentStatusFilter] = useState<"all" | "active" | "expired">("all");
-  const [followUpStatusFilter, setFollowUpStatusFilter] = useState<"all" | "active" | "expired">("all");
+  // Expired status filter state for tabs that still need mixed views
   const [acceptedStatusFilter, setAcceptedStatusFilter] = useState<"all" | "active" | "expired">("all");
   const [rejectedStatusFilter, setRejectedStatusFilter] = useState<"all" | "active" | "expired">("all");
   const [convertStatusFilter, setConvertStatusFilter] = useState<"all" | "active" | "expired">("all");
@@ -354,6 +425,8 @@ export function QuoteManagement() {
 
   const draftQuotes = quotes.filter((q) => q.status === "draft");
   const sentQuotes = quotes.filter((q) => q.status === "sent");
+  const activeSentQuotes = sentQuotes.filter((q) => !isQuoteExpired(q.validUntil));
+  const expiredQuotes = sentQuotes.filter((q) => isQuoteExpired(q.validUntil));
   const acceptedQuotes = quotes.filter((q) => q.status === "accepted");
   const lostQuotes = quotes.filter((q) => q.status === "lost");
   const filteredDraftQuotes = useMemo(() => {
@@ -366,15 +439,7 @@ export function QuoteManagement() {
     );
   }, [draftQuotes, searchQuery]);
   const filteredSentQuotes = useMemo(() => {
-    let filtered = sentQuotes;
-    
-    // Apply expired status filter
-    if (sentStatusFilter !== "all") {
-      filtered = filtered.filter((quote) => {
-        const expired = isQuoteExpired(quote.validUntil);
-        return sentStatusFilter === "expired" ? expired : !expired;
-      });
-    }
+    let filtered = activeSentQuotes;
     
     // Apply search filter
     const query = searchQuery.trim().toLowerCase();
@@ -387,7 +452,7 @@ export function QuoteManagement() {
     }
     
     return filtered;
-  }, [sentQuotes, searchQuery, sentStatusFilter]);
+  }, [activeSentQuotes, searchQuery]);
   const filteredAcceptedQuotes = useMemo(() => {
     let filtered = acceptedQuotes;
     
@@ -474,6 +539,46 @@ export function QuoteManagement() {
     );
   }, [deleteLogs, searchQuery]);
 
+  const followUpLogRows = useMemo<FollowUpLogRow[]>(() => {
+    const rows: FollowUpLogRow[] = [];
+    quotes.forEach((quote) => {
+      const logs = quote.emailLog || [];
+      logs.forEach((entry, idx) => {
+        if (entry.type !== "follow_up") return;
+        rows.push({
+          id: `${quote.id}-${idx}-${getDateMs(entry.sentAt)}`,
+          quoteId: quote.id,
+          quoteReference: quote.reference || "—",
+          clientName: quote.recipientName || "—",
+          clientEmail: quote.recipientEmail || "—",
+          followUpStep: entry.followUpStep ?? null,
+          sentAt: entry.sentAt,
+          sentBy: entry.sentBy,
+          subject: entry.subject || "Follow-up",
+          message: entry.message || "",
+          autoFollowUp: entry.autoFollowUp,
+        });
+      });
+    });
+    return rows.sort((a, b) => getDateMs(b.sentAt) - getDateMs(a.sentAt));
+  }, [quotes]);
+
+  const filteredFollowUpLogRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return followUpLogRows;
+    return followUpLogRows.filter((row) =>
+      [
+        row.quoteReference,
+        row.clientName,
+        row.clientEmail,
+        row.subject,
+        row.followUpStep ? `follow up ${row.followUpStep}` : "",
+      ]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(query))
+    );
+  }, [followUpLogRows, searchQuery]);
+
   // Address Book filtered quotes
   const addressBookQuotes = useMemo(() => {
     let filtered = quotes;
@@ -519,7 +624,7 @@ export function QuoteManagement() {
   // Reset page when search query changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sentStatusFilter, followUpStatusFilter, acceptedStatusFilter, rejectedStatusFilter, convertStatusFilter]);
+  }, [searchQuery, acceptedStatusFilter, rejectedStatusFilter, convertStatusFilter]);
 
   // Auto-delete drafts older than 10 days
   useEffect(() => {
@@ -619,54 +724,6 @@ export function QuoteManagement() {
 
     checkAndAutoDeleteOldDrafts();
   }, [quotes, loading, draftQuotes]);
-
-  // Auto-delete delete logs older than 30 days
-  useEffect(() => {
-    const checkAndAutoDeleteOldLogs = async () => {
-      if (deleteLogsLoading || !deleteLogs.length) return;
-
-      const now = new Date();
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      
-      try {
-        const { getDocs } = await import("firebase/firestore");
-        const snapshot = await getDocs(collection(db, "quote_delete_logs"));
-        
-        let deletedCount = 0;
-        for (const docSnapshot of snapshot.docs) {
-          const docData = docSnapshot.data();
-          const docDeletedAt = docData.deletedAt;
-          let docDate: Date | null = null;
-          
-          if (docDeletedAt) {
-            if (typeof docDeletedAt === 'string') {
-              docDate = new Date(docDeletedAt);
-            } else if (docDeletedAt && typeof docDeletedAt === 'object' && 'toDate' in docDeletedAt) {
-              docDate = docDeletedAt.toDate();
-            } else if (docDeletedAt && typeof docDeletedAt === 'object' && 'seconds' in docDeletedAt) {
-              docDate = new Date((docDeletedAt as any).seconds * 1000);
-            }
-          }
-          
-          if (docDate && !isNaN(docDate.getTime()) && docDate < thirtyDaysAgo) {
-            await deleteDoc(docSnapshot.ref);
-            deletedCount++;
-          }
-        }
-        
-        if (deletedCount > 0) {
-          toast({ 
-            title: `${deletedCount} deleted log entry(ies) permanently removed`, 
-            description: "Delete logs older than 30 days have been permanently deleted."
-          });
-        }
-      } catch (error) {
-        console.error("Failed to auto-delete old log entries:", error);
-      }
-    };
-
-    checkAndAutoDeleteOldLogs();
-  }, [deleteLogs, deleteLogsLoading]);
 
   const resetForm = () => {
     setFormData(createEmptyQuoteForm());
@@ -1066,6 +1123,252 @@ export function QuoteManagement() {
     }
   };
 
+  const sendEmailRequest = async ({
+    to,
+    subject,
+    message,
+    attachments,
+  }: {
+    to: string;
+    subject: string;
+    message: string;
+    attachments: File[];
+  }) => {
+    const idToken = user ? await user.getIdToken() : "";
+    if (!idToken) {
+      throw new Error("Please re-login and try again.");
+    }
+
+    const headers: HeadersInit = {
+      Authorization: `Bearer ${idToken}`,
+    };
+    const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
+    const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
+    if (vercelBypass) {
+      headers["x-vercel-protection-bypass"] = vercelBypass;
+    }
+
+    let response: Response;
+    if (externalEmailApi) {
+      const attachmentsPayload = await Promise.all(
+        attachments.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataBase64: toBase64(await file.arrayBuffer()),
+        }))
+      );
+
+      response = await fetch(externalEmailApi, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: to.trim(),
+          subject: subject.trim(),
+          message: message || "",
+          attachments: attachmentsPayload,
+        }),
+      });
+    } else {
+      const payload = new FormData();
+      payload.append("to", to.trim());
+      payload.append("subject", subject.trim());
+      payload.append("message", message || "");
+      attachments.forEach((file) => payload.append("attachments", file));
+
+      const apiUrl = vercelBypass
+        ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
+        : "/api/email/send";
+
+      response = await fetch(apiUrl, {
+        method: "POST",
+        headers,
+        body: payload,
+      });
+    }
+
+    const contentType = response.headers.get("content-type");
+    let responseData: any = {};
+
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        responseData = await response.json();
+      } catch {
+        const textResponse = await response.text();
+        throw new Error(`Server error: ${textResponse.substring(0, 200)}`);
+      }
+    } else {
+      const textResponse = await response.text();
+      const vercelId = response.headers.get("x-vercel-id");
+      if (response.status === 403 && (vercelId || textResponse.toLowerCase().includes("forbidden"))) {
+        throw new Error(
+          "Request blocked by deployment protection. If this is a Vercel-protected dev domain, add NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS."
+        );
+      }
+      throw new Error(`Server returned: ${textResponse.substring(0, 200)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(responseData.error || `Email request failed (${response.status})`);
+    }
+  };
+
+  const buildAutoFollowUpEmail = (quote: Quote, step: 1 | 2 | 3) => {
+    const quoteNumber = quote.reference || "Quotation";
+    const service = quote.subject || quote.items?.[0]?.description || "our service";
+    const expiryDate = formatDateForDisplay(quote.validUntil) || quote.validUntil || "";
+    const greeting = quote.recipientName ? `Hi ${quote.recipientName},` : "Hi,";
+
+    if (step === 1) {
+      return {
+        subject: `Reminder: Quotation ${quoteNumber} expires on ${expiryDate}`,
+        message: `${greeting}
+I hope you are doing well. Just a quick note that your quotation (${quoteNumber}) for ${service} is scheduled to expire on ${expiryDate}.
+
+If you have any questions regarding pricing, turnaround time, prep requirements, or shipping workflow, I would be happy to walk you through everything so you can move forward with full clarity.
+
+We can also:
+- adjust volumes
+- align with your shipment plan
+- reserve receiving slots
+
+Let me know if you would like me to hold space for your upcoming inventory.
+
+Best regards,
+Arshad Iqbal
+info@prepservicesfba.com | +1 347 661 3010 (WhatsApp)
+www.prepservicesfba.com
+7000 Atrium Way B05, Mount Laurel, NJ 08054`,
+      };
+    }
+
+    if (step === 2) {
+      return {
+        subject: `Action Needed: Secure Capacity for Quotation ${quoteNumber}`,
+        message: `${greeting}
+As we are scheduling next week's inbound shipments, I wanted to check if you would like us to secure receiving capacity for your inventory under the current quotation (${quoteNumber}).
+
+Your quoted rates are valid until ${expiryDate}, and after that availability will depend on the inbound schedule.
+
+If your shipment timeline is confirmed, I can:
+- reserve your intake window
+- prepare the team in advance
+- ensure faster turnaround on arrival
+
+Just reply "Approve" and I will activate everything from our side.
+
+Best regards,
+Arshad Iqbal`,
+      };
+    }
+
+    return {
+      subject: `Final Reminder: Quotation ${quoteNumber} expires today`,
+      message: `${greeting}
+This is a quick reminder that your quotation (${quoteNumber}) for ${service} expires today.
+
+To proceed and lock in the current pricing and priority receiving:
+- Reply to this email with your approval, or
+- Request the invoice and onboarding link.
+
+Once approved, we will immediately:
+- schedule your inbound
+- allocate space
+- prepare your workflow in our system
+
+I would love to support your next shipment.
+
+Best regards,
+Arshad Iqbal`,
+    };
+  };
+
+  const autoFollowUpLockRef = useRef(false);
+  const autoFollowUpLastRunRef = useRef(0);
+
+  useEffect(() => {
+    if (loading || !quotes.length || !user) return;
+    if (autoFollowUpLockRef.current) return;
+    if (Date.now() - autoFollowUpLastRunRef.current < FOLLOW_UP_THROTTLE_MS) return;
+
+    autoFollowUpLockRef.current = true;
+    autoFollowUpLastRunRef.current = Date.now();
+
+    const runAutoFollowUps = async () => {
+      const todayNJ = getTodayDateInputInNJ();
+      let sentCount = 0;
+
+      const candidates = quotes.filter((quote) => {
+        if (quote.status !== "sent") return false;
+        if (!quote.recipientEmail || !quote.validUntil || !quote.quoteDate) return false;
+        if (isQuoteExpired(quote.validUntil) && quote.validUntil !== todayNJ) return false;
+        return true;
+      });
+
+      for (const quote of candidates) {
+        try {
+          const schedule = getAutoFollowUpPlan(quote.quoteDate, quote.validUntil);
+          const todayStep = schedule.find((entry) => entry.sendDate === todayNJ);
+          if (!todayStep) continue;
+
+          const alreadySentThisStep = (quote.emailLog || []).some(
+            (entry) => entry.type === "follow_up" && entry.followUpStep === todayStep.step
+          );
+          if (alreadySentThisStep) continue;
+
+          const followUpCount = quote.followUpCount ?? 0;
+          if (followUpCount >= FOLLOW_UP_LIMIT) continue;
+
+          const email = buildAutoFollowUpEmail(quote, todayStep.step);
+          await sendEmailRequest({
+            to: quote.recipientEmail,
+            subject: email.subject,
+            message: email.message,
+            attachments: [],
+          });
+
+          const logEntry: QuoteEmailLog = {
+            type: "follow_up",
+            to: quote.recipientEmail,
+            subject: email.subject,
+            message: email.message,
+            attachments: [],
+            sentAt: new Date(),
+            sentBy: userProfile?.uid || "system-auto",
+            followUpStep: todayStep.step,
+            autoFollowUp: true,
+          };
+
+          await updateDoc(doc(db, "quotes", quote.id), {
+            status: "sent",
+            emailLog: [...(quote.emailLog || []), logEntry],
+            followUpCount: Math.max(followUpCount, todayStep.step),
+            lastFollowUpAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+
+          sentCount += 1;
+        } catch (error) {
+          console.error(`Auto follow-up failed for quote ${quote.id}:`, error);
+        }
+      }
+
+      if (sentCount > 0) {
+        toast({
+          title: `${sentCount} follow-up email(s) sent`,
+          description: "Automated follow-ups were sent for quotes in the final 3-day window.",
+        });
+      }
+    };
+
+    runAutoFollowUps().finally(() => {
+      autoFollowUpLockRef.current = false;
+    });
+  }, [loading, quotes, toast, user, userProfile?.uid]);
+
   const handleSendEmail = async () => {
     if (!activeEmailQuote) return;
     if (!emailForm.to.trim()) {
@@ -1151,99 +1454,12 @@ export function QuoteManagement() {
         attachmentsToSend = [invoiceFile, ...emailForm.attachments];
       }
 
-      // Get Firebase ID token for authentication
-      const idToken = user ? await user.getIdToken() : "";
-      if (!idToken) {
-        throw new Error("Please re-login and try again.");
-      }
-
-      console.log("[Email Send] User UID:", user?.uid);
-      console.log("[Email Send] User profile:", userProfile);
-      console.log("[Email Send] Token obtained:", idToken ? "Yes" : "No");
-
-      const payload = new FormData();
-      payload.append("to", emailForm.to.trim());
-      payload.append("subject", emailForm.subject.trim());
-      payload.append("message", emailForm.message || "");
-      attachmentsToSend.forEach((file) => payload.append("attachments", file));
-
-      const headers: HeadersInit = {
-        Authorization: `Bearer ${idToken}`,
-      };
-      const externalEmailApi = process.env.NEXT_PUBLIC_EMAIL_API_URL;
-      const vercelBypass = process.env.NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS;
-      if (vercelBypass) {
-        headers["x-vercel-protection-bypass"] = vercelBypass;
-        console.log("[Email Send] Vercel bypass header set");
-      } else {
-        console.log("[Email Send] Vercel bypass header missing");
-      }
-
-      let response: Response;
-      if (externalEmailApi) {
-        const attachmentsPayload = await Promise.all(
-          attachmentsToSend.map(async (file) => ({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataBase64: toBase64(await file.arrayBuffer()),
-          }))
-        );
-
-        response = await fetch(externalEmailApi, {
-          method: "POST",
-          headers: {
-            ...headers,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: emailForm.to.trim(),
-            subject: emailForm.subject.trim(),
-            message: emailForm.message || "",
-            attachments: attachmentsPayload,
-          }),
-        });
-      } else {
-        const apiUrl = vercelBypass
-          ? `/api/email/send?x-vercel-protection-bypass=${encodeURIComponent(vercelBypass)}`
-          : "/api/email/send";
-
-        response = await fetch(apiUrl, {
-          method: "POST",
-          headers,
-          body: payload,
-        });
-      }
-      
-      console.log("[Email Send] Response status:", response.status);
-      
-      // Check if response is JSON before parsing
-      const contentType = response.headers.get("content-type");
-      let responseData: any = {};
-      
-      if (contentType && contentType.includes("application/json")) {
-        try {
-          responseData = await response.json();
-        } catch (jsonError) {
-          // If JSON parsing fails, get text response
-          const textResponse = await response.text();
-          throw new Error(`Server error: ${textResponse.substring(0, 200)}`);
-        }
-      } else {
-        // Non-JSON response (likely HTML/text error page)
-        const textResponse = await response.text();
-        const vercelId = response.headers.get("x-vercel-id");
-        if (response.status === 403 && (vercelId || textResponse.toLowerCase().includes("forbidden"))) {
-          throw new Error(
-            "Request blocked by deployment protection. If this is a Vercel-protected dev domain, add a bypass token in NEXT_PUBLIC_VERCEL_PROTECTION_BYPASS."
-          );
-        }
-        throw new Error(`Server returned: ${textResponse.substring(0, 200)}`);
-      }
-      
-      if (!response.ok) {
-        throw new Error(responseData.error || `Email request failed (${response.status})`);
-      }
+      await sendEmailRequest({
+        to: emailForm.to.trim(),
+        subject: emailForm.subject.trim(),
+        message: emailForm.message || "",
+        attachments: attachmentsToSend,
+      });
 
       const logEntry: QuoteEmailLog = {
         type: emailMode,
@@ -1256,6 +1472,11 @@ export function QuoteManagement() {
         })),
         sentAt: new Date(),
         sentBy: userProfile?.uid || "",
+        followUpStep:
+          emailMode === "follow_up"
+            ? (Math.min((activeEmailQuote.followUpCount ?? 0) + 1, FOLLOW_UP_LIMIT) as 1 | 2 | 3)
+            : undefined,
+        autoFollowUp: emailMode === "follow_up" ? false : undefined,
       };
 
       const updatePayload: Partial<Quote> = {
@@ -1264,7 +1485,10 @@ export function QuoteManagement() {
       };
 
       if (emailMode !== "invoice") {
-        const followUpCount = (activeEmailQuote.followUpCount ?? 0) + (emailMode === "follow_up" ? 1 : 0);
+        const followUpCount = Math.min(
+          (activeEmailQuote.followUpCount ?? 0) + (emailMode === "follow_up" ? 1 : 0),
+          FOLLOW_UP_LIMIT
+        );
         updatePayload.status = "sent";
         updatePayload.sentAt = activeEmailQuote.sentAt || new Date();
         updatePayload.followUpCount = followUpCount;
@@ -2347,7 +2571,7 @@ export function QuoteManagement() {
               </div>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-4xl font-bold text-purple-700 dark:text-purple-300">{statusCounts.sent}</div>
+              <div className="text-4xl font-bold text-purple-700 dark:text-purple-300">{activeSentQuotes.length}</div>
             </CardContent>
           </Card>
           
@@ -2372,7 +2596,7 @@ export function QuoteManagement() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="text-4xl font-bold text-orange-700 dark:text-orange-300">
-                {sentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
+                {activeSentQuotes.filter((q) => (q.followUpCount ?? 0) > 0).length}
               </div>
             </CardContent>
           </Card>
@@ -2410,6 +2634,21 @@ export function QuoteManagement() {
               <Clock className="shrink-0" />
               <span className="hidden sm:inline">Follow Up</span>
               <span className="sm:hidden">Follow</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="follow_up_logs"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Mail className="shrink-0" />
+              <span className="hidden md:inline">Follow Up Logs</span>
+              <span className="md:hidden">FU Logs</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="expired"
+              className="flex-shrink-0 text-xs sm:text-sm px-2 py-1.5 sm:px-3 sm:py-1.5 min-h-[44px] sm:min-h-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-gray-600 data-[state=active]:to-slate-700 data-[state=active]:text-white data-[state=active]:shadow-md transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:h-4 sm:[&_svg]:w-4 [&_svg]:mr-1.5 sm:[&_svg]:mr-2"
+            >
+              <Archive className="shrink-0" />
+              Expired
             </TabsTrigger>
             <TabsTrigger
               value="accepted"
@@ -3141,16 +3380,6 @@ export function QuoteManagement() {
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="flex-1"
                 />
-                <Select value={sentStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setSentStatusFilter(value)}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
@@ -3218,28 +3447,13 @@ export function QuoteManagement() {
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="flex-1"
                 />
-                <Select value={followUpStatusFilter} onValueChange={(value: "all" | "active" | "expired") => setFollowUpStatusFilter(value)}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               {loading ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : (() => {
-                // Apply expired filter for follow up tab
-                const followUpFiltered = filteredSentQuotes.filter((quote) => {
-                  if (followUpStatusFilter === "all") return true;
-                  const expired = isQuoteExpired(quote.validUntil);
-                  return followUpStatusFilter === "expired" ? expired : !expired;
-                });
+                const followUpFiltered = filteredSentQuotes;
                 return followUpFiltered.length ? (
                   <>
                     <div className="space-y-4">
@@ -3276,6 +3490,173 @@ export function QuoteManagement() {
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">No quotes to follow up.</p>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="follow_up_logs" className="space-y-4">
+          <Card className="border-2 border-amber-200 dark:border-amber-800 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b border-amber-200 dark:border-amber-800">
+              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-md">
+                  <Mail className="h-5 w-5 text-white" />
+                </div>
+                Follow Up Logs
+              </CardTitle>
+              <CardDescription className="text-amber-600/80 dark:text-amber-400/80">
+                Track which follow-up was sent to which client and when.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by client, email, quote reference, or subject"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+              </div>
+              {loading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredFollowUpLogRows.length ? (
+                <>
+                  <div className="space-y-3">
+                    {getPaginatedData(filteredFollowUpLogRows, currentPage).paginatedData.map((row) => (
+                      <Card key={row.id} className="border border-amber-200/70 dark:border-amber-800/60">
+                        <CardContent className="pt-4">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                {row.followUpStep ? `Follow Up ${row.followUpStep}` : "Follow Up"}
+                              </Badge>
+                              <Badge variant="outline">
+                                {row.autoFollowUp ? "Auto" : "Manual"}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">{formatDateTime(row.sentAt)}</span>
+                            </div>
+                            <p className="text-sm">
+                              <span className="font-medium">{row.clientName}</span> ({row.clientEmail})
+                            </p>
+                            <p className="text-sm text-muted-foreground">Quote: {row.quoteReference}</p>
+                            <p className="text-sm font-medium">{row.subject}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  {filteredFollowUpLogRows.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                      <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                        Showing {getPaginatedData(filteredFollowUpLogRows, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredFollowUpLogRows, currentPage).endIndex, filteredFollowUpLogRows.length)} of {filteredFollowUpLogRows.length} records
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs sm:text-sm px-2">
+                          {currentPage} / {getPaginatedData(filteredFollowUpLogRows, currentPage).totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredFollowUpLogRows, currentPage).totalPages, p + 1))}
+                          disabled={currentPage >= getPaginatedData(filteredFollowUpLogRows, currentPage).totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No follow-up logs yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="expired" className="space-y-4">
+          <Card className="border-2 border-gray-300 dark:border-gray-700 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-950/30 dark:to-slate-950/30 border-b border-gray-300 dark:border-gray-700">
+              <CardTitle className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-gray-600 to-slate-700 shadow-md">
+                  <Archive className="h-5 w-5 text-white" />
+                </div>
+                Expired Quotes
+              </CardTitle>
+              <CardDescription className="text-gray-600/80 dark:text-gray-400/80">
+                Quotes with passed validity date are moved here automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="Search by name, email, or reference"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="flex-1"
+                />
+              </div>
+              {loading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (() => {
+                const filteredExpiredQuotes = expiredQuotes.filter((quote) => {
+                  const query = searchQuery.trim().toLowerCase();
+                  if (!query) return true;
+                  return [quote.reference, quote.recipientName, quote.recipientEmail]
+                    .filter(Boolean)
+                    .some((value) => value!.toLowerCase().includes(query));
+                });
+
+                return filteredExpiredQuotes.length ? (
+                  <>
+                    <div className="space-y-4">
+                      {getPaginatedData(filteredExpiredQuotes, currentPage).paginatedData.map((quote) =>
+                        renderQuoteRow(quote, { showFollowUp: false })
+                      )}
+                    </div>
+                    {filteredExpiredQuotes.length > itemsPerPage && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                        <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                          Showing {getPaginatedData(filteredExpiredQuotes, currentPage).startIndex + 1} to {Math.min(getPaginatedData(filteredExpiredQuotes, currentPage).endIndex, filteredExpiredQuotes.length)} of {filteredExpiredQuotes.length} records
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-xs sm:text-sm px-2">
+                            {currentPage} / {getPaginatedData(filteredExpiredQuotes, currentPage).totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.min(getPaginatedData(filteredExpiredQuotes, currentPage).totalPages, p + 1))}
+                            disabled={currentPage >= getPaginatedData(filteredExpiredQuotes, currentPage).totalPages}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No expired quotes.</p>
                 );
               })()}
             </CardContent>
