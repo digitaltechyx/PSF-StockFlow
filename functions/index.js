@@ -1,4 +1,4 @@
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
@@ -97,14 +97,13 @@ exports.sendQuoteEmail = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    const smtpConfig = (functions.config() && functions.config().smtp) || {};
-    const smtpHost = smtpConfig.host || process.env.SMTP_HOST;
-    const smtpPort = Number(smtpConfig.port || process.env.SMTP_PORT || 587);
-    const smtpUser = smtpConfig.user || process.env.SMTP_USER;
-    const smtpPassword = smtpConfig.password || process.env.SMTP_PASSWORD;
-    const smtpSecure = String(smtpConfig.secure || process.env.SMTP_SECURE || "false") === "true";
-    const smtpFrom = smtpConfig.from || process.env.SMTP_FROM || smtpUser;
-    const smtpFromName = smtpConfig.from_name || process.env.SMTP_FROM_NAME || "Prep Services FBA";
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = Number(process.env.SMTP_PORT || 587);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPassword = process.env.SMTP_PASSWORD;
+    const smtpSecure = String(process.env.SMTP_SECURE || "false") === "true";
+    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+    const smtpFromName = process.env.SMTP_FROM_NAME || "Prep Services FBA";
 
     if (!smtpHost || !smtpUser || !smtpPassword) {
       res.status(500).json({ error: "SMTP credentials are not configured." });
@@ -201,6 +200,26 @@ function asDate(value) {
   return null;
 }
 
+/** New Jersey (Eastern Time) - used for invoice due-date and automation schedule */
+const TZ_NEW_JERSEY = "America/New_York";
+
+/** Get today's date (midnight) in New Jersey time for overdue/reminder logic */
+function getTodayInNJ() {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ_NEW_JERSEY,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year").value;
+  const m = parts.find((p) => p.type === "month").value;
+  const d = parts.find((p) => p.type === "day").value;
+  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+}
+
 function parseDateOnlyLocal(value) {
   if (!value || typeof value !== "string") return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
@@ -247,10 +266,11 @@ function isOverdueInvoice(invoice) {
   if (!(invoice.status === "sent" || invoice.status === "partially_paid")) return false;
   const due = parseDateOnlyLocal(invoice.dueDate);
   if (!due) return false;
-  const today = new Date();
   due.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  return due < today;
+  const todayNJ = getTodayInNJ();
+  // Overdue only after the due date has passed in New Jersey time.
+  // Example: due 2026-02-20 becomes overdue on 2026-02-21.
+  return due.getTime() < todayNJ.getTime();
 }
 
 async function writeEmailLog(db, payload) {
@@ -296,8 +316,11 @@ async function clearInvoiceLock(docRef, lockField) {
   });
 }
 
-// Run every 1 hour so automation works without browser sessions.
-exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(async () => {
+// Run every 1 hour on the hour in New Jersey (America/New_York) time.
+exports.sendInvoiceReminders = functions.pubsub
+  .schedule("every 1 hours")
+  .timeZone(TZ_NEW_JERSEY)
+  .onRun(async () => {
   const db = admin.firestore();
   const now = Date.now();
   const runMetrics = {
@@ -316,14 +339,13 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
     finalFailed: 0,
   };
 
-  const smtpConfig = (functions.config() && functions.config().smtp) || {};
-  const smtpHost = smtpConfig.host || process.env.SMTP_HOST;
-  const smtpPort = Number(smtpConfig.port || process.env.SMTP_PORT || 587);
-  const smtpUser = smtpConfig.user || process.env.SMTP_USER;
-  const smtpPassword = smtpConfig.password || process.env.SMTP_PASSWORD;
-  const smtpSecure = String(smtpConfig.secure || process.env.SMTP_SECURE || "false") === "true";
-  const smtpFrom = smtpConfig.from || process.env.SMTP_FROM || smtpUser;
-  const smtpFromName = smtpConfig.from_name || process.env.SMTP_FROM_NAME || "Prep Services FBA";
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD;
+  const smtpSecure = String(process.env.SMTP_SECURE || "false") === "true";
+  const smtpFrom = process.env.SMTP_FROM || smtpUser;
+  const smtpFromName = process.env.SMTP_FROM_NAME || "Prep Services FBA";
 
   if (!smtpHost || !smtpUser || !smtpPassword) {
     console.warn("Invoice reminders: SMTP not configured, skipping.");
@@ -422,11 +444,11 @@ exports.sendInvoiceReminders = functions.pubsub.schedule("every 1 hours").onRun(
     try {
       const lockedInv = await tryAcquireInvoiceLock(db, docRef, "overdueProcessingUntil", "lateFeeEmailSentAt");
       if (!lockedInv) continue;
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const invoiceDateStr = formatDateInputLocal(today);
-      const dueDateStr = formatDateInputLocal(tomorrow);
+      const todayNJ = getTodayInNJ();
+      const tomorrowNJ = new Date(todayNJ);
+      tomorrowNJ.setUTCDate(tomorrowNJ.getUTCDate() + 1);
+      const invoiceDateStr = formatDateInputLocal(todayNJ);
+      const dueDateStr = formatDateInputLocal(tomorrowNJ);
       const updatedInv = { ...lockedInv, lateFee: LATE_FEE_AMOUNT, invoiceDate: invoiceDateStr, dueDate: dueDateStr };
       const amountPaid = Number(lockedInv.amountPaid || 0);
       const newOutstanding = Math.max(0, Number((getGrandTotalWithLateFee(updatedInv) - amountPaid).toFixed(2)));
