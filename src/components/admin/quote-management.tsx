@@ -1472,11 +1472,12 @@ Arshad Iqbal`,
         })),
         sentAt: new Date(),
         sentBy: userProfile?.uid || "",
-        followUpStep:
-          emailMode === "follow_up"
-            ? (Math.min((activeEmailQuote.followUpCount ?? 0) + 1, FOLLOW_UP_LIMIT) as 1 | 2 | 3)
-            : undefined,
-        autoFollowUp: emailMode === "follow_up" ? false : undefined,
+        ...(emailMode === "follow_up"
+          ? {
+              followUpStep: Math.min((activeEmailQuote.followUpCount ?? 0) + 1, FOLLOW_UP_LIMIT) as 1 | 2 | 3,
+              autoFollowUp: false,
+            }
+          : {}),
       };
 
       const updatePayload: Partial<Quote> = {
