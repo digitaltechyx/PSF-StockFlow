@@ -203,6 +203,31 @@ const parseDateOnlyLocal = (value?: string): Date | null => {
   return Number.isFinite(date.getTime()) ? date : null;
 };
 
+const TZ_NEW_JERSEY = "America/New_York";
+
+const getTodayDateInputInNJ = (): string => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ_NEW_JERSEY,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!year || !month || !day) return formatDateInputLocal(new Date());
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysToDateInput = (value: string, days: number): string => {
+  const base = parseDateOnlyLocal(value);
+  if (!base) return value;
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return formatDateInputLocal(next);
+};
+
 const createEmptyInvoiceForm = (): Omit<ExternalInvoice, "id"> => {
   const today = new Date();
   const due = new Date(today);
@@ -251,12 +276,10 @@ const toNumber = (value: string | number) => {
 
 const isOverdueInvoice = (invoice: ExternalInvoice) => {
   if (isFullyPaidInvoice(invoice)) return false;
-  const due = parseDateOnlyLocal(invoice.dueDate);
-  if (!due) return false;
-  const today = new Date();
-  due.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  return (invoice.status === "sent" || invoice.status === "partially_paid") && due < today;
+  const dueDateInput = String(invoice.dueDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDateInput)) return false;
+  const todayNJ = getTodayDateInputInNJ();
+  return (invoice.status === "sent" || invoice.status === "partially_paid") && dueDateInput < todayNJ;
 };
 
 const getDiscountAmount = (invoice: ExternalInvoice): number => {
@@ -1360,11 +1383,8 @@ Prep Services FBA Team`;
       for (const invoice of overdueWithoutLateFee) {
         try {
           // When invoice becomes overdue: invoice date = today, due date = tomorrow (one day)
-          const today = new Date();
-          const tomorrow = new Date(today);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          const invoiceDateStr = formatDateInputLocal(today);
-          const dueDateStr = formatDateInputLocal(tomorrow);
+          const invoiceDateStr = getTodayDateInputInNJ();
+          const dueDateStr = addDaysToDateInput(invoiceDateStr, 1);
 
           // Create updated invoice object with late fee and new dates for PDF generation
           const updatedInvoice: ExternalInvoice = {
