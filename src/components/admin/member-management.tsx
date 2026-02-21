@@ -21,7 +21,7 @@ import { format } from "date-fns";
 import type { UserProfile } from "@/types";
 import { EditUserForm } from "./edit-user-form";
 import { RoleFeatureManagement } from "./role-feature-management";
-import { getUserRoles, getDefaultFeaturesForRole } from "@/lib/permissions";
+import { getDefaultFeaturesForRole } from "@/lib/permissions";
 
 interface MemberManagementProps {
   adminUser: UserProfile | null;
@@ -35,15 +35,10 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const [sortOrder, setSortOrder] = useState<"a-z" | "z-a">("a-z");
   const itemsPerPage = 12;
 
-  // Filter users (exclude pure commission agents, but include users with multiple roles) and apply search
+  // Filter users and apply search
+  // Requirement: show all users in User Management, regardless of role.
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const userRoles = getUserRoles(user);
-      // Exclude pure commission agents (only commission_agent role, no user role)
-      if (userRoles.length === 1 && userRoles[0] === "commission_agent") return false;
-      // Include users with "user" role (even if they also have commission_agent role)
-      if (!userRoles.includes("user")) return false;
-      
       const matchesSearch = searchQuery === "" || 
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||

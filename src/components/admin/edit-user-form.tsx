@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import type { UserProfile } from "@/types";
+import type { UserProfile, UserRole } from "@/types";
+import { getUserRoles } from "@/lib/permissions";
 
 const editUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -26,7 +27,7 @@ const editUserSchema = z.object({
   state: z.string().optional(),
   country: z.string().optional(),
   zipCode: z.string().optional(),
-  role: z.enum(["admin", "user"]),
+  role: z.enum(["admin", "sub_admin", "user", "commission_agent"]),
   status: z.enum(["pending", "approved", "deleted"]).optional(),
 });
 
@@ -63,6 +64,12 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
   async function onSubmit(values: EditUserFormValues) {
     setIsLoading(true);
     try {
+      const existingRoles = getUserRoles(user);
+      const nextRoles: UserRole[] = [
+        values.role as UserRole,
+        ...existingRoles.filter((r) => r !== (values.role as UserRole)),
+      ];
+
       await updateDoc(doc(db, "users", user.uid), {
         name: values.name,
         email: values.email,
@@ -75,6 +82,7 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
         country: values.country || null,
         zipCode: values.zipCode || null,
         role: values.role,
+        roles: nextRoles,
         status: values.status || "approved",
       });
 
@@ -160,6 +168,8 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="sub_admin">Sub Admin</SelectItem>
+                      <SelectItem value="commission_agent">Commission Agent</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
