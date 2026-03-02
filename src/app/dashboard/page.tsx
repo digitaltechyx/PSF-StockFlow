@@ -396,8 +396,8 @@ export default function DashboardPage() {
     { title: "Total Inventory", value: String(totalItemsInInventory), hint: "Units across all products", icon: Boxes, iconBg: "bg-blue-500/10 text-blue-600" },
     { title: "Low Stock SKUs", value: String(lowStockItems.length), hint: "Qty ≤ 10", icon: AlertTriangle, iconBg: "bg-amber-500/10 text-amber-600" },
     { title: "Orders Pending", value: String(pendingFulfillmentCount), hint: "Awaiting fulfillment", icon: Clock3, iconBg: "bg-orange-500/10 text-orange-600" },
-    { title: hasDateRange ? "Shipped in period" : "Today Shipped", value: String(todaysShippedOrders), hint: hasDateRange ? "In selected date range" : "Shipped today", icon: Truck, iconBg: "bg-violet-500/10 text-violet-600" },
-    { title: "Pending Invoice", value: invoicesLoading ? "..." : `$${totalPendingAmount.toFixed(2)}`, hint: "Outstanding balance", icon: DollarSign, iconBg: "bg-emerald-500/10 text-emerald-600" },
+    { title: hasDateRange ? "Shipped in period" : "Today Shipped Orders", value: String(todaysShippedOrders), hint: hasDateRange ? "In selected date range" : "Shipments recorded", icon: Truck, iconBg: "bg-violet-500/10 text-violet-600" },
+    { title: "Pending Invoice", value: invoicesLoading ? "..." : `$${Number(totalPendingAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, hint: "Outstanding balance", icon: DollarSign, iconBg: "bg-emerald-500/10 text-emerald-600" },
     { title: "Integration Health", value: shopifyConnectionsLoading || ebayConnectionsLoading ? "..." : `${integrationHealth.pct}%`, hint: integrationHealth.label, icon: RefreshCw, iconBg: "bg-teal-500/10 text-teal-600" },
   ];
 
@@ -448,7 +448,7 @@ export default function DashboardPage() {
             <CardHeader className="pb-2 pt-6 px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle className="text-base font-semibold text-neutral-900">Inventory & Shipment Trend</CardTitle>
+                  <CardTitle className="text-base font-semibold text-neutral-900">Inventory & Shipment Activity</CardTitle>
                   <CardDescription className="text-neutral-500">
                     {hasDateRange ? "Shipped vs added in selected date range" : "Shipped vs added inventory over time"}
                   </CardDescription>
@@ -488,7 +488,7 @@ export default function DashboardPage() {
 
           <Card className="xl:col-span-5 overflow-hidden rounded-xl border-neutral-200/80 bg-white/90 shadow-[0_1px_3px_rgba(0,0,0,0.08)] backdrop-blur-sm">
             <CardHeader className="pb-2 pt-6 px-6">
-              <CardTitle className="text-base font-semibold text-neutral-900">Orders by Status</CardTitle>
+              <CardTitle className="text-base font-semibold text-neutral-900">Request Processing Status</CardTitle>
               <CardDescription className="text-neutral-500">Shipped, pending, processing, rejected</CardDescription>
             </CardHeader>
             <CardContent className="px-6 pb-6">
@@ -556,7 +556,7 @@ export default function DashboardPage() {
         <section className="grid gap-6 xl:grid-cols-12 xl:items-stretch">
           <Card className="xl:col-span-5 flex flex-col overflow-hidden rounded-xl border-neutral-200/80 bg-white/90 shadow-[0_1px_3px_rgba(0,0,0,0.08)] backdrop-blur-sm xl:min-h-0">
             <CardHeader className="pb-2 pt-6 px-6 shrink-0">
-              <CardTitle className="text-base font-semibold text-neutral-900">Source Split</CardTitle>
+              <CardTitle className="text-base font-semibold text-neutral-900">Inventory Sources</CardTitle>
               <CardDescription className="text-neutral-500">
                 {hasDateRange ? "Inventory added in selected range by channel" : "Inventory by channel"}
               </CardDescription>
