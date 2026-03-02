@@ -389,6 +389,7 @@ export default function AdminDashboardPage() {
     billedInRange: 0,
     paidInRange: 0,
   });
+  const [topClientsByRevenue, setTopClientsByRevenue] = useState<Array<{ user: string; count: number; fill: string }>>([]);
   const [integrationStats, setIntegrationStats] = useState({
     shopify: 0,
     ebay: 0,
@@ -403,20 +404,27 @@ export default function AdminDashboardPage() {
         let totalPendingAmount = 0;
         let billedInRange = 0;
         let paidInRange = 0;
+        const userRevenueInWindow = new Map<string, number>();
         const invoiceDate = (inv: Partial<Invoice>): Date | null => {
           const ms = toMs((inv as any)?.issuedAt || (inv as any)?.date || (inv as any)?.createdAt || (inv as any)?.generatedAt);
           return ms ? new Date(ms) : null;
         };
+        const windowFrom = hasDateRange && dateRangeFrom ? startOfDay(dateRangeFrom) : new Date(Date.now() - topUsersRange * 86400000);
+        const windowTo = hasDateRange && dateRangeTo ? endOfDay(dateRangeTo) : new Date();
+        const inWindow = (d: Date | null) => d && d.getTime() >= windowFrom.getTime() && d.getTime() <= windowTo.getTime();
         if (!users || users.length === 0) {
           setPendingInvoicesCount(0);
           setPendingInvoicesAmount(0);
           setFinancialMetrics({ billedInRange: 0, paidInRange: 0 });
+          setTopClientsByRevenue([]);
           setInvoicesLoading(false);
           return;
         }
         for (const user of users) {
           const userId = user?.uid || user?.id;
           if (!userId || typeof userId !== "string" || userId.trim() === "" || userId === adminUser?.uid) continue;
+          const displayName = user?.name || user?.email || "User";
+          let userRevenue = 0;
           try {
             const invoicesSnapshot = await getDocs(collection(db, `users/${userId}/invoices`));
             const userInvoices = invoicesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Invoice[];
@@ -429,7 +437,9 @@ export default function AdminDashboardPage() {
               const amount = Number(inv.grandTotal || 0);
               billedInRange += amount;
               if ((inv.status || "").toLowerCase() === "paid") paidInRange += amount;
+              if (inWindow(d)) userRevenue += amount;
             });
+            if (userRevenue > 0) userRevenueInWindow.set(displayName, (userRevenueInWindow.get(displayName) ?? 0) + userRevenue);
           } catch {
             // continue
           }
@@ -437,17 +447,23 @@ export default function AdminDashboardPage() {
         setPendingInvoicesCount(totalPending);
         setPendingInvoicesAmount(totalPendingAmount);
         setFinancialMetrics({ billedInRange, paidInRange });
+        const topClients = Array.from(userRevenueInWindow.entries())
+          .map(([user, revenue]) => ({ user, count: revenue, fill: "#06b6d4" }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 6);
+        setTopClientsByRevenue(topClients);
       } catch {
         setPendingInvoicesCount(0);
         setPendingInvoicesAmount(0);
         setFinancialMetrics({ billedInRange: 0, paidInRange: 0 });
+        setTopClientsByRevenue([]);
       } finally {
         setInvoicesLoading(false);
       }
     };
     if (users && users.length > 0) fetchPendingInvoices();
     else setInvoicesLoading(false);
-  }, [users, adminUser, dateRangeFrom, dateRangeTo]);
+  }, [users, adminUser, dateRangeFrom, dateRangeTo, hasDateRange, topUsersRange]);
 
   useEffect(() => {
     const run = async () => {
@@ -646,28 +662,34 @@ export default function AdminDashboardPage() {
   const requestTrendConfig = {
     total: { label: "Requests", color: "#8b5cf6" },
   } satisfies ChartConfig;
-  const topUsersConfig = {
-    count: { label: "Requests", color: "#06b6d4" },
+  const topClientsConfig = {
+    count: { label: "Revenue", color: "#06b6d4" },
   } satisfies ChartConfig;
 
   const kpiCards = [
     { title: "Pending Users", value: String(pendingUsersCount), hint: "Awaiting approval", icon: Shield, iconBg: "bg-orange-500/10 text-orange-600", href: "/admin/dashboard/users" },
     { title: "Active Users", value: String(activeUsersCount), hint: "Approved users", icon: Users, iconBg: "bg-emerald-500/10 text-emerald-600", href: "/admin/dashboard/users" },
-    { title: "Pending Invoices", value: invoicesLoading ? "…" : `${pendingInvoicesCount} ($${pendingInvoicesAmount.toFixed(0)})`, hint: "Outstanding", icon: Receipt, iconBg: "bg-blue-500/10 text-blue-600", href: "/admin/dashboard/invoices" },
+    {
+      title: "Pending Invoices",
+      value: invoicesLoading ? "…" : String(pendingInvoicesCount),
+      hint: invoicesLoading ? "Outstanding…" : `Outstanding $${Number(pendingInvoicesAmount || 0).toLocaleString("en-US")}`,
+      icon: Receipt,
+      iconBg: "bg-blue-500/10 text-blue-600",
+      href: "/admin/dashboard/invoices",
+    },
     { title: "Pending Requests", value: requestsLoading ? "…" : String(pendingRequestsCount), hint: "All request types", icon: Bell, iconBg: "bg-indigo-500/10 text-indigo-600", href: "/admin/dashboard/notifications" },
-    { title: "Shipped Today", value: shippedAndReceivedLoading ? "…" : String(ordersShippedToday), hint: "Shipments recorded", icon: Truck, iconBg: "bg-teal-500/10 text-teal-600", href: "/admin/dashboard/shopify-orders" },
-    { title: "Received Today", value: shippedAndReceivedLoading ? "…" : String(receivedUnitsToday), hint: "Units added", icon: PackageCheck, iconBg: "bg-amber-500/10 text-amber-600", href: "/admin/dashboard/inventory-management" },
+    { title: "Today Shipped Orders", value: shippedAndReceivedLoading ? "…" : String(ordersShippedToday), hint: "Shipments recorded", icon: Truck, iconBg: "bg-teal-500/10 text-teal-600", href: "/admin/dashboard/shopify-orders" },
+    { title: "Today Received Inventory", value: shippedAndReceivedLoading ? "…" : String(receivedUnitsToday), hint: "Units added", icon: PackageCheck, iconBg: "bg-amber-500/10 text-amber-600", href: "/admin/dashboard/inventory-management" },
   ];
   const collectionRate = financialMetrics.billedInRange > 0
     ? Math.round((financialMetrics.paidInRange / financialMetrics.billedInRange) * 100)
     : 0;
+  const dueAmount = Math.max(financialMetrics.billedInRange - financialMetrics.paidInRange, 0);
   const integrationHealth = integrationStats.shopify + integrationStats.ebay > 0 ? "Healthy" : "Needs setup";
   const alerts = [
-    pendingUsersCount > 0 ? `${pendingUsersCount} users waiting approval` : null,
-    pendingRequestsCount > 20 ? `${pendingRequestsCount} pending requests need review` : null,
-    pendingInvoicesAmount > 0 ? `$${pendingInvoicesAmount.toFixed(0)} outstanding invoices` : null,
-    integrationStats.shopify === 0 ? "Shopify integration not connected" : null,
-    integrationStats.ebay === 0 ? "eBay integration not connected" : null,
+    pendingRequestsCount > 0 ? `${pendingRequestsCount} document requests pending` : null,
+    pendingInvoicesCount > 0 ? `${pendingInvoicesCount} due invoices` : null,
+    pendingInvoicesAmount > 0 ? `Outstanding balance $${Number(pendingInvoicesAmount || 0).toLocaleString("en-US")}` : null,
   ].filter((v): v is string => Boolean(v));
 
   return (
@@ -735,11 +757,21 @@ export default function AdminDashboardPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Billed</span>
-                    <span className="font-semibold text-slate-900">${financialMetrics.billedInRange.toFixed(0)}</span>
+                    <span className="font-semibold text-slate-900">
+                      ${Number(financialMetrics.billedInRange || 0).toLocaleString("en-US")}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Paid</span>
-                    <span className="font-semibold text-emerald-600">${financialMetrics.paidInRange.toFixed(0)}</span>
+                    <span className="font-semibold text-emerald-600">
+                      ${Number(financialMetrics.paidInRange || 0).toLocaleString("en-US")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Due</span>
+                    <span className="font-semibold text-rose-600">
+                      ${Number(dueAmount || 0).toLocaleString("en-US")}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Collection rate</span>
@@ -827,8 +859,8 @@ export default function AdminDashboardPage() {
                   <div>
                     <CardTitle className="text-base font-semibold text-slate-900">
                       {hasDateRange
-                        ? "Shipments & inventory over time (Selected range)"
-                        : `Shipments & inventory over time (Last ${trendRange} days)`}
+                        ? "Inventory & Shipment Activity (Selected range)"
+                        : `Inventory & Shipment Activity (Last ${trendRange} days)`}
                     </CardTitle>
                     <CardDescription className="text-slate-500">
                       {hasDateRange ? "Shipped, added, returns & disposed in date picker range" : `Shipped, added, returns & disposed — ${trendRange}d view`}
@@ -881,7 +913,7 @@ export default function AdminDashboardPage() {
                   <PieChartIcon className="h-4 w-4" />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-semibold text-slate-900">Request status</CardTitle>
+                  <CardTitle className="text-base font-semibold text-slate-900">Request Processing Status</CardTitle>
                   <CardDescription className="text-slate-500">Pending, processing, shipped, rejected</CardDescription>
                 </div>
               </div>
@@ -915,10 +947,10 @@ export default function AdminDashboardPage() {
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-fuchsia-500/10 text-fuchsia-600">
                     <TrendingUp className="h-4 w-4" />
                   </div>
-                  <div>
-                    <CardTitle className="text-base font-semibold text-slate-900">Request volume over time</CardTitle>
-                    <CardDescription className="text-slate-500">Daily request activity — {hasDateRange ? "date range" : `${requestTrendRange}d view`}</CardDescription>
-                  </div>
+                <div>
+                  <CardTitle className="text-base font-semibold text-slate-900">Request Activity Trend</CardTitle>
+                  <CardDescription className="text-slate-500">Daily request activity — {hasDateRange ? "date range" : `${requestTrendRange}d view`}</CardDescription>
+                </div>
                 </div>
                 {!hasDateRange && (
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50/80 p-1">
@@ -960,8 +992,8 @@ export default function AdminDashboardPage() {
             <CardHeader className="pb-2 pt-6 px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle className="text-base font-semibold text-slate-900">Top users by request volume</CardTitle>
-                  <CardDescription className="text-slate-500">Most active users — {hasDateRange ? "date range" : `last ${topUsersRange} days`}</CardDescription>
+                  <CardTitle className="text-base font-semibold text-slate-900">Top Active Clients</CardTitle>
+                  <CardDescription className="text-slate-500">By revenue — {hasDateRange ? "date range" : `last ${topUsersRange} days`}</CardDescription>
                 </div>
                 {!hasDateRange && (
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50/80 p-1">
@@ -983,15 +1015,15 @@ export default function AdminDashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="px-6 pb-6">
-              {chartLoading ? (
+              {invoicesLoading && topClientsByRevenue.length === 0 ? (
                 <Skeleton className="h-[260px] w-full rounded-lg" />
               ) : (
-                <ChartContainer config={topUsersConfig} className="h-[260px] w-full">
-                  <BarChart data={chartData.topUsers} layout="vertical" margin={{ left: 8, right: 8 }} animationDuration={400} animationEasing="ease-out">
+                <ChartContainer config={topClientsConfig} className="h-[260px] w-full">
+                  <BarChart data={topClientsByRevenue} layout="vertical" margin={{ left: 8, right: 8 }} animationDuration={400} animationEasing="ease-out">
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgb(226 232 240)" />
-                    <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} />
+                    <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                     <YAxis type="category" dataKey="user" tickLine={false} axisLine={false} width={92} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <ChartTooltip content={<ChartTooltipContent formatter={(value) => `$${Number(value).toLocaleString("en-US")}`} />} />
                     <Bar dataKey="count" radius={[0, 6, 6, 0]} fill="var(--color-count)" />
                   </BarChart>
                 </ChartContainer>
@@ -1010,7 +1042,7 @@ export default function AdminDashboardPage() {
                     <BarChart3 className="h-4 w-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-base font-semibold text-slate-900">Requests by type</CardTitle>
+                    <CardTitle className="text-base font-semibold text-slate-900">Operational Workload</CardTitle>
                     <CardDescription className="text-slate-500">Shipment, inventory, returns, dispose — {hasDateRange ? "date range" : `${requestTypesRange}d view`}</CardDescription>
                   </div>
                 </div>
