@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Shield, Zap } from "lucide-react";
 import type { UserProfile, UserRole, UserFeature } from "@/types";
-import { getUserRoles } from "@/lib/permissions";
+import { getUserRoles, getDefaultFeaturesForRole } from "@/lib/permissions";
 import { generateUniqueReferralCode } from "@/lib/commission-utils";
 
 interface RoleFeatureManagementProps {
@@ -69,10 +69,15 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
   // Get current roles (support both legacy and new format)
   const currentRoles = getUserRoles(user);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>(currentRoles);
-  
-  // Get current features
-  const currentFeatures = user.features || [];
-  const [selectedFeatures, setSelectedFeatures] = useState<UserFeature[]>(currentFeatures);
+
+  // Effective features: if user has no/empty features but has "user" role, they get the default 8 in the app — show that in the UI
+  const effectiveFeatures =
+    user.features && user.features.length > 0
+      ? user.features
+      : currentRoles.includes("user")
+        ? getDefaultFeaturesForRole("user")
+        : [];
+  const [selectedFeatures, setSelectedFeatures] = useState<UserFeature[]>(effectiveFeatures);
 
   const handleRoleToggle = (role: UserRole) => {
     setSelectedRoles((prev) => {
