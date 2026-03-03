@@ -157,9 +157,9 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
     }
   };
 
-  const hasChanges = 
-    JSON.stringify(selectedRoles.sort()) !== JSON.stringify(currentRoles.sort()) ||
-    JSON.stringify(selectedFeatures.sort()) !== JSON.stringify(currentFeatures.sort());
+  const hasChanges =
+    JSON.stringify([...selectedRoles].sort()) !== JSON.stringify([...currentRoles].sort()) ||
+    JSON.stringify([...selectedFeatures].sort()) !== JSON.stringify([...effectiveFeatures].sort());
 
   return (
     <div className="space-y-6">
