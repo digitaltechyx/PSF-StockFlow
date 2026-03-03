@@ -115,10 +115,11 @@ export function hasFeature(userProfile: UserProfile | null | undefined, feature:
     }
   }
 
-  // Client role with no features array (legacy): treat as having all client features for backward compat
-  if (hasRole(userProfile, "user") && CLIENT_FEATURE_LIST.includes(feature)) {
-    if (!userProfile.features || !Array.isArray(userProfile.features) || userProfile.features.length === 0) {
-      return true;
+  // Client role with no/empty features: apply same default as new users (only the 8 default features for everyone)
+  if (hasRole(userProfile, "user")) {
+    const noFeaturesSet = !userProfile.features || !Array.isArray(userProfile.features) || userProfile.features.length === 0;
+    if (noFeaturesSet) {
+      return DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(feature);
     }
   }
   
@@ -142,9 +143,9 @@ export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...fe
     return true;
   }
 
-  // Client with no features (legacy): has all client features
+  // Client with no/empty features: same default 8 as new users
   if (hasRole(userProfile, "user") && (!userProfile.features || userProfile.features.length === 0)) {
-    if (features.some((f) => CLIENT_FEATURE_LIST.includes(f))) return true;
+    if (features.some((f) => DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(f))) return true;
   }
   
   // Sub admins must have features explicitly granted (no automatic access)
