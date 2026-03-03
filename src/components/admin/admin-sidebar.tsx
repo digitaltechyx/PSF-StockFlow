@@ -21,6 +21,7 @@ import {
   Users,
   FileText,
   Shield,
+  ShieldCheck,
   X,
   UserCheck,
   Briefcase,
@@ -224,6 +225,14 @@ export function AdminSidebar() {
   // Admin has all features automatically, sub_admin needs explicit grants
   const allMenuItems = [
     {
+      title: "Roles & Permissions",
+      url: "/admin/dashboard/roles-permissions",
+      icon: ShieldCheck,
+      color: "text-slate-700",
+      requiredFeature: "admin_dashboard" as const,
+      adminOnly: true,
+    },
+    {
       title: "Dashboard",
       url: "/admin/dashboard",
       icon: LayoutDashboard,
@@ -235,7 +244,7 @@ export function AdminSidebar() {
       url: "/admin/dashboard/inventory-management",
       icon: Boxes,
       color: "text-violet-600",
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_inventory_admin" as const,
     },
     {
       title: "Notification",
@@ -243,7 +252,7 @@ export function AdminSidebar() {
       icon: Bell,
       color: "text-purple-600",
       badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_notifications" as const,
     },
     {
       title: "Users",
@@ -272,14 +281,14 @@ export function AdminSidebar() {
       url: "/admin/dashboard/quotes",
       icon: Briefcase,
       color: "text-emerald-600",
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_quotes" as const,
     },
     {
       title: "Pricing",
       url: "/admin/dashboard/pricing",
       icon: DollarSign,
       color: "text-amber-600",
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_pricing" as const,
     },
     {
       title: "Documents",
@@ -287,7 +296,7 @@ export function AdminSidebar() {
       icon: FolderOpen,
       color: "text-indigo-600",
       badge: pendingDocumentRequestsCount > 0 ? pendingDocumentRequestsCount : null,
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_documents" as const,
     },
     {
       title: "Product Returns",
@@ -295,7 +304,7 @@ export function AdminSidebar() {
       icon: Package,
       color: "text-teal-600",
       badge: productReturnsPendingCount > 0 ? productReturnsPendingCount : null,
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_product_returns" as const,
     },
     {
       title: "Dispose Requests",
@@ -303,21 +312,21 @@ export function AdminSidebar() {
       icon: RotateCcw,
       color: "text-orange-600",
       badge: disposePendingCount > 0 ? disposePendingCount : null,
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_dispose_requests" as const,
     },
     {
       title: "Shopify Orders",
       url: "/admin/dashboard/shopify-orders",
       icon: ShoppingBag,
       color: "text-green-600",
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_shopify_orders" as const,
     },
     {
       title: "eBay Orders",
       url: "/admin/dashboard/ebay-orders",
       icon: ShoppingCart,
       color: "text-amber-600",
-      requiredFeature: "admin_dashboard" as const,
+      requiredFeature: "manage_ebay_orders" as const,
     },
   ];
 
@@ -330,6 +339,9 @@ export function AdminSidebar() {
 
   // Filter menu items based on user's role and features
   const menuItems = allMenuItems.filter((item) => {
+    const adminOnly = (item as { adminOnly?: boolean }).adminOnly;
+    if (adminOnly) return hasRole(userProfile, "admin");
+
     const canAccessAdmin =
       hasRole(userProfile, "admin") ||
       hasRole(userProfile, "sub_admin") ||

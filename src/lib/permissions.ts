@@ -3,19 +3,16 @@ import type { UserProfile, UserRole, UserFeature } from "@/types";
 /**
  * Get default features for a role when user is first created
  */
+const CLIENT_FEATURE_LIST: UserFeature[] = [
+  "view_dashboard", "view_inventory", "shipped_orders", "create_shipment",
+  "buy_labels", "upload_labels", "request_product_returns", "track_shipment",
+  "view_invoices", "my_pricing", "restock_summary", "modification_logs",
+  "delete_logs", "disposed_inventory", "client_documents", "integrations",
+];
+
 export function getDefaultFeaturesForRole(role: UserRole): UserFeature[] {
   if (role === "user") {
-    // Clients get all features by default
-    return [
-      "buy_labels",
-      "upload_labels",
-      "track_shipment",
-      "view_invoices",
-      "restock_summary",
-      "delete_logs",
-      "modification_logs",
-      "disposed_inventory",
-    ];
+    return [...CLIENT_FEATURE_LIST];
   } else if (role === "commission_agent") {
     // Commission agents get affiliate dashboard by default
     return ["affiliate_dashboard"];
@@ -102,6 +99,13 @@ export function hasFeature(userProfile: UserProfile | null | undefined, feature:
       return userProfile.features.includes("admin_dashboard");
     }
   }
+
+  // Client role with no features array (legacy): treat as having all client features for backward compat
+  if (hasRole(userProfile, "user") && CLIENT_FEATURE_LIST.includes(feature)) {
+    if (!userProfile.features || !Array.isArray(userProfile.features) || userProfile.features.length === 0) {
+      return true;
+    }
+  }
   
   // Sub admins must have features explicitly granted (no automatic access)
   // Check if feature is granted
@@ -121,6 +125,11 @@ export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...fe
   // Admin always has all features
   if (hasRole(userProfile, "admin")) {
     return true;
+  }
+
+  // Client with no features (legacy): has all client features
+  if (hasRole(userProfile, "user") && (!userProfile.features || userProfile.features.length === 0)) {
+    if (features.some((f) => CLIENT_FEATURE_LIST.includes(f))) return true;
   }
   
   // Sub admins must have features explicitly granted (no automatic access)

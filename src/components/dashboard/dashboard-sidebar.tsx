@@ -73,7 +73,7 @@ export function DashboardSidebar() {
       icon: LayoutDashboard,
       color: "text-blue-600",
       requiredRole: "user" as const,
-      requiredFeature: null as string | null,
+      requiredFeature: "view_dashboard" as const,
     },
     {
       title: "Inventory",
@@ -81,7 +81,7 @@ export function DashboardSidebar() {
       icon: PackageCheck,
       color: "text-sky-600",
       requiredRole: "user" as const,
-      requiredFeature: null as string | null,
+      requiredFeature: "view_inventory" as const,
     },
     {
       title: "Shipped Orders",
@@ -89,7 +89,7 @@ export function DashboardSidebar() {
       icon: Truck,
       color: "text-teal-600",
       requiredRole: "user" as const,
-      requiredFeature: null as string | null,
+      requiredFeature: "shipped_orders" as const,
     },
     {
       title: "Create Shipment",
@@ -98,7 +98,7 @@ export function DashboardSidebar() {
       color: "text-indigo-600",
       badge: null,
       requiredRole: "user" as const,
-      requiredFeature: null,
+      requiredFeature: "create_shipment" as const,
     },
     {
       title: "Buy Labels",
@@ -116,7 +116,7 @@ export function DashboardSidebar() {
       color: "text-orange-600",
       badge: null,
       requiredRole: "user" as const,
-      requiredFeature: null,
+      requiredFeature: "request_product_returns" as const,
     },
     {
       title: "Disposed Inventory",
@@ -143,7 +143,7 @@ export function DashboardSidebar() {
       color: "text-green-600",
       badge: null,
       requiredRole: "user" as const,
-      requiredFeature: null,
+      requiredFeature: "my_pricing" as const,
     },
     {
       title: "Restock Summary",
@@ -185,7 +185,7 @@ export function DashboardSidebar() {
       color: "text-indigo-600",
       badge: null,
       requiredRole: "user" as const,
-      requiredFeature: null,
+      requiredFeature: "client_documents" as const,
     },
     {
       title: "Integrations",
@@ -194,7 +194,7 @@ export function DashboardSidebar() {
       color: "text-emerald-600",
       badge: null,
       requiredRole: "user" as const,
-      requiredFeature: null,
+      requiredFeature: "integrations" as const,
     },
     {
       title: "Affiliate",

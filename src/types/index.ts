@@ -4,6 +4,10 @@ export type UserRole = "admin" | "user" | "commission_agent" | "sub_admin";
 export type UserStatus = "pending" | "approved" | "deleted";
 
 export type UserFeature =
+  | "view_dashboard"
+  | "view_inventory"
+  | "shipped_orders"
+  | "create_shipment"
   | "buy_labels"
   | "upload_labels"
   | "track_shipment"
@@ -12,11 +16,24 @@ export type UserFeature =
   | "delete_logs"
   | "modification_logs"
   | "disposed_inventory"
+  | "my_pricing"
+  | "client_documents"
+  | "integrations"
+  | "request_product_returns"
   | "affiliate_dashboard"
   | "admin_dashboard"
   | "manage_users"
   | "manage_invoices"
-  | "manage_labels";
+  | "manage_labels"
+  | "manage_quotes"
+  | "manage_pricing"
+  | "manage_documents"
+  | "manage_product_returns"
+  | "manage_dispose_requests"
+  | "manage_shopify_orders"
+  | "manage_ebay_orders"
+  | "manage_inventory_admin"
+  | "manage_notifications";
 
 export interface UserProfile {
   uid: string;
@@ -39,6 +56,8 @@ export interface UserProfile {
   createdAt?: Date;
   approvedAt?: Date;
   deletedAt?: Date;
+  /** Unique 5-digit display ID for clients (e.g. 10001). Shown with name in admin. */
+  clientId?: string | null;
   referredByAgentId?: string; // ID of the commission agent who referred this user
   referralCode?: string; // Unique referral code for commission agents
   socialProfile?: string; // Social media profile URL

@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { generateClientId } from "@/lib/client-id";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -129,6 +130,7 @@ export default function RegisterPage() {
         status: "pending",
         storageType: values.storageType, // Store selected storage type
         createdAt: new Date(),
+        clientId: await generateClientId(),
       };
 
       // Add referral information if referral code was provided

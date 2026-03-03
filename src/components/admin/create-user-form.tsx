@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { generateClientId } from "@/lib/client-id";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
