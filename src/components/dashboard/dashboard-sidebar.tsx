@@ -207,26 +207,25 @@ export function DashboardSidebar() {
     },
   ];
 
-  // Filter menu items based on roles and features
-  // IMPORTANT: If a menu item requires a feature, user MUST have that feature (strict check, no role fallback)
-  // Features can be granted to any role, allowing cross-role access
+  // Filter menu items: show all client items to users (so they see full nav; locked ones show blur on click)
+  // Commission-agent items only show when user has that role and the affiliate feature
   const menuItems = allMenuItems.filter((item) => {
-    // First, check if user has the required role (base requirement)
-    const hasRequiredRole = 
+    const hasRequiredRole =
       (item.requiredRole === "user" && hasUserRole) ||
       (item.requiredRole === "commission_agent" && hasAgentRole);
-    
-    // If user doesn't have the required role, don't show the item
-    if (!hasRequiredRole) {
-      return false;
+
+    if (!hasRequiredRole) return false;
+
+    // User-role items: show all to clients so they can see and click; lack of feature shows blur overlay on page
+    if (item.requiredRole === "user") {
+      return true;
     }
-    
-    // If a feature is specified, user MUST have that feature (strict requirement, no fallback)
-    if (item.requiredFeature) {
+
+    // Commission-agent: only show if they have the affiliate feature
+    if (item.requiredRole === "commission_agent" && item.requiredFeature) {
       return hasFeature(userProfile, item.requiredFeature);
     }
-    
-    // If no feature requirement, show based on role (which we already checked above)
+
     return true;
   }).map(({ requiredRole, requiredFeature, ...item }) => item); // Remove internal fields
 

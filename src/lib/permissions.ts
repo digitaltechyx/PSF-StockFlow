@@ -1,7 +1,7 @@
 import type { UserProfile, UserRole, UserFeature } from "@/types";
 
 /**
- * Get default features for a role when user is first created
+ * Full list of client features (for legacy backward compat and reference).
  */
 const CLIENT_FEATURE_LIST: UserFeature[] = [
   "view_dashboard", "view_inventory", "shipped_orders", "create_shipment",
@@ -10,9 +10,24 @@ const CLIENT_FEATURE_LIST: UserFeature[] = [
   "delete_logs", "disposed_inventory", "client_documents", "integrations",
 ];
 
+/**
+ * Default features for newly created client users (restricted set).
+ * Admin can grant more via Roles & Permissions.
+ */
+const DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS: UserFeature[] = [
+  "view_inventory",      // Add Inventory
+  "create_shipment",    // Create Shipment
+  "shipped_orders",     // Shipped Orders
+  "my_pricing",         // Pricing
+  "view_invoices",     // Invoices
+  "restock_summary",   // Restock Summary
+  "modification_logs", // Modification Logs
+  "delete_logs",       // Deleted Logs access
+];
+
 export function getDefaultFeaturesForRole(role: UserRole): UserFeature[] {
   if (role === "user") {
-    return [...CLIENT_FEATURE_LIST];
+    return [...DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS];
   } else if (role === "commission_agent") {
     // Commission agents get affiliate dashboard by default
     return ["affiliate_dashboard"];
