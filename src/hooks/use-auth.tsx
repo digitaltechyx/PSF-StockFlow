@@ -58,17 +58,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         (docSnapshot) => {
           if (docSnapshot.exists()) {
             const data = docSnapshot.data();
-            // Ensure required fields exist with safe defaults
+            // Build profile: spread data first, then set critical fields so they are never overwritten.
+            // Ensures features and roles are always arrays so role/permission checks work correctly.
             const profile: UserProfile = {
               uid: user.uid,
-              email: data.email || null,
-              name: data.name || null,
-              phone: data.phone || null,
-              role: data.role || "user", // Legacy field
-              roles: data.roles || (data.role ? [data.role] : []), // Ensure roles array exists
-              status: data.status || "approved", // Default to approved if missing
-              features: data.features || [], // Ensure features array exists
-              ...data, // Spread other fields
+              ...data,
+              email: data.email ?? null,
+              name: data.name ?? null,
+              phone: data.phone ?? null,
+              role: data.role || "user",
+              status: data.status || "approved",
+              roles: Array.isArray(data.roles) ? data.roles : (data.role ? [data.role] : ["user"]),
+              features: Array.isArray(data.features) ? data.features : [],
             };
             setUserProfile(profile);
           } else {
