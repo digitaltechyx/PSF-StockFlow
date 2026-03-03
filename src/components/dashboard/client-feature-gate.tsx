@@ -2,8 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { hasRole, hasFeature } from "@/lib/permissions";
+import { hasRole, hasFeature, getDefaultFeaturesForRole } from "@/lib/permissions";
 import { getRequiredFeatureForPath } from "@/lib/dashboard-routes";
+import type { UserFeature } from "@/types";
 import { Lock } from "lucide-react";
 
 function LockedOverlay() {
@@ -22,22 +23,37 @@ function LockedOverlay() {
   );
 }
 
+/** Strict check: for role "user", allow only if requiredFeature is in their features array (or default list if no array). */
+function userHasFeature(
+  features: UserFeature[] | undefined | null,
+  roles: string[],
+  requiredFeature: UserFeature
+): boolean {
+  const isUser = roles.includes("user");
+  if (!isUser) return false;
+  const list = Array.isArray(features) ? features : [];
+  if (list.length > 0) {
+    return list.includes(requiredFeature);
+  }
+  return getDefaultFeaturesForRole("user").includes(requiredFeature);
+}
+
 export function ClientFeatureGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { userProfile } = useAuth();
-  const requiredFeature = getRequiredFeatureForPath(pathname);
 
-  // No feature required for this path
+  // Normalize path (no trailing slash) so it matches route config
+  const path = (pathname ?? "").replace(/\/$/, "") || "/";
+  const requiredFeature = getRequiredFeatureForPath(path);
+
   if (!requiredFeature) {
     return <>{children}</>;
   }
 
-  // Super admin always has access
   if (userProfile && hasRole(userProfile, "admin")) {
     return <>{children}</>;
   }
 
-  // Commission agent: gate by affiliate_dashboard
   if (requiredFeature === "affiliate_dashboard") {
     if (userProfile && hasFeature(userProfile, "affiliate_dashboard")) {
       return <>{children}</>;
@@ -45,12 +61,21 @@ export function ClientFeatureGate({ children }: { children: React.ReactNode }) {
     return <LockedOverlay />;
   }
 
-  // Client (user): only allow if they have this feature in their assigned list
-  const hasAccess = userProfile && hasFeature(userProfile, requiredFeature);
+  // Client (user) route: strict check using profile.features and profile.roles directly
+  const roles = (userProfile?.roles && Array.isArray(userProfile.roles)
+    ? userProfile.roles
+    : userProfile?.role
+      ? [userProfile.role]
+      : []) as string[];
+  const features = userProfile?.features;
+
+  const hasAccess =
+    userProfile &&
+    userHasFeature(features, roles, requiredFeature);
+
   if (hasAccess) {
     return <>{children}</>;
   }
 
-  // No access: show only the overlay (do not render page content)
   return <LockedOverlay />;
 }
