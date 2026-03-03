@@ -56,6 +56,16 @@ export default function RolesPermissionsPage() {
     [users, adminUser]
   );
 
+  const sortedUsersForSelect = useMemo(
+    () =>
+      [...nonAdminUsers].sort((a, b) => {
+        const nameA = (a.name || a.email || a.uid || "").toLowerCase();
+        const nameB = (b.name || b.email || b.uid || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+      }),
+    [nonAdminUsers]
+  );
+
   const selectedUser = useMemo(
     () => nonAdminUsers.find((u) => u.uid === selectedUserId),
     [nonAdminUsers, selectedUserId]
@@ -202,7 +212,7 @@ export default function RolesPermissionsPage() {
                     <SelectValue placeholder="Choose a user..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {nonAdminUsers.map((u) => (
+                    {sortedUsersForSelect.map((u) => (
                       <SelectItem key={u.uid} value={u.uid}>
                         {u.name || u.email || u.uid} {u.email ? `(${u.email})` : ""}
                       </SelectItem>
