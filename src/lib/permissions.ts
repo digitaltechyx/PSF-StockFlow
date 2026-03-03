@@ -97,62 +97,62 @@ export function hasAllRoles(userProfile: UserProfile | null | undefined, ...role
 }
 
 /**
- * Check if user has a specific feature
+ * Check if user has a specific feature.
+ * For clients (role "user") with a non-empty features array, ONLY those features are granted.
  */
 export function hasFeature(userProfile: UserProfile | null | undefined, feature: UserFeature): boolean {
   if (!userProfile) return false;
-  
+
   // Admin always has all features
   if (hasRole(userProfile, "admin")) {
     return true;
   }
 
-  // Some installs treat "admin_dashboard" feature as admin access (even if role field is inconsistent)
-  // Keep this narrow to avoid granting admin capabilities to regular users.
-  if (feature === "admin_dashboard") {
-    if (userProfile.features && Array.isArray(userProfile.features)) {
-      return userProfile.features.includes("admin_dashboard");
+  const features = userProfile.features;
+  const hasExplicitFeatures = Array.isArray(features) && features.length > 0;
+
+  // Client (role "user"): strict — only grant what is in their features array or the default 8 if no array
+  if (hasRole(userProfile, "user")) {
+    if (hasExplicitFeatures) {
+      return features.includes(feature);
     }
+    return DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(feature);
   }
 
-  // Client role with no/empty features: apply same default as new users (only the 8 default features for everyone)
-  if (hasRole(userProfile, "user")) {
-    const noFeaturesSet = !userProfile.features || !Array.isArray(userProfile.features) || userProfile.features.length === 0;
-    if (noFeaturesSet) {
-      return DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(feature);
-    }
+  // admin_dashboard is only for admin/sub_admin; don't grant to others unless in their list
+  if (feature === "admin_dashboard") {
+    return hasExplicitFeatures && features.includes("admin_dashboard");
   }
-  
-  // Sub admins must have features explicitly granted (no automatic access)
-  // Check if feature is granted
-  if (userProfile.features && Array.isArray(userProfile.features)) {
-    return userProfile.features.includes(feature);
+
+  // Sub admins and others: only if explicitly in features array
+  if (hasExplicitFeatures) {
+    return features.includes(feature);
   }
-  
+
   return false;
 }
 
 /**
  * Check if user has any of the specified features
  */
-export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...features: UserFeature[]): boolean {
+export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...requestedFeatures: UserFeature[]): boolean {
   if (!userProfile) return false;
-  
-  // Admin always has all features
-  if (hasRole(userProfile, "admin")) {
-    return true;
+
+  if (hasRole(userProfile, "admin")) return true;
+
+  const userFeatures = userProfile.features;
+  const hasExplicitFeatures = Array.isArray(userFeatures) && userFeatures.length > 0;
+
+  if (hasRole(userProfile, "user")) {
+    if (hasExplicitFeatures) {
+      return requestedFeatures.some((f) => userFeatures.includes(f));
+    }
+    return requestedFeatures.some((f) => DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(f));
   }
 
-  // Client with no/empty features: same default 8 as new users
-  if (hasRole(userProfile, "user") && (!userProfile.features || userProfile.features.length === 0)) {
-    if (features.some((f) => DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS.includes(f))) return true;
+  if (hasExplicitFeatures) {
+    return requestedFeatures.some((f) => userFeatures.includes(f));
   }
-  
-  // Sub admins must have features explicitly granted (no automatic access)
-  if (userProfile.features && Array.isArray(userProfile.features)) {
-    return features.some(feature => userProfile.features!.includes(feature));
-  }
-  
   return false;
 }
 
