@@ -29,7 +29,8 @@ function userHasFeature(
   roles: string[],
   requiredFeature: UserFeature
 ): boolean {
-  const isUser = roles.includes("user");
+  const rolesLower = (roles || []).map((r) => String(r).toLowerCase().trim());
+  const isUser = rolesLower.includes("user");
   if (!isUser) return false;
   const list = Array.isArray(features) ? features : [];
   if (list.length > 0) {
@@ -69,7 +70,7 @@ export function ClientFeatureGate({ children }: { children: React.ReactNode }) {
     : userProfile?.role
       ? [userProfile.role]
       : []) as string[];
-  const features = userProfile?.features;
+  const features = Array.isArray(userProfile?.features) ? userProfile.features : [];
 
   const hasAccess =
     userProfile &&

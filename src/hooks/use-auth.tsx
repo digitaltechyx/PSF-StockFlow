@@ -8,7 +8,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, signOut as firebaseSignOut, type User } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, getDocFromServer, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { UserProfile, AuthContextType } from "@/types";
 
@@ -52,41 +52,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (user) {
-      setLoading(true); // Set loading to true while fetching profile
+      setLoading(true);
+      const userRef = doc(db, "users", user.uid);
+
+      const normalizeRole = (r: unknown) => String(r ?? "").trim().toLowerCase();
+      const buildProfile = (data: Record<string, unknown>) => {
+        const roleList = Array.isArray(data.roles) ? data.roles : (data.role != null ? [data.role] : ["user"]);
+        const rolesNormalized = roleList.map(normalizeRole).filter(Boolean);
+        return {
+          uid: user.uid,
+          ...data,
+          email: data.email ?? null,
+          name: data.name ?? null,
+          phone: data.phone ?? null,
+          role: normalizeRole(data.role) || "user",
+          status: data.status || "approved",
+          roles: rolesNormalized.length ? rolesNormalized : ["user"],
+          features: Array.isArray(data.features) ? data.features : [],
+        } as UserProfile;
+      };
+
+      (async () => {
+        try {
+          const serverSnap = await getDocFromServer(userRef);
+          if (serverSnap.exists()) {
+            setUserProfile(buildProfile(serverSnap.data()));
+          } else {
+            setUserProfile(null);
+          }
+        } catch {
+          const fallbackSnap = await getDoc(userRef);
+          if (fallbackSnap.exists()) {
+            setUserProfile(buildProfile(fallbackSnap.data()));
+          } else {
+            setUserProfile(null);
+          }
+        } finally {
+          setLoading(false);
+        }
+      })();
+
       const unsubProfile = onSnapshot(
-        doc(db, "users", user.uid),
+        userRef,
         (docSnapshot) => {
           if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-            // Build profile: spread data first, then set critical fields so they are never overwritten.
-            // Ensures features and roles are always arrays so role/permission checks work correctly.
-            const profile: UserProfile = {
-              uid: user.uid,
-              ...data,
-              email: data.email ?? null,
-              name: data.name ?? null,
-              phone: data.phone ?? null,
-              role: data.role || "user",
-              status: data.status || "approved",
-              roles: Array.isArray(data.roles) ? data.roles : (data.role ? [data.role] : ["user"]),
-              features: Array.isArray(data.features) ? data.features : [],
-            };
-            setUserProfile(profile);
+            setUserProfile(buildProfile(docSnapshot.data()));
           } else {
             setUserProfile(null);
           }
           setLoading(false);
         },
         (error) => {
-          // Handle abort errors gracefully - these happen when component unmounts or navigation occurs
-          if (error?.message?.includes('aborted') || 
-              error?.message?.includes('user aborted') ||
-              error?.code === 'cancelled') {
-            // This is normal - component unmounted or user navigated away
-            // Don't log as error, just silently ignore
-            return;
-          }
-          
+          if (error?.message?.includes('aborted') || error?.message?.includes('user aborted') || error?.code === 'cancelled') return;
           console.error("Error fetching user profile:", error);
           setUserProfile(null);
           setLoading(false);
