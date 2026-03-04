@@ -9,7 +9,7 @@ import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { ClientFeatureGate } from "@/components/dashboard/client-feature-gate";
 import { DashboardNavProvider } from "@/contexts/dashboard-nav-context";
-import { hasRole, getUserRoles, canAccessDashboardPath } from "@/lib/permissions";
+import { hasRole, getUserRoles } from "@/lib/permissions";
 import {
   SidebarProvider,
   SidebarInset,
@@ -33,13 +33,6 @@ export default function DashboardLayout({
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-
-  // Hard redirect when user lacks the required feature for this path (e.g. Integrations, Buy Labels)
-  useEffect(() => {
-    if (userProfile && pathname && pathname.startsWith("/dashboard") && !canAccessDashboardPath(userProfile, pathname)) {
-      router.replace("/dashboard");
-    }
-  }, [userProfile, pathname, router]);
 
   useEffect(() => {
     // Wait for both auth and profile to finish loading
@@ -130,14 +123,6 @@ export default function DashboardLayout({
   // If profile loaded but user is not a regular user/agent or has invalid status, show loading (redirect will happen)
   const userRoles = userProfile ? getUserRoles(userProfile) : [];
   if (userProfile && ((userRoles.length === 0 || (!hasRole(userProfile, "user") && !hasRole(userProfile, "commission_agent"))) || userProfile.status === "pending" || userProfile.status === "deleted")) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (userProfile && pathname && pathname.startsWith("/dashboard") && !canAccessDashboardPath(userProfile, pathname)) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
