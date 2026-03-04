@@ -7,8 +7,9 @@ import { Loader2 } from "lucide-react";
 import { ProfileDialog } from "@/components/dashboard/profile-dialog";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { ClientFeatureGate } from "@/components/dashboard/client-feature-gate";
 import { DashboardNavProvider } from "@/contexts/dashboard-nav-context";
-import { hasRole, getUserRoles } from "@/lib/permissions";
+import { hasRole, getUserRoles, canAccessDashboardPath } from "@/lib/permissions";
 import {
   SidebarProvider,
   SidebarInset,
@@ -32,6 +33,13 @@ export default function DashboardLayout({
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
+
+  // Hard redirect when user lacks the required feature for this path (e.g. Integrations, Buy Labels)
+  useEffect(() => {
+    if (userProfile && pathname && pathname.startsWith("/dashboard") && !canAccessDashboardPath(userProfile, pathname)) {
+      router.replace("/dashboard");
+    }
+  }, [userProfile, pathname, router]);
 
   useEffect(() => {
     // Wait for both auth and profile to finish loading
@@ -129,6 +137,14 @@ export default function DashboardLayout({
     );
   }
 
+  if (userProfile && pathname && pathname.startsWith("/dashboard") && !canAccessDashboardPath(userProfile, pathname)) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider>
       <DashboardNavProvider>
@@ -139,7 +155,7 @@ export default function DashboardLayout({
           <ProfileDialog open={showProfile} onOpenChange={setShowProfile} />
           <main className="flex flex-1 flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-8 overflow-auto overflow-x-hidden w-full min-w-0 max-w-full">
             <div className="w-full min-w-0 max-w-full">
-              {children}
+              <ClientFeatureGate>{children}</ClientFeatureGate>
             </div>
           </main>
         </SidebarInset>

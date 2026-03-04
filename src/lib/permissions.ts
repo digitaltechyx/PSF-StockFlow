@@ -1,4 +1,5 @@
 import type { UserProfile, UserRole, UserFeature } from "@/types";
+import { getRequiredFeatureForPath } from "@/lib/dashboard-routes";
 
 /**
  * Default features for newly created client users (restricted set).
@@ -153,5 +154,22 @@ export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...re
 export function getPrimaryRole(userProfile: UserProfile | null | undefined): UserRole | null {
   const roles = getUserRoles(userProfile);
   return roles.length > 0 ? roles[0] : null;
+}
+
+/**
+ * Returns true if the user is allowed to access the given dashboard path (client dashboard).
+ * Used by layout to redirect when the user lacks the required feature.
+ */
+export function canAccessDashboardPath(
+  userProfile: UserProfile | null | undefined,
+  pathname: string | null
+): boolean {
+  if (!userProfile) return false;
+  const path = (pathname ?? "").replace(/\/$/, "") || "/";
+  const required = getRequiredFeatureForPath(path);
+  if (!required) return true;
+  if (hasRole(userProfile, "admin")) return true;
+  if (required === "affiliate_dashboard") return hasFeature(userProfile, "affiliate_dashboard");
+  return hasFeature(userProfile, required);
 }
 
