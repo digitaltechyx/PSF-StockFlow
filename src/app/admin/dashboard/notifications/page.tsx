@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn, DisposeRequest } from "@/types";
@@ -120,7 +120,19 @@ export default function AdminNotificationsPage() {
 
   const NOTIFICATION_ITEMS_PER_PAGE = 10;
 
-  const [activeTab, setActiveTab] = useState<"all" | Exclude<StatusFilter, "all">>("all");
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"all" | Exclude<StatusFilter, "all">>(
+    (tabFromUrl as "all" | Exclude<StatusFilter, "all">) && ["all", "pending", "paid", "approved", "confirmed", "rejected", "in_progress", "closed", "cancelled"].includes(tabFromUrl)
+      ? (tabFromUrl as "all" | Exclude<StatusFilter, "all">)
+      : "all"
+  );
+
+  useEffect(() => {
+    if (tabFromUrl && ["all", "pending", "paid", "approved", "confirmed", "rejected", "in_progress", "closed", "cancelled"].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl as "all" | Exclude<StatusFilter, "all">);
+    }
+  }, [tabFromUrl]);
   const [typeFilter, setTypeFilter] = useState<"all" | NotificationType>("all");
   const [userIdFilter, setUserIdFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);

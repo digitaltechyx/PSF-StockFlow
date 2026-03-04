@@ -246,9 +246,9 @@ export default function AdminDashboardPage() {
         user.uid !== adminUser.uid &&
         (user.status === "approved" || !user.status) &&
         user.status !== "deleted"
-    ).length;
+  ).length;
   }, [users, adminUser]);
-
+  
   const pendingUsersCount = useMemo(() => {
     if (!users || !adminUser?.uid) return 0;
     return users.filter((user) => user.uid !== adminUser.uid && user.status === "pending").length;
@@ -320,11 +320,11 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const adminUid = adminUser?.uid;
     if (!adminUid) {
-      setOrdersShippedToday(0);
-      setReceivedUnitsToday(0);
-      setShippedAndReceivedLoading(false);
-      return;
-    }
+        setOrdersShippedToday(0);
+        setReceivedUnitsToday(0);
+        setShippedAndReceivedLoading(false);
+        return;
+      }
     let loadedShipped = false;
     let loadedInventory = false;
     const maybeDone = () => {
@@ -347,7 +347,7 @@ export default function AdminDashboardPage() {
         const userId = pathSegments[1];
         if (userId === adminUid) return;
         const data = d.data() as ShippedDoc;
-        const ms = toMs(data?.date);
+              const ms = toMs(data?.date);
         if (inToday(ms, { start, end })) count += 1;
       });
       setOrdersShippedToday(count);
@@ -667,8 +667,8 @@ export default function AdminDashboardPage() {
   } satisfies ChartConfig;
 
   const kpiCards = [
-    { title: "Pending Users", value: String(pendingUsersCount), hint: "Awaiting approval", icon: Shield, iconBg: "bg-orange-500/10 text-orange-600", href: "/admin/dashboard/users" },
-    { title: "Active Users", value: String(activeUsersCount), hint: "Approved users", icon: Users, iconBg: "bg-emerald-500/10 text-emerald-600", href: "/admin/dashboard/users" },
+    { title: "Pending Users", value: String(pendingUsersCount), hint: "Awaiting approval", icon: Shield, iconBg: "bg-orange-500/10 text-orange-600", href: "/admin/dashboard/users?tab=users" },
+    { title: "Active Users", value: String(activeUsersCount), hint: "Approved users", icon: Users, iconBg: "bg-emerald-500/10 text-emerald-600", href: "/admin/dashboard/users?tab=users" },
     {
       title: "Pending Invoices",
       value: invoicesLoading ? "…" : String(pendingInvoicesCount),
@@ -677,7 +677,7 @@ export default function AdminDashboardPage() {
       iconBg: "bg-blue-500/10 text-blue-600",
       href: "/admin/dashboard/invoices",
     },
-    { title: "Pending Requests", value: requestsLoading ? "…" : String(pendingRequestsCount), hint: "All request types", icon: Bell, iconBg: "bg-indigo-500/10 text-indigo-600", href: "/admin/dashboard/notifications" },
+    { title: "Pending Requests", value: requestsLoading ? "…" : String(pendingRequestsCount), hint: "All request types", icon: Bell, iconBg: "bg-indigo-500/10 text-indigo-600", href: "/admin/dashboard/notifications?tab=pending" },
     { title: "Today Shipped Orders", value: shippedAndReceivedLoading ? "…" : String(ordersShippedToday), hint: "Shipments recorded", icon: Truck, iconBg: "bg-teal-500/10 text-teal-600", href: "/admin/dashboard/shopify-orders" },
     { title: "Today Received Inventory", value: shippedAndReceivedLoading ? "…" : String(receivedUnitsToday), hint: "Units added", icon: PackageCheck, iconBg: "bg-amber-500/10 text-amber-600", href: "/admin/dashboard/inventory-management" },
   ];
@@ -700,7 +700,7 @@ export default function AdminDashboardPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Admin Dashboard</h1>
             <p className="mt-1 text-sm text-slate-500">PSF StockFlow — operations overview</p>
-          </div>
+            </div>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-slate-500" />
             <DateRangePicker
@@ -724,13 +724,13 @@ export default function AdminDashboardPage() {
                     <div className="flex items-start justify-between">
                       <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", kpi.iconBg)}>
                         <Icon className="h-5 w-5" />
-                      </div>
+            </div>
                     </div>
                     <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-900">{kpi.value}</p>
                     <p className="mt-0.5 text-sm font-medium text-neutral-600">{kpi.title}</p>
                     <p className="mt-1 text-xs text-neutral-500">{kpi.hint}</p>
-                  </CardContent>
-                </Card>
+          </CardContent>
+        </Card>
               </Link>
             );
           })}
@@ -748,10 +748,10 @@ export default function AdminDashboardPage() {
                   <CardTitle className="text-base font-semibold text-slate-900">Finance snapshot</CardTitle>
                   <CardDescription className="text-slate-500">Selected date range</CardDescription>
                 </div>
-              </div>
-            </CardHeader>
+            </div>
+          </CardHeader>
             <CardContent className="px-6 pb-6">
-              {invoicesLoading ? (
+            {invoicesLoading ? (
                 <Skeleton className="h-20 w-full rounded-lg" />
               ) : (
                 <div className="space-y-3">
@@ -781,9 +781,9 @@ export default function AdminDashboardPage() {
                     Open invoices <ArrowRight className="ml-1 h-3.5 w-3.5" />
                   </Link>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </CardContent>
+        </Card>
 
           <Card className="overflow-hidden rounded-xl border-slate-200/80 bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] lg:col-span-4">
             <CardHeader className="pb-2 pt-6 px-6">
@@ -795,8 +795,8 @@ export default function AdminDashboardPage() {
                   <CardTitle className="text-base font-semibold text-slate-900">Integrations</CardTitle>
                   <CardDescription className="text-slate-500">{integrationHealth}</CardDescription>
                 </div>
-              </div>
-            </CardHeader>
+            </div>
+          </CardHeader>
             <CardContent className="px-6 pb-6">
               {integrationLoading ? (
                 <Skeleton className="h-20 w-full rounded-lg" />
@@ -814,9 +814,9 @@ export default function AdminDashboardPage() {
                     Open order integrations <ArrowRight className="ml-1 h-3.5 w-3.5" />
                   </Link>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </CardContent>
+        </Card>
 
           <Card className="overflow-hidden rounded-xl border-slate-200/80 bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] lg:col-span-4">
             <CardHeader className="pb-2 pt-6 px-6">
@@ -828,8 +828,8 @@ export default function AdminDashboardPage() {
                   <CardTitle className="text-base font-semibold text-slate-900">Alerts</CardTitle>
                   <CardDescription className="text-slate-500">Needs attention</CardDescription>
                 </div>
-              </div>
-            </CardHeader>
+            </div>
+          </CardHeader>
             <CardContent className="px-6 pb-6">
               <div className="space-y-2">
                 {alerts.length === 0 ? (
@@ -843,8 +843,8 @@ export default function AdminDashboardPage() {
                   Open notifications <ArrowRight className="ml-1 h-3.5 w-3.5" />
                 </Link>
               </div>
-            </CardContent>
-          </Card>
+          </CardContent>
+        </Card>
         </section>
 
         {/* Charts row 1: Trend + Status donut */}
@@ -884,8 +884,8 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                 )}
-              </div>
-            </CardHeader>
+            </div>
+          </CardHeader>
             <CardContent className="px-6 pb-6">
               {chartLoading ? (
                 <Skeleton className="h-[280px] w-full rounded-lg" />
@@ -902,9 +902,9 @@ export default function AdminDashboardPage() {
                     <Area dataKey="disposed" type="monotone" fill="var(--color-disposed)" fillOpacity={0.16} stroke="var(--color-disposed)" strokeWidth={2} />
                   </AreaChart>
                 </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </CardContent>
+        </Card>
 
           <Card className="overflow-hidden rounded-xl border-slate-200/80 bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:col-span-4">
             <CardHeader className="pb-2 pt-6 px-6">
@@ -912,12 +912,12 @@ export default function AdminDashboardPage() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
                   <PieChartIcon className="h-4 w-4" />
                 </div>
-                <div>
+            <div>
                   <CardTitle className="text-base font-semibold text-slate-900">Request Processing Status</CardTitle>
                   <CardDescription className="text-slate-500">Pending, processing, shipped, rejected</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
+            </div>
+          </div>
+        </CardHeader>
             <CardContent className="px-6 pb-6">
               {chartLoading ? (
                 <Skeleton className="h-[280px] w-full rounded-lg" />
@@ -943,10 +943,10 @@ export default function AdminDashboardPage() {
           <Card className="overflow-hidden rounded-xl border-slate-200/80 bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:col-span-6">
             <CardHeader className="pb-2 pt-6 px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-fuchsia-500/10 text-fuchsia-600">
                     <TrendingUp className="h-4 w-4" />
-                  </div>
+              </div>
                 <div>
                   <CardTitle className="text-base font-semibold text-slate-900">Request Activity Trend</CardTitle>
                   <CardDescription className="text-slate-500">Daily request activity — {hasDateRange ? "date range" : `${requestTrendRange}d view`}</CardDescription>
@@ -967,9 +967,9 @@ export default function AdminDashboardPage() {
                         {d}d
                       </button>
                     ))}
-                  </div>
+                      </div>
                 )}
-              </div>
+                            </div>
             </CardHeader>
             <CardContent className="px-6 pb-6">
               {chartLoading ? (
@@ -1011,8 +1011,8 @@ export default function AdminDashboardPage() {
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
+                        )}
+                      </div>
             </CardHeader>
             <CardContent className="px-6 pb-6">
               {invoicesLoading && topClientsByRevenue.length === 0 ? (
@@ -1040,12 +1040,12 @@ export default function AdminDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
                     <BarChart3 className="h-4 w-4" />
-                  </div>
+              </div>
                   <div>
                     <CardTitle className="text-base font-semibold text-slate-900">Operational Workload</CardTitle>
                     <CardDescription className="text-slate-500">Shipment, inventory, returns, dispose — {hasDateRange ? "date range" : `${requestTypesRange}d view`}</CardDescription>
-                  </div>
-                </div>
+            </div>
+          </div>
                 {!hasDateRange && (
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50/80 p-1">
                     {([7, 14, 30] as const).map((d) => (
@@ -1061,9 +1061,9 @@ export default function AdminDashboardPage() {
                         {d}d
                       </button>
                     ))}
-                  </div>
-                )}
               </div>
+                )}
+            </div>
             </CardHeader>
             <CardContent className="px-6 pb-6">
               {chartLoading ? (
@@ -1083,9 +1083,9 @@ export default function AdminDashboardPage() {
                     </Bar>
                   </BarChart>
                 </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
+          )}
+        </CardContent>
+      </Card>
         </section>
 
         {/* Recent activity table */}

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,11 +19,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getUserRoles } from "@/lib/permissions";
 
 export default function AdminUsersPage() {
+  const searchParams = useSearchParams();
   const { userProfile: adminUser } = useAuth();
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [activeTab, setActiveTab] = useState<"users" | "commission_agents">("users");
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"users" | "commission_agents">(
+    tabFromUrl === "commission_agents" ? "commission_agents" : "users"
+  );
+
+  useEffect(() => {
+    if (tabFromUrl === "commission_agents" || tabFromUrl === "users") {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
 
   const filteredUsers = useMemo(() => {
     return users
