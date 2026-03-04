@@ -1,17 +1,8 @@
 import type { UserProfile, UserRole, UserFeature } from "@/types";
 
 /**
- * Full list of client features (for legacy backward compat and reference).
- */
-const CLIENT_FEATURE_LIST: UserFeature[] = [
-  "view_dashboard", "view_inventory", "shipped_orders", "create_shipment",
-  "buy_labels", "upload_labels", "request_product_returns", "track_shipment",
-  "view_invoices", "my_pricing", "restock_summary", "modification_logs",
-  "delete_logs", "disposed_inventory", "client_documents", "integrations",
-];
-
-/**
  * Default features for newly created client users (restricted set).
+ * This is the ONLY default — there is no "legacy" grant of all features.
  * Admin can grant more via Roles & Permissions.
  */
 const DEFAULT_CLIENT_FEATURES_FOR_NEW_USERS: UserFeature[] = [

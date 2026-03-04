@@ -9,7 +9,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Shield, Zap } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, Shield, Zap, RotateCcw } from "lucide-react";
 import type { UserProfile, UserRole, UserFeature } from "@/types";
 import { getUserRoles, getDefaultFeaturesForRole } from "@/lib/permissions";
 import { generateUniqueReferralCode } from "@/lib/commission-utils";
@@ -65,7 +75,8 @@ const ALL_FEATURES = [...CLIENT_FEATURES, ...ADMIN_FEATURES];
 export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagementProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   // Get current roles (support both legacy and new format)
   const currentRoles = getUserRoles(user);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>(currentRoles);
@@ -151,6 +162,35 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
         variant: "destructive",
         title: "Error",
         description: error.message || "Failed to update roles and features.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetToDefaultAccess = async () => {
+    setShowResetConfirm(false);
+    setIsLoading(true);
+    try {
+      const defaultFeatures = getDefaultFeaturesForRole("user");
+      const updateData = {
+        roles: ["user"] as UserRole[],
+        role: "user",
+        features: defaultFeatures,
+      };
+      await updateDoc(doc(db, "users", user.uid), updateData);
+      setSelectedRoles(["user"]);
+      setSelectedFeatures(defaultFeatures);
+      toast({
+        title: "Reset complete",
+        description: "User is now client only with the default 8 features. They may need to log out and back in to see changes.",
+      });
+      onSuccess?.();
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to reset access.",
       });
     } finally {
       setIsLoading(false);
@@ -327,8 +367,27 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
         </CardContent>
       </Card>
 
-      {/* Save Button */}
-      <div className="flex justify-end gap-3">
+      {/* Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Only show reset for users who have the client (user) role — resets them to client + default 8 features. Hidden for admin, and for commission-agent-only or sub-admin-only. */}
+        {!selectedRoles.includes("admin") && selectedRoles.includes("user") && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowResetConfirm(true)}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Reset to default access
+          </Button>
+        )}
+        {selectedRoles.includes("admin") && (
+          <p className="text-sm text-muted-foreground">Super admin has full access; reset is not available.</p>
+        )}
+        {!selectedRoles.includes("admin") && !selectedRoles.includes("user") && (
+          <p className="text-sm text-muted-foreground">Reset to default is only for users with Client/User role.</p>
+        )}
         <Button
           onClick={handleSave}
           disabled={isLoading || selectedRoles.length === 0 || !hasChanges}
@@ -344,6 +403,23 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
           )}
         </Button>
       </div>
+
+      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset to default access?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will set this user to <strong>Client/User</strong> role only and grant only the <strong>default 8 features</strong> (Inventory, Create Shipment, Shipped Orders, My Pricing, Invoices, Restock Summary, Modification Logs, Deleted Logs). Any other roles (e.g. Commission Agent, Sub Admin) and extra features will be removed. The user may need to log out and back in to see changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetToDefaultAccess} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Reset access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

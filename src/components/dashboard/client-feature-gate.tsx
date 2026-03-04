@@ -50,7 +50,9 @@ export function ClientFeatureGate({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  if (userProfile && hasRole(userProfile, "admin")) {
+  // Only super-admin (role "admin") bypasses the feature list; no other role gets full client access
+  const isSuperAdmin = userProfile && hasRole(userProfile, "admin");
+  if (isSuperAdmin) {
     return <>{children}</>;
   }
 
