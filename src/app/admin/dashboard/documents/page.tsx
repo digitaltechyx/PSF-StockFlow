@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useCollection } from "@/hooks/use-collection";
+import { useCollectionGroup } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import { doc, updateDoc, Timestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
@@ -63,9 +64,14 @@ export default function DocumentRequestsPage() {
     "documentRequests"
   );
 
-  // Get user data for each request
-  const { data: users } = useCollection<any>("users");
-  const requestsWithUserData = allRequests.map((request) => {
+  const { managedUsers: users, managedUserIds } = useManagedUsers();
+  const scopedRequests = useMemo(() => {
+    if (managedUserIds === null) return allRequests;
+    const set = new Set(managedUserIds);
+    return allRequests.filter((r) => set.has(r.userId));
+  }, [allRequests, managedUserIds]);
+
+  const requestsWithUserData = scopedRequests.map((request) => {
     const user = users.find((u: any) => u.uid === request.userId);
     return {
       ...request,

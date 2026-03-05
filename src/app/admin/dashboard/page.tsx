@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import type { UserProfile, Invoice } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,7 +89,8 @@ function aggregateChartData(
   start: Date,
   end: Date,
   adminUid: string,
-  users: UserProfile[]
+  users: UserProfile[],
+  allowedUserIds: Set<string> | null
 ): typeof initialChartData {
   const buckets = new Map<string, { label: string; shipped: number; added: number; returns: number; disposed: number }>();
   const requestBuckets = new Map<string, { label: string; total: number }>();
@@ -107,10 +108,11 @@ function aggregateChartData(
 
   const uidFromPath = (path: string) => path.split("/")[1] || "";
   const userName = (uid: string) => users?.find((u) => u.uid === uid)?.name || users?.find((u) => u.uid === uid)?.email || "User";
+  const allowed = (uid: string) => !allowedUserIds || allowedUserIds.has(uid);
 
   shippedDocs.forEach((doc) => {
     const uid = uidFromPath(doc.ref.path);
-    if (uid === adminUid) return;
+    if (uid === adminUid || !allowed(uid)) return;
     const data = doc.data();
     const date = new Date(toMs(data?.date));
     if (!isDateInRange(date, start, end)) return;
@@ -124,7 +126,7 @@ function aggregateChartData(
   });
   inventoryDocs.forEach((doc) => {
     const uid = uidFromPath(doc.ref.path);
-    if (uid === adminUid) return;
+    if (uid === adminUid || !allowed(uid)) return;
     const data = doc.data();
     const date = new Date(toMs(data?.receivingDate) || toMs(data?.dateAdded));
     if (!isDateInRange(date, start, end)) return;
@@ -137,7 +139,7 @@ function aggregateChartData(
     const type = idx === 0 ? "Shipment" : "Inventory";
     docs.forEach((doc) => {
       const uid = uidFromPath(doc.ref.path);
-      if (uid === adminUid) return;
+      if (uid === adminUid || !allowed(uid)) return;
       const data = doc.data();
       requestTypeCounts[type as "Shipment" | "Inventory"] += 1;
       const status = (data?.status || "").toLowerCase();
@@ -156,7 +158,7 @@ function aggregateChartData(
   });
   returnsDocs.forEach((doc) => {
     const uid = uidFromPath(doc.ref.path);
-    if (uid === adminUid) return;
+    if (uid === adminUid || !allowed(uid)) return;
     requestTypeCounts.Returns += 1;
     const data = doc.data();
     const status = (data?.status || "").toLowerCase();
@@ -175,7 +177,7 @@ function aggregateChartData(
   });
   disposeDocs.forEach((doc) => {
     const uid = uidFromPath(doc.ref.path);
-    if (uid === adminUid) return;
+    if (uid === adminUid || !allowed(uid)) return;
     requestTypeCounts.Dispose += 1;
     const data = doc.data();
     const status = (data?.status || "").toLowerCase();
@@ -229,7 +231,7 @@ const initialChartData = { trend: [] as Array<{ label: string; shipped: number; 
 
 export default function AdminDashboardPage() {
   const { userProfile: adminUser } = useAuth();
-  const { data: users } = useCollection<UserProfile>("users");
+  const { managedUsers: users, managedUserIds, loading: usersLoading } = useManagedUsers();
 
   const [dateRangeFrom, setDateRangeFrom] = useState<Date | undefined>();
   const [dateRangeTo, setDateRangeTo] = useState<Date | undefined>();
@@ -257,10 +259,16 @@ export default function AdminDashboardPage() {
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [requestsLoading, setRequestsLoading] = useState(true);
 
+  const managedIdsSet = useMemo(() => (managedUserIds === null ? null : new Set(managedUserIds)), [managedUserIds]);
+
   useEffect(() => {
     const run = async () => {
       try {
         setRequestsLoading(true);
+        const userIdsForFallback = (users || [])
+          .map((u: UserProfile) => String(u?.uid || ""))
+          .filter((id) => id && id !== adminUser?.uid);
+        // For sub admin (managedUserIds set), only count per managed user. For super admin, try collectionGroup first.
         const countStatuses = async (collectionName: string, statuses: string[]) => {
           const counts = await Promise.all(
             statuses.map(async (status) => {
@@ -275,15 +283,15 @@ export default function AdminDashboardPage() {
           );
           return counts.reduce((a, b) => a + b, 0);
         };
-        const userIdsForFallback = (users || [])
-          .map((u: UserProfile) => String(u?.uid || ""))
-          .filter((id) => id && id !== adminUser?.uid);
-        const pendingCounts = await Promise.all([
-          countStatuses("shipmentRequests", ["pending", "Pending"]).catch(() => 0),
-          countStatuses("inventoryRequests", ["pending", "Pending"]).catch(() => 0),
-          countStatuses("productReturns", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]).catch(() => 0),
-        ]);
-        let pendingTotal = pendingCounts.reduce((a, b) => a + b, 0);
+        let pendingTotal = 0;
+        if (managedIdsSet === null && userIdsForFallback.length > 0) {
+          const pendingCounts = await Promise.all([
+            countStatuses("shipmentRequests", ["pending", "Pending"]).catch(() => 0),
+            countStatuses("inventoryRequests", ["pending", "Pending"]).catch(() => 0),
+            countStatuses("productReturns", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]).catch(() => 0),
+          ]);
+          pendingTotal = pendingCounts.reduce((a, b) => a + b, 0);
+        }
         if (pendingTotal === 0 && userIdsForFallback.length > 0) {
           try {
             const perUser = await Promise.all(
@@ -311,7 +319,7 @@ export default function AdminDashboardPage() {
     run();
     const interval = setInterval(run, 60000);
     return () => clearInterval(interval);
-  }, [users, adminUser]);
+  }, [users, adminUser, managedIdsSet]);
 
   const [ordersShippedToday, setOrdersShippedToday] = useState(0);
   const [receivedUnitsToday, setReceivedUnitsToday] = useState(0);
@@ -339,6 +347,8 @@ export default function AdminDashboardPage() {
     };
     const inToday = (ms: number, { start, end }: { start: number; end: number }) => ms >= start && ms < end;
 
+    const managedSet = managedIdsSet; // capture for listeners
+
     const unsubShipped = onSnapshot(collectionGroup(db, "shipped"), (snapshot) => {
       const { start, end } = getTodayBounds();
       let count = 0;
@@ -346,8 +356,9 @@ export default function AdminDashboardPage() {
         const pathSegments = d.ref.path.split("/");
         const userId = pathSegments[1];
         if (userId === adminUid) return;
+        if (managedSet !== null && !managedSet.has(userId)) return;
         const data = d.data() as ShippedDoc;
-              const ms = toMs(data?.date);
+        const ms = toMs(data?.date);
         if (inToday(ms, { start, end })) count += 1;
       });
       setOrdersShippedToday(count);
@@ -365,6 +376,7 @@ export default function AdminDashboardPage() {
         const pathSegments = d.ref.path.split("/");
         const userId = pathSegments[1];
         if (userId === adminUid) return;
+        if (managedSet !== null && !managedSet.has(userId)) return;
         const data = d.data() as InventoryDoc;
         const receiveMs = toMs(data?.receivingDate) || toMs(data?.dateAdded);
         if (inToday(receiveMs, { start, end })) qty += Number(data?.quantity) || 0;
@@ -380,7 +392,7 @@ export default function AdminDashboardPage() {
       unsubShipped();
       unsubInventory();
     };
-  }, [adminUser?.uid]);
+  }, [adminUser?.uid, managedIdsSet]);
 
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
   const [pendingInvoicesAmount, setPendingInvoicesAmount] = useState(0);
@@ -530,6 +542,7 @@ export default function AdminDashboardPage() {
       };
     };
 
+    const allowedSet = managedUserIds === null ? null : new Set(managedUserIds);
     const refs = chartRefs.current;
     const runAggregate = () => {
       const r = rangeRef.current;
@@ -537,10 +550,10 @@ export default function AdminDashboardPage() {
       const se2 = getStartEnd(r.requestTrendRange);
       const se3 = getStartEnd(r.topUsersRange);
       const se4 = getStartEnd(r.requestTypesRange);
-      const r1 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se1.start, se1.end, adminUid, users || []);
-      const r2 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se2.start, se2.end, adminUid, users || []);
-      const r3 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se3.start, se3.end, adminUid, users || []);
-      const r4 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se4.start, se4.end, adminUid, users || []);
+      const r1 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se1.start, se1.end, adminUid, users || [], allowedSet);
+      const r2 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se2.start, se2.end, adminUid, users || [], allowedSet);
+      const r3 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se3.start, se3.end, adminUid, users || [], allowedSet);
+      const r4 = aggregateChartData(refs.shipped, refs.inventory, refs.shipReq, refs.invReq, refs.returns, refs.dispose, se4.start, se4.end, adminUid, users || [], allowedSet);
       setChartData({
         trend: r1.trend,
         requestTrend: r2.requestTrend,
@@ -631,7 +644,7 @@ export default function AdminDashboardPage() {
       unsubReturns();
       unsubDispose();
     };
-  }, [adminUser?.uid, users, hasDateRange, dateRangeFrom, dateRangeTo]);
+  }, [adminUser?.uid, users, managedUserIds, hasDateRange, dateRangeFrom, dateRangeTo]);
 
   useEffect(() => {
     if (hasChartDataRef.current) runAggregateRef.current();
@@ -667,15 +680,15 @@ export default function AdminDashboardPage() {
   } satisfies ChartConfig;
 
   const kpiCards = [
-    { title: "Pending Users", value: String(pendingUsersCount), hint: "Awaiting approval", icon: Shield, iconBg: "bg-orange-500/10 text-orange-600", href: "/admin/dashboard/users?tab=users" },
-    { title: "Active Users", value: String(activeUsersCount), hint: "Approved users", icon: Users, iconBg: "bg-emerald-500/10 text-emerald-600", href: "/admin/dashboard/users?tab=users" },
+    { title: "Pending Users", value: String(pendingUsersCount), hint: "Awaiting approval", icon: Shield, iconBg: "bg-orange-500/10 text-orange-600", href: "/admin/dashboard/users?tab=users&status=pending" },
+    { title: "Active Users", value: String(activeUsersCount), hint: "Approved users", icon: Users, iconBg: "bg-emerald-500/10 text-emerald-600", href: "/admin/dashboard/users?tab=users&status=approved" },
     {
       title: "Pending Invoices",
       value: invoicesLoading ? "…" : String(pendingInvoicesCount),
       hint: invoicesLoading ? "Outstanding…" : `Outstanding $${Number(pendingInvoicesAmount || 0).toLocaleString("en-US")}`,
       icon: Receipt,
       iconBg: "bg-blue-500/10 text-blue-600",
-      href: "/admin/dashboard/invoices",
+      href: "/admin/dashboard/invoices?tab=pending",
     },
     { title: "Pending Requests", value: requestsLoading ? "…" : String(pendingRequestsCount), hint: "All request types", icon: Bell, iconBg: "bg-indigo-500/10 text-indigo-600", href: "/admin/dashboard/notifications?tab=pending" },
     { title: "Today Shipped Orders", value: shippedAndReceivedLoading ? "…" : String(ordersShippedToday), hint: "Shipments recorded", icon: Truck, iconBg: "bg-teal-500/10 text-teal-600", href: "/admin/dashboard/shopify-orders" },
@@ -718,7 +731,7 @@ export default function AdminDashboardPage() {
           {kpiCards.map((kpi) => {
             const Icon = kpi.icon;
             return (
-              <Link key={kpi.title} href={kpi.href} className="block">
+              <Link key={kpi.title} href={kpi.href} className="block cursor-pointer">
                 <Card className="overflow-hidden rounded-xl border-neutral-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-shadow hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">

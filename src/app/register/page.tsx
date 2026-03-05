@@ -8,7 +8,8 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { generateClientId } from "@/lib/client-id";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import type { Location } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +47,8 @@ const formSchema = z.object({
   storageType: z.enum(["product_base", "pallet_base"], {
     required_error: "Please select a storage type.",
   }),
+  /** Location IDs – at least one required when active locations exist (validated in submit). */
+  locations: z.array(z.string()).optional().default([]),
   termsAccepted: z.boolean().refine((val) => val === true, {
     message: "You must accept the terms and conditions.",
   }),

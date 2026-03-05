@@ -23,6 +23,8 @@ import { hasRole } from "@/lib/permissions";
 
 interface InvoiceManagementProps {
   users: UserProfile[];
+  /** Initial tab from URL (e.g. ?tab=pending) so dashboard Pending Invoices card opens on pending tab */
+  initialTab?: "pending" | "paid" | null;
 }
 
 interface UserInvoiceSummary {
@@ -32,7 +34,7 @@ interface UserInvoiceSummary {
   totalAmount: number;
 }
 
-export function InvoiceManagement({ users }: InvoiceManagementProps) {
+export function InvoiceManagement({ users, initialTab }: InvoiceManagementProps) {
   const { user, userProfile: adminUser } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,7 +49,15 @@ export function InvoiceManagement({ users }: InvoiceManagementProps) {
   const [endDate, setEndDate] = useState("");
   const [usersPage, setUsersPage] = useState(1);
   const [userFilterTab, setUserFilterTab] = useState<"all" | "unpaid" | "paid">("all");
-  const [activeTab, setActiveTab] = useState<"pending" | "paid">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "paid">(
+    initialTab === "pending" || initialTab === "paid" ? initialTab : "pending"
+  );
+
+  useEffect(() => {
+    if (initialTab === "pending" || initialTab === "paid") {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [currentPage, setCurrentPage] = useState(1);
   const [mainTab, setMainTab] = useState<"invoices" | "commissions">("invoices");
   const [commissionTab, setCommissionTab] = useState<"pending" | "paid">("pending");

@@ -25,10 +25,18 @@ import { getDefaultFeaturesForRole, getUserRoles } from "@/lib/permissions";
 
 interface MemberManagementProps {
   adminUser: UserProfile | null;
+  /** Initial tab from URL (e.g. ?status=pending) so dashboard cards can open the right tab */
+  initialStatus?: "pending" | "approved" | "deleted" | null;
+  /** When provided, use this list instead of fetching (e.g. sub admin managed users) */
+  usersOverride?: UserProfile[];
+  /** When true, hide approve/reject/edit/delete and role editing (sub admin view-only) */
+  viewOnly?: boolean;
 }
 
-export function MemberManagement({ adminUser }: MemberManagementProps) {
-  const { data: users, loading } = useCollection<UserProfile>("users");
+export function MemberManagement({ adminUser, initialStatus, usersOverride, viewOnly }: MemberManagementProps) {
+  const { data: usersFromCollection, loading } = useCollection<UserProfile>("users");
+  const users = usersOverride ?? usersFromCollection;
+  const usersLoading = usersOverride !== undefined ? false : loading;
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -79,8 +87,16 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   const deletedUsers = sortUsers(filteredUsers.filter((user) => user.status === "deleted"));
 
   // Get current tab users based on active tab
-  const [activeTab, setActiveTab] = useState<"pending" | "approved" | "deleted">("pending");
-  
+  const [activeTab, setActiveTab] = useState<"pending" | "approved" | "deleted">(
+    initialStatus === "pending" || initialStatus === "approved" || initialStatus === "deleted" ? initialStatus : "pending"
+  );
+
+  useEffect(() => {
+    if (initialStatus === "pending" || initialStatus === "approved" || initialStatus === "deleted") {
+      setActiveTab(initialStatus);
+    }
+  }, [initialStatus]);
+
   const getCurrentTabUsers = () => {
     switch (activeTab) {
       case "pending":
@@ -591,7 +607,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
   );
   };
 
-  if (loading) {
+  if (usersLoading) {
     return (
       <Card>
         <CardHeader>
@@ -679,7 +695,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {paginatedUsers.map((user, index) => (
-                    <UserCard key={user.uid || `pending-user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
+                    <UserCard key={user.uid || `pending-user-${index}`} user={user} showActions={!viewOnly} showRestore={false} isAdmin={!viewOnly && adminUser?.role === "admin"} />
                   ))}
                 </div>
                 {totalPages > 1 && (
@@ -727,7 +743,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {paginatedUsers.map((user, index) => (
-                    <UserCard key={user.uid || `user-${index}`} user={user} showActions={true} isAdmin={adminUser?.role === "admin"} />
+                    <UserCard key={user.uid || `user-${index}`} user={user} showActions={!viewOnly} showRestore={false} isAdmin={!viewOnly && adminUser?.role === "admin"} />
                   ))}
                 </div>
                 {totalPages > 1 && (
@@ -775,7 +791,7 @@ export function MemberManagement({ adminUser }: MemberManagementProps) {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {paginatedUsers.map((user, index) => (
-                    <UserCard key={user.uid || `deleted-user-${index}`} user={user} showRestore={true} isAdmin={adminUser?.role === "admin"} />
+                    <UserCard key={user.uid || `deleted-user-${index}`} user={user} showActions={false} showRestore={!viewOnly} isAdmin={!viewOnly && adminUser?.role === "admin"} />
                   ))}
                 </div>
                 {totalPages > 1 && (

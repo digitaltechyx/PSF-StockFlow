@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile, InventoryItem, ShippedItem } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +18,7 @@ type ShipmentRequestLite = { status?: string };
 export default function AdminInventoryManagementPage() {
   const { userProfile: adminUser } = useAuth();
   const { user: authUser } = useAuth();
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
+  const { managedUsers: users, loading: usersLoading } = useManagedUsers();
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");

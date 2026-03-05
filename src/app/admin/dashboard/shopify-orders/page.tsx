@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { hasRole } from "@/lib/permissions";
@@ -49,7 +49,7 @@ function ShopifyOrdersContent() {
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [fulfilling, setFulfilling] = useState(false);
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
+  const { managedUsers: users, loading: usersLoading } = useManagedUsers();
   const selectableUsers = useMemo(() => {
     return users
       .filter((u) => hasRole(u, "user") || hasRole(u, "commission_agent"))

@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { hasRole } from "@/lib/permissions";
@@ -60,7 +60,7 @@ function EbayOrdersContent() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrierCode, setCarrierCode] = useState("");
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
+  const { managedUsers: users, loading: usersLoading } = useManagedUsers();
   const selectableUsers = useMemo(() => {
     return users
       .filter((u) => hasRole(u, "user") || hasRole(u, "commission_agent"))

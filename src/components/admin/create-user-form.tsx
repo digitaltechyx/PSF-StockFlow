@@ -6,7 +6,8 @@ import * as z from "zod";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { generateClientId } from "@/lib/client-id";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useCollection } from "@/hooks/use-collection";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +15,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { auth, db } from "@/lib/firebase";
-import { Loader2, UserPlus, Shield, Zap } from "lucide-react";
+import { Loader2, UserPlus, Shield, Zap, MapPin, Users } from "lucide-react";
 import { getDefaultFeaturesForRole } from "@/lib/permissions";
-import type { UserRole, UserFeature } from "@/types";
+import type { UserProfile, UserRole, UserFeature } from "@/types";
 
 const createUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -41,17 +45,45 @@ interface CreateUserFormProps {
   onCancel?: () => void;
 }
 
-// Admin features available for sub admins
+// Admin features available for sub admins (full list so sub admin can get all modules)
 const ADMIN_FEATURES: { value: UserFeature; label: string; description: string }[] = [
   { value: "admin_dashboard", label: "Admin Dashboard", description: "Access to admin dashboard overview" },
-  { value: "manage_users", label: "Manage Users", description: "Create, edit, and manage users" },
+  { value: "manage_users", label: "Manage Users", description: "View assigned users (view-only)" },
   { value: "manage_invoices", label: "Manage Invoices", description: "View and manage invoices" },
   { value: "manage_labels", label: "Manage Labels", description: "View and manage uploaded labels" },
+  { value: "manage_quotes", label: "Quote Management", description: "Access to quote management" },
+  { value: "manage_pricing", label: "Pricing", description: "Access to pricing management" },
+  { value: "manage_documents", label: "Documents", description: "Access to document requests" },
+  { value: "manage_product_returns", label: "Product Returns", description: "Access to product returns" },
+  { value: "manage_dispose_requests", label: "Dispose Requests", description: "Access to dispose requests" },
+  { value: "manage_shopify_orders", label: "Shopify Orders", description: "Access to Shopify orders" },
+  { value: "manage_ebay_orders", label: "eBay Orders", description: "Access to eBay orders" },
+  { value: "manage_inventory_admin", label: "Inventory Management", description: "Access to admin inventory management" },
+  { value: "manage_notifications", label: "Notifications", description: "Access to notifications and pending requests" },
 ];
+
+type LocationDoc = { id: string; name?: string; active?: boolean };
 
 export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [subAdminManagedLocationIds, setSubAdminManagedLocationIds] = useState<string[]>([]);
+  const [subAdminAssignedUserIds, setSubAdminAssignedUserIds] = useState<string[]>([]);
+
+  const { data: locationDocs } = useCollection<LocationDoc>("locations");
+  const { data: allUsersList } = useCollection<UserProfile>("users");
+
+  const activeLocations = useMemo(
+    () => locationDocs.filter((l) => l.active !== false).map((l) => ({ id: l.id, name: l.name ?? "" })),
+    [locationDocs]
+  );
+  const assignableUsersList = useMemo(
+    () =>
+      allUsersList
+        .filter((u) => u.uid && u.status !== "deleted")
+        .sort((a, b) => (a.name || a.email || "").localeCompare(b.name || b.email || "")),
+    [allUsersList]
+  );
 
   const form = useForm<z.infer<typeof createUserSchema>>({
     resolver: zodResolver(createUserSchema),
@@ -88,15 +120,15 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
       // Determine features based on role
       let userFeatures: UserFeature[] = [];
       if (values.role === "sub_admin") {
-        // Sub admin gets only the features explicitly selected
-        userFeatures = values.features as UserFeature[];
+        // Sub admin: use selected features, or all admin features if none selected (full access scoped to assigned users)
+        const selected = values.features as UserFeature[];
+        userFeatures = selected.length > 0 ? selected : ADMIN_FEATURES.map((f) => f.value);
       } else {
         // Regular users get default features for their role
         userFeatures = getDefaultFeaturesForRole(values.role);
       }
 
-      // Create user profile in Firestore
-      await setDoc(doc(db, "users", userCredential.user.uid), {
+      const profileData: Record<string, unknown> = {
         uid: userCredential.user.uid,
         name: values.name,
         email: values.email,
@@ -110,11 +142,16 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
         country: values.country,
         zipCode: values.zipCode,
         role: values.role,
-        roles: [values.role], // Set roles array
+        roles: [values.role],
         features: userFeatures,
-        status: values.role === "sub_admin" ? "approved" : "pending", // Sub admins are auto-approved
+        status: values.role === "sub_admin" ? "approved" : "pending",
         createdAt: new Date(),
-      });
+      };
+      if (values.role === "sub_admin") {
+        profileData.managedLocationIds = subAdminManagedLocationIds;
+        profileData.assignedUserIds = subAdminAssignedUserIds;
+      }
+      await setDoc(doc(db, "users", userCredential.user.uid), profileData);
 
       toast({
         title: "Success",
@@ -421,6 +458,85 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
                   </FormItem>
                 )}
               />
+                <div className="space-y-4 rounded-lg border p-4 bg-muted/30 mt-4">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    <Label className="text-base font-medium">Sub Admin: Locations & Users</Label>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Select locations this sub admin manages, then assign users. Sub admin will only see data for assigned users (and users who have the selected locations).
+                  </p>
+                  <div>
+                    <Label className="text-sm">Managed locations</Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {activeLocations.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No locations. Add them in Roles & Permissions → Assign Location.</p>
+                      ) : (
+                        activeLocations.map((loc) => {
+                          const isSelected = subAdminManagedLocationIds.includes(loc.id);
+                          return (
+                            <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={(checked) => {
+                                  setSubAdminManagedLocationIds((prev) =>
+                                    checked ? [...prev, loc.id] : prev.filter((id) => id !== loc.id)
+                                  );
+                                }}
+                              />
+                              <span className="text-sm">{loc.name || loc.id}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-sm">Assigned users</Label>
+                      {subAdminManagedLocationIds.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const ids = new Set(subAdminAssignedUserIds);
+                            assignableUsersList.forEach((u) => {
+                              const userLocs = u.locations ?? [];
+                              if (userLocs.some((lid) => subAdminManagedLocationIds.includes(lid))) ids.add(u.uid!);
+                            });
+                            setSubAdminAssignedUserIds(Array.from(ids));
+                          }}
+                        >
+                          Auto-assign users with selected locations
+                        </Button>
+                      )}
+                    </div>
+                    <ScrollArea className="h-32 mt-2 rounded border p-2">
+                      <div className="space-y-2">
+                        {assignableUsersList.map((u) => {
+                          const isSelected = subAdminAssignedUserIds.includes(u.uid!);
+                          return (
+                            <label key={u.uid} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={(checked) => {
+                                  setSubAdminAssignedUserIds((prev) =>
+                                    checked ? [...prev, u.uid!] : prev.filter((id) => id !== u.uid)
+                                  );
+                                }}
+                              />
+                              <span className="text-sm">{u.name || u.email || u.uid}</span>
+                              {(u.locations?.length ?? 0) > 0 && (
+                                <Badge variant="secondary" className="text-xs">{u.locations!.length} loc</Badge>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </div>
             )}
 
             <div className="flex gap-2 pt-2">

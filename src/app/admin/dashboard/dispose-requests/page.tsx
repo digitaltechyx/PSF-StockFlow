@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DisposeRequestsManagement } from "@/components/admin/dispose-requests-management";
 import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import type { UserProfile, InventoryItem } from "@/types";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ function DisposeRequestsContent() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
 
-  const { data: users, loading: usersLoading, error: usersError } = useCollection<UserProfile>("users");
+  const { managedUsers: users, loading: usersLoading } = useManagedUsers();
 
   const selectableUsers = useMemo(() => {
     const filtered = users.filter(user => {

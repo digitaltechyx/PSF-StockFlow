@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
+import { useCollection } from "@/hooks/use-collection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Shield, Zap, RotateCcw } from "lucide-react";
+import { Loader2, Shield, Zap, RotateCcw, MapPin, Users } from "lucide-react";
 import type { UserProfile, UserRole, UserFeature } from "@/types";
 import { getUserRoles, getDefaultFeaturesForRole } from "@/lib/permissions";
 import { generateUniqueReferralCode } from "@/lib/commission-utils";
@@ -72,29 +74,62 @@ const ADMIN_FEATURES: { value: UserFeature; label: string; description: string }
 // All features combined
 const ALL_FEATURES = [...CLIENT_FEATURES, ...ADMIN_FEATURES];
 
+type LocationDoc = { id: string; name?: string; active?: boolean };
+
 export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagementProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+  const { data: locationDocs } = useCollection<LocationDoc>("locations");
+  const { data: allUsersList } = useCollection<UserProfile>("users");
+
+  const activeLocations = useMemo(
+    () => locationDocs.filter((l) => l.active !== false).map((l) => ({ id: l.id, name: l.name ?? "" })),
+    [locationDocs]
+  );
+  const assignableUsersList = useMemo(
+    () =>
+      allUsersList
+        .filter((u) => u.uid && u.uid !== user.uid && u.status !== "deleted")
+        .sort((a, b) => (a.name || a.email || "").localeCompare(b.name || b.email || "")),
+    [allUsersList, user.uid]
+  );
+
   // Get current roles (support both legacy and new format)
   const currentRoles = getUserRoles(user);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>(currentRoles);
 
-  // Effective features: if user has no/empty features but has "user" role, they get the default 8 in the app — show that in the UI
+  // Effective features: if user has no/empty features, use role default (user = 8 client features, sub_admin = default admin modules)
   const effectiveFeatures =
     user.features && user.features.length > 0
       ? user.features
       : currentRoles.includes("user")
         ? getDefaultFeaturesForRole("user")
-        : [];
+        : currentRoles.includes("sub_admin")
+          ? getDefaultFeaturesForRole("sub_admin")
+          : [];
   const [selectedFeatures, setSelectedFeatures] = useState<UserFeature[]>(effectiveFeatures);
+
+  const [managedLocationIds, setManagedLocationIds] = useState<string[]>(user.managedLocationIds ?? []);
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>(user.assignedUserIds ?? []);
 
   const handleRoleToggle = (role: UserRole) => {
     setSelectedRoles((prev) => {
       if (prev.includes(role)) {
+        if (role === "sub_admin") {
+          setManagedLocationIds([]);
+          setAssignedUserIds([]);
+        }
         return prev.filter((r) => r !== role);
       } else {
+        if (role === "sub_admin") {
+          const defaults = getDefaultFeaturesForRole("sub_admin");
+          setSelectedFeatures((f) => {
+            const set = new Set([...f, ...defaults]);
+            return Array.from(set);
+          });
+        }
         return [...prev, role];
       }
     });
@@ -143,6 +178,14 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
       } else {
         // Set primary role as legacy role for backward compatibility
         updateData.role = selectedRoles[0];
+      }
+
+      if (selectedRoles.includes("sub_admin")) {
+        updateData.managedLocationIds = managedLocationIds;
+        updateData.assignedUserIds = assignedUserIds;
+      } else {
+        updateData.managedLocationIds = [];
+        updateData.assignedUserIds = [];
       }
 
       await updateDoc(doc(db, "users", user.uid), updateData);
@@ -197,9 +240,14 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
     }
   };
 
-  const hasChanges =
+  const hasRoleOrFeatureChanges =
     JSON.stringify([...selectedRoles].sort()) !== JSON.stringify([...currentRoles].sort()) ||
     JSON.stringify([...selectedFeatures].sort()) !== JSON.stringify([...effectiveFeatures].sort());
+  const hasSubAdminScopeChanges =
+    selectedRoles.includes("sub_admin") &&
+    (JSON.stringify([...managedLocationIds].sort()) !== JSON.stringify([...(user.managedLocationIds ?? [])].sort()) ||
+     JSON.stringify([...assignedUserIds].sort()) !== JSON.stringify([...(user.assignedUserIds ?? [])].sort()));
+  const hasChanges = hasRoleOrFeatureChanges || hasSubAdminScopeChanges;
 
   return (
     <div className="space-y-6">
@@ -264,6 +312,101 @@ export function RoleFeatureManagement({ user, onSuccess }: RoleFeatureManagement
           )}
         </CardContent>
       </Card>
+
+      {/* Sub Admin: Locations & Assigned Users */}
+      {selectedRoles.includes("sub_admin") && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              <CardTitle>Sub Admin: Locations & Assigned Users</CardTitle>
+            </div>
+            <CardDescription>
+              Select which locations this sub admin manages, then assign users. Sub admin will only see data for assigned users (and users who have the selected locations).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              <Label className="text-sm font-medium">Managed locations</Label>
+              <p className="text-xs text-muted-foreground mb-2">Sub admin can manage users who have any of these locations.</p>
+              <div className="flex flex-wrap gap-2">
+                {activeLocations.map((loc) => {
+                  const isSelected = managedLocationIds.includes(loc.id);
+                  return (
+                    <div key={loc.id} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                      <Checkbox
+                        id={`loc-${loc.id}`}
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          setManagedLocationIds((prev) =>
+                            checked ? [...prev, loc.id] : prev.filter((id) => id !== loc.id)
+                          );
+                        }}
+                      />
+                      <label htmlFor={`loc-${loc.id}`} className="text-sm cursor-pointer">{loc.name}</label>
+                    </div>
+                  );
+                })}
+                {activeLocations.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No locations. Add them in the Assign Location tab.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <Label className="text-sm font-medium">Assigned users</Label>
+                  <p className="text-xs text-muted-foreground">Sub admin can manage only these users (and users with selected locations above).</p>
+                </div>
+                {managedLocationIds.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const ids = new Set(assignedUserIds);
+                      assignableUsersList.forEach((u) => {
+                        const userLocs = u.locations ?? [];
+                        if (userLocs.some((lid) => managedLocationIds.includes(lid))) ids.add(u.uid!);
+                      });
+                      setAssignedUserIds(Array.from(ids));
+                    }}
+                  >
+                    <Users className="h-4 w-4 mr-1" />
+                    Auto-assign by location
+                  </Button>
+                )}
+              </div>
+              <ScrollArea className="h-[180px] rounded-md border p-3">
+                <div className="space-y-2">
+                  {assignableUsersList.map((u) => {
+                    const isSelected = assignedUserIds.includes(u.uid!);
+                    return (
+                      <div key={u.uid} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`assign-${u.uid}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            setAssignedUserIds((prev) =>
+                              checked ? [...prev, u.uid!] : prev.filter((id) => id !== u.uid)
+                            );
+                          }}
+                        />
+                        <label htmlFor={`assign-${u.uid}`} className="text-sm cursor-pointer">
+                          {u.name || u.email || u.uid}
+                          {(u.locations?.length ?? 0) > 0 && (
+                            <Badge variant="secondary" className="ml-2 text-xs">{(u.locations?.length ?? 0)} loc</Badge>
+                          )}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Features Section */}
       <Card>

@@ -3,6 +3,14 @@ import type { User as FirebaseUser } from "firebase/auth";
 export type UserRole = "admin" | "user" | "commission_agent" | "sub_admin";
 export type UserStatus = "pending" | "approved" | "deleted";
 
+/** Location that can be assigned to users and to sub admins for scoping. */
+export interface Location {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt?: Date;
+}
+
 export type UserFeature =
   | "view_dashboard"
   | "view_inventory"
@@ -63,6 +71,12 @@ export interface UserProfile {
   socialProfile?: string; // Social media profile URL
   salesExperience?: string[]; // Array of sales experience types
   referralSource?: string; // How they heard about the program
+  /** Location IDs assigned to this user (used for Assign Location and sub admin scope). */
+  locations?: string[];
+  /** Sub admin only: location IDs this sub admin manages. */
+  managedLocationIds?: string[];
+  /** Sub admin only: user UIDs explicitly assigned to this sub admin (they can manage these users). */
+  assignedUserIds?: string[];
 }
 
 export interface InventoryItem {

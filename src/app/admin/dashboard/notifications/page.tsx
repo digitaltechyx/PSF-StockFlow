@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import type { UserProfile, InventoryItem, ShipmentRequest, InventoryRequest, ProductReturn, DisposeRequest } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, collectionGroup, getDocs, query } from "firebase/firestore";
@@ -103,7 +103,7 @@ function isProcessComplete(type: NotificationType, status: string): boolean {
 export default function AdminNotificationsPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
-  const { data: users } = useCollection<UserProfile>("users");
+  const { managedUsers: users, managedUserIds, loading: usersLoading } = useManagedUsers();
   const canSeeAdminNotifications =
     hasRole(userProfile, "admin") ||
     hasRole(userProfile, "sub_admin") ||
@@ -351,7 +351,7 @@ export default function AdminNotificationsPage() {
 
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile, users, toast]);
+  }, [userProfile, users, managedUserIds, toast]);
 
   const allRows = useMemo(() => {
     return [...shipmentRequests, ...inventoryRequests, ...productReturns, ...disposeRequests]

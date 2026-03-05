@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useCollection } from "@/hooks/use-collection";
 import type { UserProfile } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,15 +16,16 @@ import { CreateUserForm } from "@/components/admin/create-user-form";
 import { MemberManagement } from "@/components/admin/member-management";
 import { CommissionAgentsManagement } from "@/components/admin/commission-agents-management";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getUserRoles } from "@/lib/permissions";
+import { getUserRoles, hasRole } from "@/lib/permissions";
 
 export default function AdminUsersPage() {
   const searchParams = useSearchParams();
   const { userProfile: adminUser } = useAuth();
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
+  const { managedUsers: users, loading: usersLoading, isSubAdmin } = useManagedUsers();
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateUser, setShowCreateUser] = useState(false);
   const tabFromUrl = searchParams.get("tab");
+  const statusFromUrl = searchParams.get("status") as "pending" | "approved" | "deleted" | null;
   const [activeTab, setActiveTab] = useState<"users" | "commission_agents">(
     tabFromUrl === "commission_agents" ? "commission_agents" : "users"
   );
@@ -93,6 +94,7 @@ export default function AdminUsersPage() {
                 />
               </div>
             </div>
+            {!isSubAdmin && (
             <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
               <DialogTrigger asChild>
                 <Button className="flex items-center gap-2 shadow-sm">
@@ -113,6 +115,7 @@ export default function AdminUsersPage() {
                 />
               </DialogContent>
             </Dialog>
+            )}
           </div>
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "commission_agents")} className="w-full">
@@ -145,7 +148,12 @@ export default function AdminUsersPage() {
                   ))}
                 </div>
               ) : (
-                <MemberManagement adminUser={adminUser} />
+                <MemberManagement
+                  adminUser={adminUser}
+                  initialStatus={statusFromUrl}
+                  usersOverride={users}
+                  viewOnly={isSubAdmin}
+                />
               )}
             </TabsContent>
             
@@ -157,7 +165,7 @@ export default function AdminUsersPage() {
                   ))}
                 </div>
               ) : (
-                <CommissionAgentsManagement adminUser={adminUser} />
+                <CommissionAgentsManagement adminUser={adminUser} usersOverride={isSubAdmin ? users : undefined} />
               )}
             </TabsContent>
           </Tabs>

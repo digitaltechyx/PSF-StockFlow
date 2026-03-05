@@ -23,10 +23,13 @@ import { generateUniqueReferralCode } from "@/lib/commission-utils";
 
 interface CommissionAgentsManagementProps {
   adminUser: UserProfile | null;
+  /** When provided (e.g. sub admin), only show commission agents from this list */
+  usersOverride?: UserProfile[];
 }
 
-export function CommissionAgentsManagement({ adminUser }: CommissionAgentsManagementProps) {
-  const { data: users, loading } = useCollection<UserProfile>("users");
+export function CommissionAgentsManagement({ adminUser, usersOverride }: CommissionAgentsManagementProps) {
+  const { data: usersFromCollection, loading } = useCollection<UserProfile>("users");
+  const users = usersOverride ?? usersFromCollection;
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);

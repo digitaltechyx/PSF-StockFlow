@@ -24,8 +24,18 @@ export function getDefaultFeaturesForRole(role: UserRole): UserFeature[] {
     // Commission agents get affiliate dashboard by default
     return ["affiliate_dashboard"];
   } else if (role === "sub_admin") {
-    // Sub admins get no features by default - admin must explicitly grant them
-    return [];
+    // Sub admin default: Dashboard, Inventory, Notifications, Users, Invoices, Product Returns, Dispose, Shopify, eBay (data scoped to assigned users)
+    return [
+      "admin_dashboard",
+      "manage_inventory_admin",
+      "manage_notifications",
+      "manage_users",
+      "manage_invoices",
+      "manage_product_returns",
+      "manage_dispose_requests",
+      "manage_shopify_orders",
+      "manage_ebay_orders",
+    ];
   }
   // Admin has all features (handled in hasFeature function)
   return [];
@@ -154,6 +164,35 @@ export function hasAnyFeature(userProfile: UserProfile | null | undefined, ...re
 export function getPrimaryRole(userProfile: UserProfile | null | undefined): UserRole | null {
   const roles = getUserRoles(userProfile);
   return roles.length > 0 ? roles[0] : null;
+}
+
+/**
+ * For a sub admin, returns the list of user UIDs they can manage.
+ * Combines: explicitly assignedUserIds + any user whose locations intersect managedLocationIds.
+ * For non–sub admin (e.g. super admin), returns null (meaning no filter / all users).
+ */
+export function getSubAdminManagedUserIds(
+  profile: UserProfile | null | undefined,
+  allUsers: UserProfile[]
+): string[] | null {
+  if (!profile) return null;
+  if (hasRole(profile, "admin")) return null;
+
+  if (!hasRole(profile, "sub_admin")) return null;
+
+  const managedIds = new Set<string>();
+  const locIds = profile.managedLocationIds ?? [];
+  const assignedIds = profile.assignedUserIds ?? [];
+
+  assignedIds.forEach((uid) => managedIds.add(uid));
+
+  allUsers.forEach((u) => {
+    if (!u.uid || u.uid === profile.uid) return;
+    const userLocs = u.locations ?? [];
+    if (userLocs.some((lid) => locIds.includes(lid))) managedIds.add(u.uid);
+  });
+
+  return Array.from(managedIds);
 }
 
 /**

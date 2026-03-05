@@ -36,7 +36,7 @@ import {
   Boxes,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import type { UserProfile } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -49,11 +49,10 @@ export function AdminSidebar() {
   const { userProfile } = useAuth();
   const { setOpenMobile, isMobile } = useSidebar();
 
-  // Get counts for badges
-  const { data: users } = useCollection<UserProfile>("users");
-  
-  const activeUsersCount = users.filter(u => u.status === "active").length;
-  const pendingUsersCount = users.filter(u => u.status === "pending").length;
+  // Use managed users so sub admin badge counts reflect only assigned users
+  const { managedUsers } = useManagedUsers();
+  const activeUsersCount = managedUsers.filter(u => u.status === "active").length;
+  const pendingUsersCount = managedUsers.filter(u => u.status === "pending").length;
 
   // Pending requests badge (Notifications)
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);

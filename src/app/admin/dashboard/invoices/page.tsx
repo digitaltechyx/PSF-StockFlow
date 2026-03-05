@@ -1,14 +1,17 @@
 "use client";
 
 import React from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, DollarSign } from "lucide-react";
 import { InvoiceManagement } from "@/components/admin/invoice-management";
-import { useCollection } from "@/hooks/use-collection";
+import { useManagedUsers } from "@/hooks/use-managed-users";
 import type { UserProfile } from "@/types";
 
 export default function AdminInvoicesPage() {
-  const { data: users } = useCollection<UserProfile>("users");
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab") as "pending" | "paid" | null;
+  const { managedUsers: users } = useManagedUsers();
 
   return (
     <div className="space-y-6">
@@ -31,7 +34,7 @@ export default function AdminInvoicesPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="p-6">
-            <InvoiceManagement users={users} />
+            <InvoiceManagement users={users} initialTab={tabFromUrl} />
           </div>
         </CardContent>
       </Card>

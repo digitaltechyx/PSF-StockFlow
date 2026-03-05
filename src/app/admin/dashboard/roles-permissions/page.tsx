@@ -9,9 +9,10 @@ import { hasRole, getUserRoles } from "@/lib/permissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, Users, KeyRound, ListChecks, UserCog, Loader2, AlertCircle } from "lucide-react";
+import { ShieldCheck, Users, KeyRound, ListChecks, UserCog, MapPin, Loader2, AlertCircle } from "lucide-react";
 import { ROLE_DEFINITIONS, CLIENT_FEATURES_CONFIG, ADMIN_FEATURES_CONFIG } from "@/lib/roles-permissions-config";
 import { RoleFeatureManagement } from "@/components/admin/role-feature-management";
+import { AssignLocationTab } from "@/components/admin/assign-location-tab";
 import {
   Select,
   SelectContent,
@@ -26,7 +27,7 @@ export default function RolesPermissionsPage() {
   const { userProfile: adminUser } = useAuth();
   const { data: users, loading: usersLoading } = useCollection<UserProfile>("users");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"overview" | "assign">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "assign" | "locations">("overview");
 
   const isSuperAdmin = adminUser && hasRole(adminUser, "admin");
 
@@ -100,8 +101,8 @@ export default function RolesPermissionsPage() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "assign")}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "assign" | "locations")}>
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <ListChecks className="h-4 w-4" />
             Overview
@@ -109,6 +110,10 @@ export default function RolesPermissionsPage() {
           <TabsTrigger value="assign" className="flex items-center gap-2">
             <UserCog className="h-4 w-4" />
             Assign to User
+          </TabsTrigger>
+          <TabsTrigger value="locations" className="flex items-center gap-2">
+            <MapPin className="h-4 w-4" />
+            Assign Location
           </TabsTrigger>
         </TabsList>
 
@@ -237,6 +242,10 @@ export default function RolesPermissionsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="locations" className="mt-6">
+          <AssignLocationTab />
         </TabsContent>
       </Tabs>
     </div>
