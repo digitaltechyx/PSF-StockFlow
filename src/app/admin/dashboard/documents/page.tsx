@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCollectionGroup } from "@/hooks/use-collection";
 
 interface DocumentRequest {
   id: string;

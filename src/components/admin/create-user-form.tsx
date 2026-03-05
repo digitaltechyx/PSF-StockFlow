@@ -406,6 +406,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
             />
 
             {selectedRole === "sub_admin" && (
+              <>
               <FormField
                 control={form.control}
                 name="features"
@@ -458,7 +459,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
                   </FormItem>
                 )}
               />
-                <div className="space-y-4 rounded-lg border p-4 bg-muted/30 mt-4">
+              <div className="space-y-4 rounded-lg border p-4 bg-muted/30 mt-4">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
                     <Label className="text-base font-medium">Sub Admin: Locations & Users</Label>
@@ -537,6 +538,7 @@ export function CreateUserForm({ onSuccess, onCancel }: CreateUserFormProps) {
                     </ScrollArea>
                   </div>
                 </div>
+              </>
             )}
 
             <div className="flex gap-2 pt-2">
