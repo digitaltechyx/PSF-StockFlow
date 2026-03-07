@@ -285,11 +285,11 @@ export default function AdminDashboardPage() {
         };
         let pendingTotal = 0;
         if (managedIdsSet === null && userIdsForFallback.length > 0) {
-          const pendingCounts = await Promise.all([
-            countStatuses("shipmentRequests", ["pending", "Pending"]).catch(() => 0),
-            countStatuses("inventoryRequests", ["pending", "Pending"]).catch(() => 0),
-            countStatuses("productReturns", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]).catch(() => 0),
-          ]);
+        const pendingCounts = await Promise.all([
+          countStatuses("shipmentRequests", ["pending", "Pending"]).catch(() => 0),
+          countStatuses("inventoryRequests", ["pending", "Pending"]).catch(() => 0),
+          countStatuses("productReturns", ["pending", "Pending", "approved", "Approved", "in_progress", "In Progress", "in progress"]).catch(() => 0),
+        ]);
           pendingTotal = pendingCounts.reduce((a, b) => a + b, 0);
         }
         if (pendingTotal === 0 && userIdsForFallback.length > 0) {
@@ -358,7 +358,7 @@ export default function AdminDashboardPage() {
         if (userId === adminUid) return;
         if (managedSet !== null && !managedSet.has(userId)) return;
         const data = d.data() as ShippedDoc;
-        const ms = toMs(data?.date);
+              const ms = toMs(data?.date);
         if (inToday(ms, { start, end })) count += 1;
       });
       setOrdersShippedToday(count);

@@ -95,10 +95,14 @@ interface CreateShipmentWithLabelsFormProps {
   inventory: InventoryItem[];
 }
 
-interface LabelUploadState {
-  file: File | null;
+interface LabelItem {
+  file: File;
   preview: string | null;
   uploadedUrl: string | null;
+}
+
+interface LabelUploadState {
+  items: LabelItem[];
   isUploading: boolean;
 }
 
@@ -342,7 +346,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
     });
     setLabelStates(prev => ({
       ...prev,
-      [newIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
+      [newIndex]: { items: [], isUploading: false }
     }));
   };
 
@@ -365,39 +369,48 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
 
   const handleLabelSelect = async (groupIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
     try {
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
-      if (!isValidType) {
-        toast({
-          variant: "destructive",
-          title: "Invalid File",
-          description: "Please select an image (JPG, PNG) or PDF file.",
-        });
-        return;
-      }
+      const fileList = event.target.files;
+      if (!fileList?.length) return;
 
       const maxSizeBytes = 10 * 1024 * 1024;
-      if (file.size > maxSizeBytes) {
-        toast({
-          variant: "destructive",
-          title: "File Too Large",
-          description: "Please select a file smaller than 10 MB.",
+      const newItems: LabelItem[] = [];
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        if (!file) continue;
+        const isValidType = file.type.startsWith("image/") || file.type === "application/pdf";
+        if (!isValidType) {
+          toast({
+            variant: "destructive",
+            title: "Invalid File",
+            description: `"${file.name}" is not a valid type. Please select images (JPG, PNG) or PDF.`,
+          });
+          continue;
+        }
+        if (file.size > maxSizeBytes) {
+          toast({
+            variant: "destructive",
+            title: "File Too Large",
+            description: `"${file.name}" is over 10 MB. Please choose a smaller file.`,
+          });
+          continue;
+        }
+        newItems.push({
+          file,
+          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+          uploadedUrl: null,
         });
-        return;
       }
+      if (newItems.length === 0) return;
 
       setLabelStates(prev => ({
         ...prev,
         [groupIndex]: {
           ...prev[groupIndex],
-          file,
-          preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
-          uploadedUrl: null,
-          isUploading: false
+          items: [...(prev[groupIndex]?.items ?? []), ...newItems],
+          isUploading: prev[groupIndex]?.isUploading ?? false,
         }
       }));
+      event.target.value = "";
     } catch (error: any) {
       console.error("Error selecting label file:", error);
       toast({
@@ -408,83 +421,66 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
     }
   };
 
-  const handleLabelUpload = async (groupIndex: number): Promise<string | null> => {
+  const uploadOneLabel = async (groupIndex: number, itemIndex: number, file: File): Promise<string | null> => {
+    if (!userProfile) return null;
+    let fileToUpload = file;
+    if (file.type.startsWith("image/")) {
+      const compressedFile = await compressImage(file);
+      if (compressedFile.size > 1024 * 1024) return null;
+      fileToUpload = compressedFile;
+    }
+    const currentDate = new Date();
+    const clientName = userProfile.name || "Unknown User";
+    const formData = new FormData();
+    formData.append('file', fileToUpload);
+    formData.append('clientName', clientName);
+    const year = currentDate.getFullYear().toString();
+    const month = currentDate.toLocaleString('en-US', { month: 'long' });
+    const dateStr = currentDate.toISOString().split('T')[0];
+    formData.append('folderPath', `${year}/${month}/${clientName}/${dateStr}`);
+
+    const response = await fetch('/api/drive/upload', { method: 'POST', body: formData });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to upload label to Google Drive');
+    }
+    const result = await response.json();
+    const downloadURL = result.downloadURL || result.webUrl;
+    if (!downloadURL) throw new Error('No download URL received from Google Drive');
+
+    setLabelStates(prev => {
+      const items = [...(prev[groupIndex]?.items ?? [])];
+      if (items[itemIndex]) items[itemIndex] = { ...items[itemIndex], uploadedUrl: downloadURL };
+      return { ...prev, [groupIndex]: { ...prev[groupIndex], items, isUploading: prev[groupIndex]?.isUploading ?? false } };
+    });
+    return downloadURL;
+  };
+
+  const handleLabelUpload = async (groupIndex: number): Promise<string[]> => {
     const labelState = labelStates[groupIndex];
-    if (!labelState?.file || !userProfile) return null;
-
+    const items = labelState?.items ?? [];
+    const pending = items
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => !item.uploadedUrl && item.file);
+    if (pending.length === 0) {
+      return items.map((i) => i.uploadedUrl).filter(Boolean) as string[];
+    }
     try {
-      setLabelStates(prev => ({
-        ...prev,
-        [groupIndex]: { ...prev[groupIndex], isUploading: true }
-      }));
-
-      let fileToUpload = labelState.file;
-
-      if (labelState.file.type.startsWith("image/")) {
-        const compressedFile = await compressImage(labelState.file);
-        if (compressedFile.size > 1024 * 1024) {
-          toast({
-            variant: "destructive",
-            title: "Compression Failed",
-            description: "Unable to compress image below 1 MB. Please try a different image.",
-          });
-          return null;
-        }
-        fileToUpload = compressedFile;
+      setLabelStates(prev => ({ ...prev, [groupIndex]: { items: prev[groupIndex]?.items ?? [], isUploading: true } }));
+      const urls: string[] = [];
+      for (const { item, idx } of pending) {
+        if (!item.file) continue;
+        const url = await uploadOneLabel(groupIndex, idx, item.file);
+        if (url) urls.push(url);
       }
-
-      const currentDate = new Date();
-      const clientName = userProfile.name || "Unknown User";
-      const fileName = `${Date.now()}_${fileToUpload.name}`;
-      
-      const formData = new FormData();
-      formData.append('file', fileToUpload);
-      formData.append('clientName', clientName);
-      
-      const year = currentDate.getFullYear().toString();
-      const month = currentDate.toLocaleString('en-US', { month: 'long' });
-      const dateStr = currentDate.toISOString().split('T')[0];
-      const folderPath = `${year}/${month}/${clientName}/${dateStr}`;
-      formData.append('folderPath', folderPath);
-
-      const response = await fetch('/api/drive/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        let errorMessage = errorData.error || 'Failed to upload label to Google Drive';
-        
-        if (errorMessage.includes('refresh access token') || errorMessage.includes('Failed to get access token')) {
-          errorMessage = 'Google Drive authentication failed. Please contact admin to re-authenticate Google Drive.';
-        }
-        
-        throw new Error(errorMessage);
+      const allUrls = [...items.map((i) => i.uploadedUrl).filter(Boolean), ...urls] as string[];
+      if (urls.length > 0) {
+        toast({
+          title: "Success",
+          description: urls.length === 1 ? "Label uploaded successfully to Google Drive!" : `${urls.length} labels uploaded successfully!`,
+        });
       }
-
-      const result = await response.json();
-      const downloadURL = result.downloadURL || result.webUrl;
-      
-      if (!downloadURL) {
-        throw new Error('No download URL received from Google Drive');
-      }
-
-      setLabelStates(prev => ({
-        ...prev,
-        [groupIndex]: {
-          ...prev[groupIndex],
-          uploadedUrl: downloadURL,
-          isUploading: false
-        }
-      }));
-      
-      toast({
-        title: "Success",
-        description: "Label uploaded successfully to Google Drive!",
-      });
-
-      return downloadURL;
+      return allUrls;
     } catch (error: any) {
       console.error("Error uploading label:", error);
       toast({
@@ -492,36 +488,34 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
         title: "Upload Failed",
         description: error.message || "Failed to upload label. Please try again.",
       });
-      setLabelStates(prev => ({
-        ...prev,
-        [groupIndex]: { ...prev[groupIndex], isUploading: false }
-      }));
-      return null;
+      setLabelStates(prev => ({ ...prev, [groupIndex]: { ...prev[groupIndex], isUploading: false } }));
+      return items.map((i) => i.uploadedUrl).filter(Boolean) as string[];
     }
   };
 
-  const handleRemoveLabel = (groupIndex: number) => {
+  const handleRemoveLabel = (groupIndex: number, itemIndex?: number) => {
     setLabelStates(prev => {
       const state = prev[groupIndex];
-      if (state?.preview) {
-        URL.revokeObjectURL(state.preview);
+      const items = state?.items ?? [];
+      if (itemIndex !== undefined) {
+        const item = items[itemIndex];
+        if (item?.preview) URL.revokeObjectURL(item.preview);
+        const newItems = items.filter((_, i) => i !== itemIndex);
+        return { ...prev, [groupIndex]: { items: newItems, isUploading: false } };
       }
-      return {
-        ...prev,
-        [groupIndex]: { file: null, preview: null, uploadedUrl: null, isUploading: false }
-      };
+      items.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); });
+      return { ...prev, [groupIndex]: { items: [], isUploading: false } };
     });
   };
 
   const handleRemoveGroup = (index: number) => {
     handleRemoveLabel(index);
     removeGroup(index);
-    // Reindex label states
     const newStates: Record<number, LabelUploadState> = {};
     shipmentGroups.forEach((_, i) => {
       if (i !== index) {
         const oldIndex = i > index ? i - 1 : i;
-        newStates[oldIndex] = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        newStates[oldIndex] = labelStates[i] || { items: [], isUploading: false };
       }
     });
     setLabelStates(newStates);
@@ -574,7 +568,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
       for (let i = 0; i < values.shipmentGroups.length; i++) {
         const group = values.shipmentGroups[i];
         // Get the current label state - check both the index and ensure we have the latest state
-        const labelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        const labelState = labelStates[i] || { items: [], isUploading: false };
 
         // Validate stock availability for this group
         const stockErrors: string[] = [];
@@ -602,31 +596,18 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
           return;
         }
 
-        // Upload label if selected (optional) - get fresh state to ensure we have the latest
-        const currentLabelState = labelStates[i] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+        // Upload labels if selected (optional) - get fresh state to ensure we have the latest
+        const currentLabelState = labelStates[i] || { items: [], isUploading: false };
+        const hasPending = currentLabelState.items.some((it) => it.file && !it.uploadedUrl);
+        const existingUrls = currentLabelState.items.map((it) => it.uploadedUrl).filter(Boolean) as string[];
         let labelUrl = "";
-        
-        // Check if label is already uploaded (priority check)
-        if (currentLabelState.uploadedUrl) {
-          // Label already uploaded, use existing URL
-          labelUrl = currentLabelState.uploadedUrl;
-          console.log(`[Group ${i + 1}] Using existing label URL:`, labelUrl);
-        } else if (currentLabelState.file) {
-          // File selected but not uploaded yet, upload it now
-          console.log(`[Group ${i + 1}] Uploading label file:`, currentLabelState.file.name);
-          const uploadedUrl = await handleLabelUpload(i);
-          if (uploadedUrl) {
-            labelUrl = uploadedUrl;
-            console.log(`[Group ${i + 1}] Label uploaded successfully:`, labelUrl);
-          } else {
-            // Upload failed, but label is optional so we continue without it
-            console.warn(`[Group ${i + 1}] Label upload failed, continuing without label`);
-            labelUrl = "";
-          }
-        } else {
-          // No label provided for this group - that's okay, label is optional
-          console.log(`[Group ${i + 1}] No label provided (optional)`);
-          labelUrl = "";
+        if (existingUrls.length > 0 && !hasPending) {
+          labelUrl = existingUrls.join(",");
+          console.log(`[Group ${i + 1}] Using existing label URL(s):`, labelUrl);
+        } else if (currentLabelState.items.length > 0 || hasPending) {
+          const uploadedUrls = await handleLabelUpload(i);
+          labelUrl = uploadedUrls.join(",");
+          if (labelUrl) console.log(`[Group ${i + 1}] Label(s) uploaded:`, labelUrl);
         }
 
         // Create shipment request
@@ -827,7 +808,7 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
               })
               .filter((item) => item.productName.toLowerCase().includes(normalizedQuery));
 
-            const labelState = labelStates[groupIndex] || { file: null, preview: null, uploadedUrl: null, isUploading: false };
+            const labelState = labelStates[groupIndex] || { items: [], isUploading: false };
 
             const popupKey = group.id;
             const shipmentTypeValue = form.watch(`shipmentGroups.${groupIndex}.shipmentType`);
@@ -1318,54 +1299,64 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                       )}
                     />
 
-                    {/* Label Upload - Inline */}
+                    {/* Label Upload - Multiple files */}
                     <div className="flex-shrink-0">
-                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label (Optional)</FormLabel>
-                      <div className="flex items-center gap-2">
-                        {!labelState.preview && !labelState.uploadedUrl && (
-                          <Input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            onChange={(e) => {
-                              handleLabelSelect(groupIndex, e).catch((error) => {
-                                console.error("Unhandled error in handleLabelSelect:", error);
-                                toast({
-                                  variant: "destructive",
-                                  title: "Error",
-                                  description: "Failed to process file selection. Please try again.",
-                                });
+                      <FormLabel className="text-xs text-muted-foreground mb-1 block">Upload Shipping Label(s) (Optional)</FormLabel>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          multiple
+                          onChange={(e) => {
+                            handleLabelSelect(groupIndex, e).catch((error) => {
+                              console.error("Unhandled error in handleLabelSelect:", error);
+                              toast({
+                                variant: "destructive",
+                                title: "Error",
+                                description: "Failed to process file selection. Please try again.",
                               });
-                            }}
-                            className="w-[170px]"
-                            disabled={labelState.isUploading || isLoading}
-                          />
-                        )}
-                        
-                        {(labelState.preview || labelState.uploadedUrl) && (
-                          <div className="flex items-center gap-2">
-                            {labelState.preview ? (
-                              <img
-                                src={labelState.preview}
-                                alt="Label preview"
-                                className="h-8 w-8 rounded object-cover"
-                              />
-                            ) : labelState.uploadedUrl ? (
-                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                            ) : null}
-                            <span className="text-xs text-muted-foreground">Uploaded</span>
+                            });
+                          }}
+                          className="w-[170px]"
+                          disabled={labelState.isUploading || isLoading}
+                        />
+                        {(labelState.items?.length ?? 0) > 0 && (
+                          <>
+                            {labelState.items.map((item, itemIdx) => (
+                              <div key={itemIdx} className="flex items-center gap-1.5 rounded border bg-muted/40 px-2 py-1">
+                                {item.preview ? (
+                                  <img src={item.preview} alt="" className="h-6 w-6 rounded object-cover" />
+                                ) : (
+                                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                )}
+                                <span className="text-xs max-w-[100px] truncate" title={item.file.name}>{item.file.name}</span>
+                                {item.uploadedUrl ? (
+                                  <span className="text-xs text-green-600">Uploaded</span>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 w-5 p-0"
+                                  onClick={() => handleRemoveLabel(groupIndex, itemIdx)}
+                                  disabled={labelState.isUploading || isLoading}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-6 w-6 p-0"
+                              className="text-xs"
                               onClick={() => handleRemoveLabel(groupIndex)}
                               disabled={labelState.isUploading || isLoading}
                             >
-                              <X className="h-3 w-3" />
+                              Clear all
                             </Button>
-                          </div>
+                          </>
                         )}
-                        
                         {labelState.isUploading && (
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         )}

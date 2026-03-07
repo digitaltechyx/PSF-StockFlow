@@ -1092,37 +1092,43 @@ function ReviewShipmentDialog({
                 return url;
               };
 
-              // Helper function to handle view action
-              const handleView = () => {
-                if (!hasLabel) return;
-                const labelUrl = String(request.labelUrl).trim();
-                const viewUrl = getViewUrl(labelUrl);
-                window.open(viewUrl, '_blank', 'noopener,noreferrer');
+              // Support single URL or comma-separated multiple label URLs
+              const labelUrls = String(request.labelUrl ?? "")
+                .split(",")
+                .map((u) => u.trim())
+                .filter(Boolean);
+              const handleView = (url?: string) => {
+                const toOpen = url ?? labelUrls[0];
+                if (!toOpen) return;
+                window.open(getViewUrl(toOpen), "_blank", "noopener,noreferrer");
               };
-              
+
               return hasLabel ? (
               <div>
-                <label className="text-sm font-medium mb-2 block">Shipping Label</label>
+                <label className="text-sm font-medium mb-2 block">Shipping Label{labelUrls.length > 1 ? "s" : ""}</label>
                 <div className="border rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <FileText className="h-8 w-8 text-muted-foreground flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-sm font-medium mb-1">
-                        {String(request.labelUrl).trim().includes('drive.google.com') 
-                          ? "Label stored in Google Drive" 
-                          : "Shipping Label"}
+                        {String(request.labelUrl).trim().includes("drive.google.com")
+                          ? "Label(s) stored in Google Drive"
+                          : "Shipping Label(s)"}
                       </p>
-                      <div className="flex gap-2 mt-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleView}
-                          className="flex items-center gap-2"
-                        >
-                          <Eye className="h-4 w-4" />
-                          View
-                        </Button>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {labelUrls.map((url, idx) => (
+                          <Button
+                            key={idx}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleView(url)}
+                            className="flex items-center gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            {labelUrls.length > 1 ? `View ${idx + 1}` : "View"}
+                          </Button>
+                        ))}
                       </div>
                     </div>
                   </div>
