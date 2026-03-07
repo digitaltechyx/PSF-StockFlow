@@ -66,8 +66,12 @@ const shipmentGroupSchema = z.object({
   path: ["customDimensions"],
 }).refine((data) => {
   // For non-custom products, unit price must be > 0 for every item.
+  // Coerce to number so string values from inputs (e.g. "0.10") and floats (0.1) are accepted.
   if (data.shipmentType === "product" && data.productType && data.productType !== "Custom") {
-    return (data.shipments || []).every((s) => typeof s?.unitPrice === "number" && s.unitPrice > 0);
+    return (data.shipments || []).every((s) => {
+      const p = Number(s?.unitPrice);
+      return !Number.isNaN(p) && p > 1e-9; // allow tiny positive (float precision)
+    });
   }
   return true;
 }, {
@@ -1087,10 +1091,16 @@ export function CreateShipmentWithLabelsForm({ inventory }: CreateShipmentWithLa
                                               }
                                               // For product shipments:
                                               // - Custom: placeholder pricing ($1) until admin sets final price
-                                              // - Others: calculated by useEffect based on pricing rules
+                                              // - Standard/Large: set unit price from pricing rules so validation passes (UI already shows it)
                                               if (shipmentType === "product" && group?.productType === "Custom") {
                                                 initialUnitPrice = 1;
                                                 initialTotalPrice = 1;
+                                              } else if (shipmentType === "product" && group?.service && group?.productType && pricingRules && pricingRules.length > 0) {
+                                                const calculated = calculatePrepUnitPrice(pricingRules, group.service, group.productType, 1);
+                                                if (calculated?.rate != null && !Number.isNaN(calculated.rate) && calculated.rate > 0) {
+                                                  initialUnitPrice = calculated.rate;
+                                                  initialTotalPrice = calculated.rate;
+                                                }
                                               }
                                               
                                               form.setValue(`shipmentGroups.${groupIndex}.shipments`, [
